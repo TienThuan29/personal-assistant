@@ -7,7 +7,7 @@ import { parseLocalDate, recurrenceText, toLocalDate } from '../../shared/dates'
 import type { TaskRow } from '../../shared/types';
 import { api } from '../api';
 import { Thumbs } from '../components/Thumbs';
-import { useData } from '../useData';
+import { Skeleton, useData } from '../useData';
 
 const dueText = (t: TaskRow) =>
   [t.due_date && parseLocalDate(t.due_date).toLocaleDateString('vi-VN'), t.due_time].filter(Boolean).join(' ');
@@ -15,7 +15,7 @@ const dueText = (t: TaskRow) =>
 export function TasksPage() {
   const [category, setCategory] = useState('all');
   const read = useCallback(() => api.data.read<TaskRow[]>('list_tasks', category === 'all' ? {} : { category }), [category]);
-  const { data: tasks, busy, write, remove, holders } = useData(read, []);
+  const { data: tasks, loading, busy, write, remove, holders } = useData(read, []);
   const { t } = useTranslation(['pages', 'common']);
   const categories = t('common:category', { returnObjects: true }) as Record<string, string>;
   const priorityTags = { 1: <Tag color='red'>{t('priorityHigh')}</Tag>, 2: null, 3: <Tag>{t('priorityLow')}</Tag> };
@@ -48,16 +48,17 @@ export function TasksPage() {
           />
         }
       />
-      {!tasks.length && <Empty description={t('noTasks')} />}
+      {loading && <Skeleton />}
+      {!loading && !tasks.length && <Empty description={t('noTasks')} />}
       {groups
         .filter(([, list]) => list.length)
         .map(([group, list]) => (
           <section key={group}>
             <div className='group-title'>
-              {t(group)} ({list.length})
+              {t(group)} <span className='count'>{list.length}</span>
             </div>
             {list.map((task) => (
-              <div key={task.id} className='row'>
+              <div key={task.id} className={busy.includes(task.id) ? 'row is-done' : 'row'}>
                 <Checkbox
                   aria-label={t('complete', { title: task.title })}
                   checked={busy.includes(task.id)}

@@ -36,7 +36,7 @@ export const vi = {
     conversations: 'Hội thoại',
     deleteConversation: 'Xóa hội thoại?',
     emptyHint: 'Hỏi “Hôm nay tôi có việc gì?”, hoặc nhờ ghi task, ghi chú, khoản chi (kèm ảnh cũng được).',
-    emptyHintSlash: 'Gõ <b>/</b> để xem lệnh nhanh.',
+    emptyTitle: 'Hôm nay mình lo việc gì trước?',
     thinking: 'Đang suy nghĩ…',
     toolRunning: 'Đang chạy {{name}}…',
     tool: {

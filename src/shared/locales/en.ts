@@ -36,7 +36,7 @@ export const en: Resources = {
     conversations: 'Chats',
     deleteConversation: 'Delete this chat?',
     emptyHint: 'Ask “What do I have today?”, or have me log a task, note or expense (photos work too).',
-    emptyHintSlash: 'Type <b>/</b> for quick commands.',
+    emptyTitle: 'What should we sort out today?',
     thinking: 'Thinking…',
     toolRunning: 'Running {{name}}…',
     tool: {

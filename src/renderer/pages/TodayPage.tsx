@@ -7,7 +7,7 @@ import { addDays, parseLocalDate, toLocalDate } from '../../shared/dates';
 import { formatMoney } from '../../shared/money';
 import type { ReminderRow, TaskRow } from '../../shared/types';
 import { api, useUiSettings } from '../api';
-import { useData } from '../useData';
+import { Skeleton, useData } from '../useData';
 
 type Today = {
   today: string;
@@ -35,13 +35,13 @@ export function TodayPage() {
     return { ...overview, upcoming };
   }, []);
   // ponytail: tasks and reminders share one busy list keyed by id, so equal ids briefly disable each other
-  const { data, busy, write, remove, holders } = useData(read, EMPTY);
+  const { data, loading, busy, write, remove, holders } = useData(read, EMPTY);
   const { t } = useTranslation(['pages', 'common']);
   const { moneyStyle } = useUiSettings();
 
   const taskRows = (list: TaskRow[], overdue: boolean) =>
     list.map((task) => (
-      <div key={task.id} className='row'>
+      <div key={task.id} className={busy.includes(task.id) ? 'row is-done' : 'row'}>
         <Checkbox
           aria-label={t('complete', { title: task.title })}
           checked={busy.includes(task.id)}
@@ -93,13 +93,14 @@ export function TodayPage() {
         sticky={false}
         description={`${data.today ? longDate(data.today) : ''} · ${t('spentToday', { amount: spent })}`}
       />
-      {sections.every(([, rows]) => !rows.length) && <Empty description={t('todayEmpty')} />}
+      {loading && <Skeleton />}
+      {!loading && sections.every(([, rows]) => !rows.length) && <Empty description={t('todayEmpty')} />}
       {sections
         .filter(([, rows]) => rows.length)
         .map(([title, rows]) => (
           <section key={title}>
             <div className='group-title'>
-              {title} ({rows.length})
+              {title} <span className='count'>{rows.length}</span>
             </div>
             {rows}
           </section>

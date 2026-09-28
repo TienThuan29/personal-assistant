@@ -21,7 +21,7 @@ export function ExpensesPage() {
   const money = (amount: number, currency: string) => formatMoney(amount, currency, moneyStyle);
   const [month, setMonth] = useState(() => toLocalDate().slice(0, 7));
   const read = useCallback(() => api.data.read<ExpenseList>('list_expenses', monthRange(month)), [month]);
-  const { data, busy, remove, holders } = useData<ExpenseList>(read, { items: [], totals: [] });
+  const { data, loading, busy, remove, holders } = useData<ExpenseList>(read, { items: [], totals: [] });
 
   const byCategory = new Map<string, { category: string; currency: string; total: number }>();
   for (const e of data.items) {
@@ -79,7 +79,7 @@ export function ExpensesPage() {
             </Tag>
           ))}
       </Space>
-      <Table rowKey='id' columns={columns} data={data.items} pagination={false} />
+      <Table rowKey='id' columns={columns} data={data.items} pagination={false} loading={loading} />
     </div>
   );
 }

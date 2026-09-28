@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import type { NoteRow } from '../../shared/types';
 import { api } from '../api';
 import { Thumbs } from '../components/Thumbs';
-import { useData } from '../useData';
+import { Skeleton, useData } from '../useData';
 
 /** Renders the ⟦match⟧ markers from FTS snippets as <mark>. */
 const highlight = (s: string) => s.split(/[⟦⟧]/).map((part, i) => (i % 2 ? <mark key={i}>{part}</mark> : part));
@@ -18,7 +18,7 @@ export function NotesPage() {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<NoteRow | null>(null);
   const read = useCallback(() => api.data.read<NoteRow[]>('search_notes', { query: query.trim() || undefined, limit: 100 }), [query]);
-  const { data: notes, busy, remove, fail, holders } = useData(read, [], query ? 250 : 0); // debounce typing
+  const { data: notes, loading, busy, remove, fail, holders } = useData(read, [], query ? 250 : 0); // debounce typing
 
   const openNote = (id: number) => void api.data.read<NoteRow[]>('get_notes', { ids: [id] }).then((r) => setOpen(r[0] ?? null), fail);
 
@@ -27,7 +27,8 @@ export function NotesPage() {
       {holders}
       <SettingsPageHeader title={t('notesTitle')} sticky={false} description={t('notesHint')} />
       <AionSearchInput value={query} onChange={setQuery} placeholder={t('searchNotes')} style={{ marginTop: 12 }} />
-      {!notes.length && <Empty description={query.trim() ? t('noNotesFound') : t('noNotes')} />}
+      {loading && <Skeleton />}
+      {!loading && !notes.length && <Empty description={query.trim() ? t('noNotesFound') : t('noNotes')} />}
       {notes.map((n) => (
         <div key={n.id} className='row'>
           <div className='row-main'>

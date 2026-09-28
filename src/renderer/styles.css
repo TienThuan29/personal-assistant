@@ -44,13 +44,12 @@ body {
 .msg-user {
   align-self: flex-end;
   max-width: 75%;
-  padding: 8px 12px;
-  border-radius: 12px;
+  padding: 8px 14px;
+  border-radius: 16px 16px 4px 16px;
   background: var(--message-user-bg);
   white-space: pre-wrap;
 }
 .msg-assistant { display: flex; flex-direction: column; gap: 8px; }
-.empty-hint { margin: 20vh auto 0; text-align: center; color: var(--text-secondary); }
 
 .thumbs { display: flex; gap: 8px; flex-wrap: wrap; }
 .thumb { padding: 0; border: 0; background: none; border-radius: 8px; cursor: zoom-in; }
@@ -60,22 +59,67 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px;
+  padding: 12px 14px;
   border: 1px solid var(--border-base);
+  border-left: 3px solid var(--card-accent, var(--primary));
   border-radius: 12px;
   background: var(--bg-2);
+  box-shadow: 0 8px 24px -16px rgba(var(--gray-10), 0.35);
+  transition: opacity 0.3s, border-color 0.3s;
 }
+.confirm-card[data-status='confirmed'] { --card-accent: rgb(var(--green-6)); }
+.confirm-card[data-status='cancelled'] { --card-accent: var(--border-base); opacity: 0.7; }
+.confirm-card[data-status='failed'] { --card-accent: rgb(var(--danger-6)); }
 .confirm-title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
 .confirm-row { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; }
 .confirm-value { white-space: pre-wrap; }
 
-.sendbox { position: relative; padding: 12px 24px; border-top: 1px solid var(--border-base); }
-.sendbox-inner { display: flex; flex-direction: column; gap: 8px; max-width: 860px; margin: 0 auto; }
+.sendbox { position: relative; padding: 8px 24px 16px; }
+.sendbox-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 10px 10px 8px;
+  border: 1px solid var(--border-base);
+  border-radius: 16px;
+  background: var(--bg-1);
+  box-shadow: 0 10px 30px -18px rgba(var(--gray-10), 0.4);
+  transition: border-color 0.2s, box-shadow 0.3s var(--ease-out);
+}
+.sendbox-inner:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(var(--primary-6), 0.12), 0 10px 30px -18px rgba(var(--gray-10), 0.4); }
+/* The composer frame is the field; the textarea inside stays borderless. */
+.sendbox-inner .arco-textarea { border: 0; background: transparent; box-shadow: none; resize: none; padding: 2px 4px; }
 .sendbox-actions { display: flex; justify-content: space-between; align-items: center; }
 .slash-menu { position: absolute; bottom: 100%; left: 24px; width: min(480px, calc(100% - 48px)); }
 
-.group-title { margin: 16px 0 4px; font-weight: 600; }
-.row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border-light); }
+.group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 20px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.count { min-width: 20px; padding: 0 6px; border-radius: 10px; background: var(--bg-3); font-size: 11px; text-align: center; letter-spacing: 0; }
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-light);
+  border-radius: 8px;
+  transition: background-color 0.2s, opacity 0.4s var(--ease-out);
+}
+.row:hover { background: var(--bg-hover); }
+/* A completed task stays a moment (struck through) before the reload removes it. */
+.row.is-done { opacity: 0.45; }
+.row.is-done .row-main { text-decoration: line-through; }
 .row-main { flex: 1; min-width: 0; }
 
 .settings { display: flex; flex-direction: column; gap: 16px; }
@@ -89,3 +133,54 @@ body {
 .snippet { cursor: pointer; }
 mark { background: rgb(var(--warning-2)); color: inherit; border-radius: 2px; }
 .note-body { margin-top: 8px; max-height: 60vh; overflow: auto; white-space: pre-wrap; }
+
+/* ---- Motion ----
+   CSS only: enter animations run once when an element mounts, so React's keyed reloads don't replay them. */
+:root { --ease-out: cubic-bezier(0.16, 1, 0.3, 1); --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1); }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+@keyframes pop { from { opacity: 0; transform: translateY(6px) scale(0.97); } }
+@keyframes from-right { from { opacity: 0; transform: translateX(16px) scale(0.98); } }
+@keyframes shimmer { to { background-position: -200% 0; } }
+@keyframes blink { 50% { opacity: 0.2; } }
+
+.page, .chat { animation: rise 0.45s var(--ease-out) both; }
+/* sibling-index() staggers a list without per-row indices; unsupported engines just skip the delay. */
+.row, .msg-list > * { animation: rise 0.4s var(--ease-out) both; animation-delay: calc(min(sibling-index(), 12) * 25ms); }
+.msg-list > .msg-user { animation: from-right 0.45s var(--ease-spring) both; }
+.confirm-card { animation: pop 0.45s var(--ease-spring) both; }
+.slash-menu { animation: pop 0.25s var(--ease-out) both; transform-origin: bottom left; }
+.arco-btn:not(:disabled):active, .suggestion:active { transform: scale(0.97); }
+.arco-btn { transition-property: all; }
+
+.caret { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); animation: blink 1s ease-in-out infinite; }
+
+.skeleton { height: 38px; margin: 6px 0; border-radius: 8px; background: linear-gradient(90deg, var(--bg-2) 25%, var(--bg-3) 50%, var(--bg-2) 75%) 0 0 / 200% 100%; animation: shimmer 1.4s linear infinite; }
+.skeleton:nth-child(2) { width: 82%; }
+.skeleton:nth-child(3) { width: 64%; }
+
+.chat-empty { margin: 16vh 0 0; max-width: 520px; animation: rise 0.6s var(--ease-out) both; }
+.chat-empty h2 { margin: 0 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+.chat-empty p { margin: 0 0 16px; color: var(--text-secondary); line-height: 1.6; }
+.suggestions { display: flex; flex-wrap: wrap; gap: 8px; }
+.suggestion {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-base);
+  border-radius: 12px;
+  background: var(--bg-1);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  animation: rise 0.5s var(--ease-out) both;
+  animation-delay: calc(sibling-index() * 70ms + 150ms);
+  transition: border-color 0.2s, transform 0.2s var(--ease-out), box-shadow 0.2s;
+}
+.suggestion:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: 0 8px 20px -14px rgba(var(--primary-6), 0.6); }
+.suggestion code { font-size: 12px; color: var(--primary); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}

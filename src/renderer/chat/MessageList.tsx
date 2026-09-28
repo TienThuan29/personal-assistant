@@ -2,10 +2,11 @@ import { ThoughtDisplay } from '@aionui/ui';
 import { Markdown } from '@aionui/ui/markdown';
 import { Alert, Button } from '@arco-design/web-react';
 import { memo, useEffect, useRef, useState } from 'react';
-import { Trans, useTranslation } from 'react-i18next';
+import { useTranslation } from 'react-i18next';
 import type { ChatMessage, PendingAction } from '../../shared/types';
 import { Thumbs } from '../components/Thumbs';
 import { ConfirmCard } from './ConfirmCard';
+import { COMMANDS } from './SendBox';
 import type { ChatState } from './useChat';
 
 /** One message; memoized (with its card edits kept here) so streaming and typing don't re-render every Markdown block. */
@@ -93,16 +94,24 @@ export function MessageList({ chat }: { chat: ChatState }) {
     <div ref={ref} className='messages'>
       <div className='msg-list' aria-live='polite'>
         {!chat.messages.length && !chat.running && (
-          <div className='empty-hint'>
-            {t('emptyHint')}
-            <br />
-            <Trans t={t} i18nKey='emptyHintSlash' components={{ b: <b /> }} />
+          <div className='chat-empty'>
+            <h2>{t('emptyTitle')}</h2>
+            <p>{t('emptyHint')}</p>
+            <div className='suggestions'>
+              {COMMANDS.map((key) => (
+                <button key={key} type='button' className='suggestion' onClick={() => void chat.send(t(`cmd.${key}.prompt`), [])}>
+                  <span>{t(`cmd.${key}.description`)}</span>
+                  <code>/{key}</code>
+                </button>
+              ))}
+            </div>
           </div>
         )}
         {chat.messages.map((m) => <MessageRow key={m.id} m={m} actions={chat.actions} resolve={chat.resolve} />)}
         {chat.streaming && (
           <div className='msg-assistant'>
             <Markdown>{chat.streaming}</Markdown>
+            <span className='caret' aria-hidden='true' />
           </div>
         )}
         {chat.running && !chat.streaming && (

@@ -10,7 +10,7 @@ const MAX_BYTES = 20 * 1024 * 1024;
 const MAX_IMAGES = 10;
 
 /** Slash commands are just canned prompts; the names stay the same in every language. */
-const COMMANDS = ['homnay', 'tuannay', 'chitieu'] as const;
+export const COMMANDS = ['homnay', 'tuannay', 'chitieu'] as const;
 
 type Picked = { file: File; url: string };
 
@@ -148,7 +148,7 @@ export function SendBox({ running, onSend, onStop }: Props) {
           placeholder={t('placeholder')}
         />
         <div className='sendbox-actions'>
-          <Button icon={<Pic />} onClick={() => fileInput.current?.click()}>
+          <Button type='text' icon={<Pic />} onClick={() => fileInput.current?.click()}>
             {t('attachImage')}
           </Button>
           <input

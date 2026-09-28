@@ -101,7 +101,7 @@ export function ConfirmCard(props: {
   };
 
   return (
-    <div className='confirm-card'>
+    <div className='confirm-card' data-status={error ? 'failed' : action.status}>
       <div className='confirm-title'>
         {(t('action', { returnObjects: true }) as Record<string, string>)[action.tool_name] ?? action.tool_name}
         <Tag color={status.color}>{status.text}</Tag>

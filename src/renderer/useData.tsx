@@ -11,6 +11,7 @@ import { api, errorText } from './api';
 export function useData<T>(read: () => Promise<T>, initial: T, delay = 0) {
   const { t } = useTranslation();
   const [data, setData] = useState(initial);
+  const [loading, setLoading] = useState(true); // until the first read settles, so pages don't flash their empty state
   const [busy, setBusy] = useState<number[]>([]);
   const [message, messageHolder] = Message.useMessage();
   const [modal, modalHolder] = Modal.useModal();
@@ -22,8 +23,16 @@ export function useData<T>(read: () => Promise<T>, initial: T, delay = 0) {
     let live = true; // drops responses of an older `read` (e.g. a previous search query)
     const load = () =>
       void read().then(
-        (d) => live && setData(d),
-        (e) => live && failRef.current(e)
+        (d) => {
+          if (!live) return;
+          setData(d);
+          setLoading(false);
+        },
+        (e) => {
+          if (!live) return;
+          setLoading(false);
+          failRef.current(e);
+        }
       );
     const timer = setTimeout(load, delay);
     const off = api.data.onChanged(load);
@@ -65,5 +74,14 @@ export function useData<T>(read: () => Promise<T>, initial: T, delay = 0) {
       {modalHolder}
     </>
   );
-  return { data, busy, write, remove, fail, holders };
+  return { data, loading, busy, write, remove, fail, holders };
 }
+
+/** Placeholder rows shown while a page's first read is in flight. */
+export const Skeleton = () => (
+  <div aria-busy='true'>
+    <div className='skeleton' />
+    <div className='skeleton' />
+    <div className='skeleton' />
+  </div>
+);
