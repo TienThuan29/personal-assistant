@@ -75,3 +75,9 @@ body {
 .group-title { margin: 16px 0 4px; font-weight: 600; }
 .row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border-light); }
 .row-main { flex: 1; min-width: 0; }
+
+.settings { display: flex; flex-direction: column; gap: 16px; }
+/* Arco fields use the same gray as SectionCard (bg-2) and vanish inside it. */
+.settings .arco-input-inner-wrapper,
+.settings .arco-input,
+.settings .arco-select-view { background-color: var(--bg-1); }

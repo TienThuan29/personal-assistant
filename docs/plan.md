@@ -4813,6 +4813,7 @@ git commit -m "feat(ui): app shell with sider, routing, window controls, OS them
 
 **Files:**
 - Replace: `src/renderer/pages/SettingsPage.tsx`
+- Modify: `src/renderer/styles.css`
 
 It comes before the chat so you can configure a real endpoint to test the chat with.
 
@@ -4862,14 +4863,14 @@ export function SettingsPage() {
   if (!view) return null;
   const azure = llm.provider === 'azure';
   return (
-    <div className='page'>
-      <SettingsPageHeader title='Cài đặt' />
+    <div className='page settings'>
+      <SettingsPageHeader title='Cài đặt' sticky={false} />
       <SectionCard title='Mô hình AI'>
         <PreferenceRow label='Nhà cung cấp' description='Cả hai đều dùng API tương thích OpenAI (tool calling + ảnh)'>
           <AionSelect
             value={llm.provider}
             onChange={(v: LlmConfig['provider']) => set({ provider: v })}
-            style={{ width: 240 }}
+            style={{ width: 380 }}
             options={[
               { label: 'Azure AI Foundry', value: 'azure' },
               { label: 'LLM gateway', value: 'gateway' },
@@ -4907,10 +4908,20 @@ export function SettingsPage() {
           Lưu và kiểm tra kết nối
         </Button>
       </Space>
-      {status && <Alert style={{ marginTop: 12 }} type={status.type} content={status.text} />}
+      {status && <Alert type={status.type} content={status.text} />}
     </div>
   );
 }
+```
+
+Append to `src/renderer/styles.css`. `SettingsPageHeader` is sticky by default with negative margins sized for AionUi's own padding, so here it overlaps the first card; `sticky={false}` avoids that. Arco fields use the same gray as `SectionCard`, so they need a lighter background to be visible:
+
+```css
+.settings { display: flex; flex-direction: column; gap: 16px; }
+/* Arco fields use the same gray as SectionCard (bg-2) and vanish inside it. */
+.settings .arco-input-inner-wrapper,
+.settings .arco-input,
+.settings .arco-select-view { background-color: var(--bg-1); }
 ```
 
 **Step 2: Verify**
