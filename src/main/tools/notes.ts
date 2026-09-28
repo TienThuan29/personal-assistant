@@ -27,7 +27,7 @@ const phrase = (w: string): string => `"${w.replace(/"/g, '""')}"*`;
 export const ftsQuery = (text: string): string =>
   text
     .split(/[^\p{L}\p{N}\p{M}]+/u)
-    .filter(Boolean)
+    .filter((w) => /[\p{L}\p{N}]/u.test(w))
     .map((w) => (/^[dđ]/iu.test(w) ? `(${phrase(`d${w.slice(1)}`)} OR ${phrase(`đ${w.slice(1)}`)})` : phrase(w)))
     .join(' AND ');
 

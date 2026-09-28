@@ -9,6 +9,7 @@ describe('note tools', () => {
     const [hit] = callTool<NoteRow[]>(ctx, 'search_notes', { query: 'ngan sach' });
     expect(hit.snippet).toContain('⟦ngân⟧ ⟦sách⟧');
     expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'NGÂN SÁCH' })).toHaveLength(1);
+    expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'ngan \u0301' })).toHaveLength(1); // stray tone mark
   });
 
   it('matches title-only hits and đ as d', () => {

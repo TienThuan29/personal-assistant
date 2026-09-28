@@ -1827,6 +1827,7 @@ describe('note tools', () => {
     const [hit] = callTool<NoteRow[]>(ctx, 'search_notes', { query: 'ngan sach' });
     expect(hit.snippet).toContain('⟦ngân⟧ ⟦sách⟧');
     expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'NGÂN SÁCH' })).toHaveLength(1);
+    expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'ngan \u0301' })).toHaveLength(1); // stray tone mark
   });
 
   it('matches title-only hits and đ as d', () => {
@@ -1922,7 +1923,7 @@ const phrase = (w: string): string => `"${w.replace(/"/g, '""')}"*`;
 export const ftsQuery = (text: string): string =>
   text
     .split(/[^\p{L}\p{N}\p{M}]+/u)
-    .filter(Boolean)
+    .filter((w) => /[\p{L}\p{N}]/u.test(w))
     .map((w) => (/^[dđ]/iu.test(w) ? `(${phrase(`d${w.slice(1)}`)} OR ${phrase(`đ${w.slice(1)}`)})` : phrase(w)))
     .join(' AND ');
 
