@@ -10,7 +10,7 @@ export const en: Resources = {
     weekdayLong: { '1': 'Monday', '2': 'Tuesday', '3': 'Wednesday', '4': 'Thursday', '5': 'Friday', '6': 'Saturday', '7': 'Sunday' },
     appName: 'Personal Assistant',
     crash: { title: 'Something went wrong', reload: 'Reload' },
-    nav: { today: 'Today', tasks: 'Tasks', notes: 'Notes', expenses: 'Expenses', settings: 'Settings' },
+    nav: { today: 'Today', tasks: 'Tasks', notes: 'Notes', expenses: 'Expenses', reminders: 'Reminders', settings: 'Settings' },
     category: { work: 'Work', personal: 'Personal' },
     delete: 'Delete',
     deleteConfirm: 'Delete?',
@@ -176,6 +176,9 @@ export const en: Resources = {
     amountTooLarge: 'The amount is too large',
     addReminder: 'Add reminder',
     editReminder: 'Edit reminder',
+    editReminderLabel: 'Edit reminder: {{what}}',
+    reminderStatus: { pending: 'Upcoming', fired: 'Fired', dismissed: 'Dismissed' },
+    noReminders: 'No reminders',
   },
   settings: {
     title: 'Settings',

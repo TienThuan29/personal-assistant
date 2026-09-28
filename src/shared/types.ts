@@ -108,7 +108,7 @@ export type SettingsView = { llm: LlmSettings; hasKey: Record<Provider, boolean>
 export type SettingsInput = { llm: LlmSettings; apiKey?: string };
 
 export type ImageInput = { name: string; bytes: Uint8Array };
-export type Page = 'chat' | 'today' | 'tasks' | 'notes' | 'expenses' | 'settings';
+export type Page = 'chat' | 'today' | 'tasks' | 'notes' | 'expenses' | 'reminders' | 'settings';
 
 export type Api = {
   conversations: {

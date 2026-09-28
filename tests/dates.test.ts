@@ -1,10 +1,15 @@
-import { addDays, localDayRange, nextOccurrence, recurrenceText, toLocalDate } from '../src/shared/dates';
+import { addDays, localDayRange, nextOccurrence, recurrenceText, toLocalDate, toLocalMinute } from '../src/shared/dates';
 import { createI18n } from '../src/shared/i18n';
 import { formatMoney } from '../src/shared/money';
 
 describe('dates', () => {
   it('toLocalDate uses local time', () => {
     expect(toLocalDate(new Date(2026, 8, 28, 23, 59))).toBe('2026-09-28');
+  });
+  it('toLocalMinute round-trips a UTC instant to local minutes', () => {
+    const at = new Date(2026, 0, 5, 7, 3, 59).toISOString();
+    expect(toLocalMinute(new Date(at))).toBe('2026-01-05T07:03');
+    expect(new Date('2026-01-05T07:03').getTime()).toBe(new Date(2026, 0, 5, 7, 3).getTime());
   });
   it('addDays crosses months', () => expect(addDays('2026-01-31', 1)).toBe('2026-02-01'));
   it('daily', () => expect(nextOccurrence('daily', '2026-09-28')).toBe('2026-09-29'));

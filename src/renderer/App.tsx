@@ -2,7 +2,7 @@ import { AionScrollArea, SiderItem, UiProvider, WindowControls } from '@aionui/u
 import { Button, ConfigProvider, Message, Modal } from '@arco-design/web-react';
 import enUS from '@arco-design/web-react/es/locale/en-US';
 import viVN from '@arco-design/web-react/es/locale/vi-VN';
-import { CheckOne, Comment, Delete, Notes, Plus, SettingTwo, Sun, Wallet } from '@icon-park/react';
+import { CheckOne, Comment, Delete, Notes, Plus, Remind, SettingTwo, Sun, Wallet } from '@icon-park/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { type ConversationRow, DEFAULT_CONVERSATION_TITLE, type Page } from '../shared/types';
@@ -10,6 +10,7 @@ import { api, errorText } from './api';
 import { ChatPage } from './chat/ChatPage';
 import { ExpensesPage } from './pages/ExpensesPage';
 import { NotesPage } from './pages/NotesPage';
+import { RemindersPage } from './pages/RemindersPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TasksPage } from './pages/TasksPage';
 import { TodayPage } from './pages/TodayPage';
@@ -21,6 +22,7 @@ const NAV = [
   { page: 'tasks', icon: <CheckOne /> },
   { page: 'notes', icon: <Notes /> },
   { page: 'expenses', icon: <Wallet /> },
+  { page: 'reminders', icon: <Remind /> },
 ] as const;
 
 // Arco's vi-VN locale lacks the ColorPicker strings its Locale type requires; the app has no ColorPicker.
@@ -159,6 +161,7 @@ export function App() {
               {route?.page === 'tasks' && <TasksPage />}
               {route?.page === 'notes' && <NotesPage />}
               {route?.page === 'expenses' && <ExpensesPage />}
+              {route?.page === 'reminders' && <RemindersPage />}
               {route?.page === 'settings' && <SettingsPage />}
             </main>
           </div>

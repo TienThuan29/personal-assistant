@@ -10,6 +10,9 @@ export const toLocalDate = (d: Date = new Date()): string =>
 /** 'HH:MM' in local time. */
 export const toLocalTime = (d: Date): string => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
+/** 'YYYY-MM-DDTHH:MM' in local time, e.g. a stored UTC instant as the reminder form shows and sends it. */
+export const toLocalMinute = (d: Date): string => `${toLocalDate(d)}T${toLocalTime(d)}`;
+
 /** Local midnight of a 'YYYY-MM-DD' (new Date('YYYY-MM-DD') would be UTC). */
 export const parseLocalDate = (date: string): Date => {
   const [y, m, d] = date.split('-').map(Number);

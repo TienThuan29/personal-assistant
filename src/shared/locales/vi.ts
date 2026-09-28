@@ -9,7 +9,7 @@ export const vi = {
     weekdayLong: { '1': 'Thứ Hai', '2': 'Thứ Ba', '3': 'Thứ Tư', '4': 'Thứ Năm', '5': 'Thứ Sáu', '6': 'Thứ Bảy', '7': 'Chủ Nhật' },
     appName: 'Trợ lý cá nhân',
     crash: { title: 'Đã xảy ra lỗi', reload: 'Tải lại' },
-    nav: { today: 'Hôm nay', tasks: 'Task', notes: 'Ghi chú', expenses: 'Chi tiêu', settings: 'Cài đặt' },
+    nav: { today: 'Hôm nay', tasks: 'Task', notes: 'Ghi chú', expenses: 'Chi tiêu', reminders: 'Nhắc nhở', settings: 'Cài đặt' },
     category: { work: 'Công việc', personal: 'Cá nhân' },
     delete: 'Xóa',
     deleteConfirm: 'Xóa?',
@@ -182,6 +182,9 @@ export const vi = {
     amountTooLarge: 'Số tiền quá lớn',
     addReminder: 'Thêm nhắc nhở',
     editReminder: 'Sửa nhắc nhở',
+    editReminderLabel: 'Sửa nhắc nhở: {{what}}',
+    reminderStatus: { pending: 'Sắp tới', fired: 'Đã nhắc', dismissed: 'Đã bỏ qua' },
+    noReminders: 'Không có nhắc nhở nào',
   },
   settings: {
     title: 'Cài đặt',
