@@ -387,7 +387,7 @@ export type LlmConfig = { provider: 'azure' | 'gateway'; endpoint: string; model
 export const DEFAULT_LLM: LlmConfig = { provider: 'gateway', endpoint: '', model: '', apiVersion: '2024-10-21' };
 
 export type SettingsView = { llm: LlmConfig; hasKey: Record<LlmConfig['provider'], boolean>; openAtLogin: boolean };
-export type SettingsInput = { llm: LlmConfig; apiKey?: string; openAtLogin: boolean };
+export type SettingsInput = { llm: LlmConfig; apiKey?: string };
 
 export type ImageInput = { name: string; bytes: Uint8Array };
 export type Page = 'chat' | 'today' | 'tasks' | 'notes' | 'expenses' | 'settings';
@@ -6329,7 +6329,7 @@ The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-
 - [ ] Reminder while the app is quit → on next start one grouped "Bạn có N nhắc nhở" toast.
 - [ ] Sleep the PC past a reminder, wake → toast fires shortly after resume.
 - [ ] Tray: close hides the window, tray click shows it, right-click menu "Mở Trợ lý" / "Thoát" work; a second launch focuses the running instance.
-- [ ] "Khởi động cùng Windows" (Settings or tray menu) on → sign out/in → app runs hidden in the tray.
+- [ ] "Khởi động cùng Windows" (Settings or tray menu) on → sign out/in → app runs hidden in the tray. The Settings switch applies at once (no "Lưu"), even with no LLM configured, and "Lưu" later does not undo a tray change.
 - [ ] Dark mode follows Windows.
 
 Toasts need the Start-menu shortcut carrying the AppUserModelID `com.personal-assistant.app`, which the installer
@@ -6364,6 +6364,7 @@ Done after Task 26, one commit each. The listings above are not all updated; the
 1. **Installer** (`build:`): `win.target: nsis`, per-user one-click with a Start-menu shortcut (Task 26 listing updated). The shortcut carries the AppUserModelID, so toasts show. The login item uses the default path (`process.execPath`, the install location).
 2. **Hôm nay page** (`feat(ui):`): `Page` gains `'today'`, the sider gets "Hôm nay" (icon-park `Sun`) above Task, and `src/renderer/pages/TodayPage.tsx` shows `get_today_overview` (overdue and today's tasks with a done checkbox, today's reminders, the total spent today) plus `list_reminders` from tomorrow through the next 7 days. Each reminder has "Bỏ qua" (`update_reminders` with `status: 'dismissed'`) and delete (confirm dialog). The upcoming list starts tomorrow so today's reminders are not listed twice. A toast click opens this page instead of Task.
 3. **Cards by message** (`fix(chat):`): migration 2 adds `pending_actions.message_id`, set by `handleCall` to the assistant message it belongs to (its id is known inside the same transaction). `MessageList` matches cards by `message_id`, falling back to `tool_call_id` for older rows, so a gateway that reuses ids (`call_0` every turn) no longer shows a card under every message.
+4. **Login toggle** (`fix(settings):`): `openAtLogin` left `SettingsInput`; the switch calls its own `settings:setOpenAtLogin(on)` right away and shows the state main reports back. Saving the LLM config no longer overwrites a change made from the tray, and the toggle works even when the LLM config is invalid.
 
 ---
 

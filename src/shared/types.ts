@@ -82,7 +82,7 @@ export type LlmConfig = { provider: 'azure' | 'gateway'; endpoint: string; model
 export const DEFAULT_LLM: LlmConfig = { provider: 'gateway', endpoint: '', model: '', apiVersion: '2024-10-21' };
 
 export type SettingsView = { llm: LlmConfig; hasKey: Record<LlmConfig['provider'], boolean>; openAtLogin: boolean };
-export type SettingsInput = { llm: LlmConfig; apiKey?: string; openAtLogin: boolean };
+export type SettingsInput = { llm: LlmConfig; apiKey?: string };
 
 export type ImageInput = { name: string; bytes: Uint8Array };
 export type Page = 'chat' | 'today' | 'tasks' | 'notes' | 'expenses' | 'settings';
@@ -113,6 +113,8 @@ export type Api = {
     get(): Promise<SettingsView>;
     save(s: SettingsInput): Promise<void>;
     test(): Promise<string>;
+    /** Applies at once (independent of the LLM config); resolves to the state now in effect. */
+    setOpenAtLogin(on: boolean): Promise<boolean>;
   };
   win: {
     minimize(): Promise<void>;

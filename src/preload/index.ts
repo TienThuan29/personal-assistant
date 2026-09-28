@@ -35,6 +35,7 @@ const api: Api = {
     get: () => invoke('settings:get'),
     save: (s) => invoke('settings:save', s),
     test: () => invoke('settings:test'),
+    setOpenAtLogin: (on) => invoke('settings:setOpenAtLogin', on),
   },
   win: {
     minimize: () => invoke('win:minimize'),

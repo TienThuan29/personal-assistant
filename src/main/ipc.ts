@@ -160,7 +160,11 @@ export function registerIpc(m: MainCtx): void {
     setSetting(m.db, 'llm', parsed.data);
     const key = s.apiKey?.trim();
     if (key) writeSecret(m.secretsFile, m.cipher, parsed.data.provider, key);
-    m.loginItem.set(!!s.openAtLogin);
+  });
+  ipcMain.handle('settings:setOpenAtLogin', (_e, on: unknown) => {
+    if (typeof on !== 'boolean') throw new Error('Giá trị không hợp lệ');
+    m.loginItem.set(on);
+    return m.loginItem.get();
   });
   ipcMain.handle('settings:test', async () => {
     try {

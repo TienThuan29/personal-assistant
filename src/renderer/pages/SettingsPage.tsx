@@ -25,7 +25,7 @@ export function SettingsPage() {
 
   const set = (patch: Partial<LlmConfig>) => setLlm((l) => ({ ...l, ...patch }));
   const save = async () => {
-    await api.settings.save({ llm, apiKey: apiKey || undefined, openAtLogin });
+    await api.settings.save({ llm, apiKey: apiKey || undefined });
     setApiKey('');
     setView(await api.settings.get());
   };
@@ -100,7 +100,13 @@ export function SettingsPage() {
       </SectionCard>
       <SectionCard title='Hệ thống'>
         <PreferenceRow label='Khởi động cùng Windows' description='Chạy ẩn ở khay hệ thống để nhắc nhở đúng giờ (chỉ bản đã đóng gói)'>
-          <Switch aria-label='Khởi động cùng Windows' checked={openAtLogin} onChange={setOpenAtLogin} />
+          <Switch
+            aria-label='Khởi động cùng Windows'
+            checked={openAtLogin}
+            onChange={(on: boolean) =>
+              api.settings.setOpenAtLogin(on).then(setOpenAtLogin, (e) => setStatus({ type: 'error', text: errorText(e) }))
+            }
+          />
         </PreferenceRow>
       </SectionCard>
       <Space>
