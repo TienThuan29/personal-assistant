@@ -863,7 +863,7 @@ These are the helpers every tool module uses.
 
 ```ts
 import { z } from 'zod/v4';
-import { localDayRange } from '../../shared/dates';
+import { localDayRange, parseLocalDate, toLocalDate } from '../../shared/dates';
 import type { Db, Params } from '../db';
 
 export type ToolCtx = { db: Db; ro: Db; now: () => Date };
@@ -886,7 +886,10 @@ export const readTool = <S extends z.ZodType>(t: Omit<ReadTool<S>, 'kind'>): Too
 export const writeTool = <S extends z.ZodType>(t: Omit<WriteTool<S>, 'kind'>): Tool => ({ ...t, kind: 'write' });
 
 // ---- shared schemas ----
-export const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Định dạng YYYY-MM-DD');
+export const date = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Định dạng YYYY-MM-DD')
+  .refine((s) => toLocalDate(parseLocalDate(s)) === s, 'Ngày không tồn tại'); // rejects e.g. 2026-02-30
 export const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Định dạng HH:MM');
 export const instant = z
   .string()
@@ -3338,7 +3341,11 @@ async function start(): Promise<void> {
 
   const db = openDb(dbPath);
   const ro = new DatabaseSync(dbPath, { readOnly: true });
-  backupDb(db, join(dataDir, 'backups'), new Date());
+  try {
+    backupDb(db, join(dataDir, 'backups'), new Date());
+  } catch (e) {
+    console.error('Backup failed, continuing without it', e); // a backup must never block startup
+  }
   pruneEmptyConversations(db);
   cleanupOrphans(db, attachmentsDir);
 
