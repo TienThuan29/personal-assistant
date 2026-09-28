@@ -189,7 +189,7 @@ export {};
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' att: data: blob:; font-src 'self' data:; connect-src 'self' ws:"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' att: data: blob:; font-src 'self' data:; connect-src 'self'"
     />
     <title>Trợ lý cá nhân</title>
   </head>
@@ -6366,12 +6366,13 @@ Done after Task 26, one commit each. The listings above are not all updated; the
 3. **Cards by message** (`fix(chat):`): migration 2 adds `pending_actions.message_id`, set by `handleCall` to the assistant message it belongs to (its id is known inside the same transaction). `MessageList` matches cards by `message_id`, falling back to `tool_call_id` for older rows, so a gateway that reuses ids (`call_0` every turn) no longer shows a card under every message.
 4. **Login toggle** (`fix(settings):`): `openAtLogin` left `SettingsInput`; the switch calls its own `settings:setOpenAtLogin(on)` right away and shows the state main reports back. Saving the LLM config no longer overwrites a change made from the tray, and the toggle works even when the LLM config is invalid.
 5. **Task categories** (`fix(tools):`): `canonCategory(db, table, category, exclude)` moved from `expenses.ts` to `tools/common.ts`. `create_task`/`update_tasks` snap a category to its existing spelling (trimmed), and `list_tasks` filters with `fold(t.category) = fold(:category)`, like expenses.
+6. **CSP** (`fix(security):`): `index.html` has `connect-src 'self'`. A `csp-dev-hmr` plugin in `electron.vite.config.ts` (`apply: 'serve'`) adds `ws://localhost:*` in dev only, for Vite's HMR client; the built `out/renderer/index.html` has no WebSocket source.
 
 ---
 
 ## Done criteria
 
-- `bun run test` passes (135 tests; the 20 eval cases skipped) and `bun run typecheck` exits 0.
+- `bun run test` passes (137 tests; the 20 eval cases skipped) and `bun run typecheck` exits 0.
 - `docs/smoke-test.md` is fully checked on the installed app.
 - The eval passes at least 17 of 20 against the chosen model.
 
