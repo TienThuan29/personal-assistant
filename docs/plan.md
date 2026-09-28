@@ -892,7 +892,9 @@ export const date = z
   .refine((s) => toLocalDate(parseLocalDate(s)) === s, 'Ngày không tồn tại'); // rejects e.g. 2026-02-30
 export const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Định dạng HH:MM');
 export const instant = z
-  .union([date, z.iso.datetime({ local: true, offset: true })])
+  .union([date, z.iso.datetime({ local: true, offset: true })], {
+    error: 'Cần ngày YYYY-MM-DD hoặc thời điểm ISO 8601, vd 2026-09-29T09:00',
+  })
   .describe('Ngày YYYY-MM-DD hoặc thời điểm ISO 8601 theo giờ máy, vd 2026-09-29T09:00');
 export const ids = z.array(z.number().int().positive()).min(1);
 export const attachmentIds = z
@@ -945,6 +947,7 @@ export function requireRows<T>(db: Db, table: string, idList: number[]): T[] {
 /** UPDATE by id. Column names come from a zod-parsed patch, so unknown keys were already stripped; undefined values are skipped. */
 export function updateRows(db: Db, table: string, idList: number[], patch: Record<string, unknown>, extra: Params = {}): void {
   const values = { ...(Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) as Params), ...extra };
+  if (!Object.keys(values).length) throw new Error('patch không được rỗng');
   const set = Object.keys(values).map((k) => `${k} = :${k}`).join(', ');
   const stmt = db.prepare(`UPDATE ${table} SET ${set} WHERE id = :id`);
   for (const id of idList) stmt.run({ ...values, id });
@@ -1037,6 +1040,7 @@ describe('instant schema', () => {
       expect(instant.safeParse(s).success).toBe(true);
     }
     for (const s of ['9', 'abc 2026', '2026-02-30T09:00']) expect(instant.safeParse(s).success).toBe(false);
+    expect(z.prettifyError(instant.safeParse('9').error!)).toContain('Cần ngày YYYY-MM-DD hoặc thời điểm ISO 8601');
   });
 
   it('exports as JSON Schema', () => {
@@ -1247,6 +1251,7 @@ export function callTool<T = unknown>(ctx: ToolCtx, name: string, args: object):
 ```ts
 import { newAttachmentId, saveAttachment } from '../src/main/attachments';
 import { findTool, parseArgs } from '../src/main/tools';
+import { updateRows } from '../src/main/tools/common';
 import type { TaskRow } from '../src/shared/types';
 import { callTool, testCtx } from './helpers';
 
@@ -1294,6 +1299,12 @@ describe('task tools', () => {
     expect(() => parseArgs(findTool('update_tasks')!, { ids: [1], patch: {} })).toThrow(/rỗng/);
   });
 
+  it('updateRows refuses a patch with nothing to set', () => {
+    const ctx = testCtx();
+    const t = callTool<TaskRow>(ctx, 'create_task', { title: 'A' });
+    expect(() => updateRows(ctx.db, 'tasks', [t.id], { title: undefined })).toThrow('patch không được rỗng');
+  });
+
   it('preview shows the current rows', () => {
     const ctx = testCtx();
     const t = callTool<TaskRow>(ctx, 'create_task', { title: 'A' });
@@ -1324,7 +1335,7 @@ Expected: FAIL, `no tool create_task`.
 import { z } from 'zod/v4';
 import { nextOccurrence, RECURRENCE_RE, toLocalDate } from '../../shared/dates';
 import type { TaskRow } from '../../shared/types';
-import type { Db } from '../db';
+import type { Db, Params } from '../db';
 import {
   attachmentIds,
   attachmentsCol,
@@ -1442,7 +1453,7 @@ export const taskTools = [
     apply: (a, { db, now }) => {
       const before = requireRows<TaskRow>(db, 'tasks', a.ids);
       const completing = a.patch.status === 'done';
-      const extra = a.patch.status === undefined ? {} : { completed_at: completing ? now().toISOString() : null };
+      const extra: Params = a.patch.status === undefined ? {} : { completed_at: completing ? now().toISOString() : null };
       updateRows(db, 'tasks', a.ids, a.patch, extra);
       const spawned = completing ? before.filter((t) => t.status !== 'done' && t.recurrence).map((t) => spawnNext(db, t, now())) : [];
       return { updated: getRows<TaskRow>(db, 'tasks', a.ids), spawned };

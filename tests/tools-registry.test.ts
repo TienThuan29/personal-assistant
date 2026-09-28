@@ -32,6 +32,7 @@ describe('instant schema', () => {
       expect(instant.safeParse(s).success).toBe(true);
     }
     for (const s of ['9', 'abc 2026', '2026-02-30T09:00']) expect(instant.safeParse(s).success).toBe(false);
+    expect(z.prettifyError(instant.safeParse('9').error!)).toContain('Cần ngày YYYY-MM-DD hoặc thời điểm ISO 8601');
   });
 
   it('exports as JSON Schema', () => {

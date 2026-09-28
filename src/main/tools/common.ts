@@ -28,7 +28,9 @@ export const date = z
   .refine((s) => toLocalDate(parseLocalDate(s)) === s, 'Ngày không tồn tại'); // rejects e.g. 2026-02-30
 export const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Định dạng HH:MM');
 export const instant = z
-  .union([date, z.iso.datetime({ local: true, offset: true })])
+  .union([date, z.iso.datetime({ local: true, offset: true })], {
+    error: 'Cần ngày YYYY-MM-DD hoặc thời điểm ISO 8601, vd 2026-09-29T09:00',
+  })
   .describe('Ngày YYYY-MM-DD hoặc thời điểm ISO 8601 theo giờ máy, vd 2026-09-29T09:00');
 export const ids = z.array(z.number().int().positive()).min(1);
 export const attachmentIds = z
@@ -81,6 +83,7 @@ export function requireRows<T>(db: Db, table: string, idList: number[]): T[] {
 /** UPDATE by id. Column names come from a zod-parsed patch, so unknown keys were already stripped; undefined values are skipped. */
 export function updateRows(db: Db, table: string, idList: number[], patch: Record<string, unknown>, extra: Params = {}): void {
   const values = { ...(Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) as Params), ...extra };
+  if (!Object.keys(values).length) throw new Error('patch không được rỗng');
   const set = Object.keys(values).map((k) => `${k} = :${k}`).join(', ');
   const stmt = db.prepare(`UPDATE ${table} SET ${set} WHERE id = :id`);
   for (const id of idList) stmt.run({ ...values, id });
