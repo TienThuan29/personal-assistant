@@ -226,5 +226,12 @@ export const en: Resources = {
     dbTooNew: 'The database was created by a newer version of the app',
     startupFailed: 'The Assistant could not start',
   },
-  system: {},
+  system: {
+    tooltip: 'Personal Assistant',
+    open: 'Open Assistant',
+    openAtLogin: 'Start with Windows',
+    quit: 'Quit',
+    reminder: 'Reminder',
+    reminders: 'You have {{count}} reminders',
+  },
 };

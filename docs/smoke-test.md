@@ -39,5 +39,10 @@ The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-
 - [ ] "Khởi động cùng Windows" (Settings or tray menu) on → sign out/in → app runs hidden in the tray. The Settings switch applies at once (no "Lưu"), even with no LLM configured, and "Lưu" later does not undo a tray change.
 - [ ] Dark mode follows Windows.
 
+**Language and display** (Settings → Hiển thị / Display)
+- [ ] Language → English: the sider, the current page, Arco widgets (date pickers, pagination, empty states) and the window title switch at once, with no reload. Tray tooltip and right-click menu ("Open Assistant" / "Quit") are English; the next reminder toast is "Reminder" (grouped: "You have N reminders"). A validation error (e.g. a past reminder via chat) is English.
+- [ ] Money style Vietnamese ↔ International changes every amount (Today, Expenses, confirm cards) at once. Default currency: "USD" is used by a new expense without a currency; typing "US" + Enter does nothing.
+- [ ] Restart: the chosen language and money style persist. Switch back to Tiếng Việt → everything is Vietnamese again.
+
 Toasts need the Start-menu shortcut carrying the AppUserModelID `com.personal-assistant.app`, which the installer
 creates. `release/win-unpacked/Personal Assistant.exe` run directly may show no toasts.

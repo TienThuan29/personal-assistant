@@ -109,3 +109,15 @@ The existing code is the reference. These tasks give precise specs rather than f
 1. Tray menu labels, tooltip and reminder toast title/body come from the main instance.
 2. Update `docs/smoke-test.md` (a language toggle check) and the deviations/Known gaps in `docs/plan.md` if needed.
 3. Final verification: typecheck, tests, build, pack.
+
+**As built (I3 follow-ups, before I4):**
+- `settings:get` reads `ui` first and catches a `readSecrets` failure (logged; `hasKey` is false), so the renderer's language never disagrees with main.
+- `main.tsx` wraps the initial `api.settings.get()` in try/catch and renders with `DEFAULT_UI` on failure.
+- An image-only first message's auto title is `common:image` from the main instance, written at that moment (stored text, not re-translated later).
+- en wording: `chat.state.confirmed` is "Applied"; `emptyHint`/`emptyHintSlash` are two sentences in both locales. `pages.category` is now `pages.categoryColumn`.
+- The currency Select ignores a created value unless it matches `/^[A-Za-z]{3}$/`.
+
+**As built (I4):**
+- New `system` keys: `tooltip`, `open`, `openAtLogin`, `quit`, `reminder`, `reminders` (`{{count}}`). The tray menu is rebuilt on each right-click, so it follows the language; the tooltip updates on the main instance's `languageChanged`. A toast uses the language at the time it fires.
+- `smoke-test.md` has a "Language and display" section; `plan.md` Known gaps notes what stays Vietnamese (LLM-facing text) or untranslated (stored data, zod built-ins).
+- Live check: a dev run on a scratch `--user-data-dir` copy called `window.api.settings.setUi({language:'en'})` from a temporary screenshot-hook script, then `'vi'`. The sider, pages, window title and the Arco month picker (Jan…Dec / Thg1…Thg12) switched without a reload; main's `system:` strings followed. `pack` was not run.

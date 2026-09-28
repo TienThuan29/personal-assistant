@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import type { ReminderRow } from '../shared/types';
 import { attachmentFile, cleanupOrphans } from './attachments';
 import { backupDb, openDb } from './db';
-import { setLanguage } from './i18n';
+import { i18n, setLanguage } from './i18n';
 import { registerIpc } from './ipc';
 import { createScheduler } from './reminders';
 import { type Cipher, getUi } from './settings';
@@ -94,8 +94,8 @@ function createWindow(): BrowserWindow {
 function notify(rows: ReminderRow[]): void {
   const n = new Notification(
     rows.length === 1
-      ? { title: 'Nhắc nhở', body: rows[0].message }
-      : { title: `Bạn có ${rows.length} nhắc nhở`, body: rows.map((r) => `• ${r.message}`).join('\n') }
+      ? { title: i18n.t('system:reminder'), body: rows[0].message }
+      : { title: i18n.t('system:reminders', { count: rows.length }), body: rows.map((r) => `• ${r.message}`).join('\n') }
   );
   notifications.add(n); // no 'close' cleanup: Windows fires it when the toast moves to Action Center, where it can still be clicked
   if (notifications.size > 50) notifications.delete(notifications.values().next().value!);
@@ -112,14 +112,15 @@ async function createTray(): Promise<Tray> {
   const t = new Tray(await app.getFileIcon(process.execPath, { size: 'small' }));
   const menu = () =>
     Menu.buildFromTemplate([
-      { label: 'Mở Trợ lý', click: showWindow },
+      { label: i18n.t('system:open'), click: showWindow },
       ...(app.isPackaged
-        ? [{ label: 'Khởi động cùng Windows', type: 'checkbox' as const, checked: loginItem.get(), click: () => loginItem.set(!loginItem.get()) }]
+        ? [{ label: i18n.t('system:openAtLogin'), type: 'checkbox' as const, checked: loginItem.get(), click: () => loginItem.set(!loginItem.get()) }]
         : []),
       { type: 'separator' },
-      { label: 'Thoát', click: () => app.quit() },
+      { label: i18n.t('system:quit'), click: () => app.quit() },
     ]);
-  t.setToolTip('Trợ lý cá nhân');
+  t.setToolTip(i18n.t('system:tooltip'));
+  i18n.on('languageChanged', () => t.setToolTip(i18n.t('system:tooltip')));
   t.on('click', showWindow);
   t.on('right-click', () => t.popUpContextMenu(menu())); // rebuilt each time so the checkbox is current
   return t;

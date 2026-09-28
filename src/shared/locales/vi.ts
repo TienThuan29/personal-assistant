@@ -238,7 +238,14 @@ export const vi = {
     dbTooNew: 'Cơ sở dữ liệu được tạo bởi phiên bản mới hơn của ứng dụng',
     startupFailed: 'Không khởi động được Trợ lý',
   },
-  system: {},
+  system: {
+    tooltip: 'Trợ lý cá nhân',
+    open: 'Mở Trợ lý',
+    openAtLogin: 'Khởi động cùng Windows',
+    quit: 'Thoát',
+    reminder: 'Nhắc nhở',
+    reminders: 'Bạn có {{count}} nhắc nhở',
+  },
 } as const;
 
 type Strings<T> = { [K in keyof T]: T[K] extends string ? string : Strings<T[K]> };

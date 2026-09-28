@@ -6381,3 +6381,4 @@ Done after Task 26, one commit each. The listings above are not all updated; the
 - Keyboard access: `@aionui/ui`'s `SiderItem` is a `<div>` with `onClick` (no focus, no Enter/Space), and its "more" menu only shows on hover.
 - `WindowControls` has fixed English `aria-label`s (Minimize, Maximize/Restore, Close).
 - Fix both upstream in the library (`../aionui-ui`), then repack the tarball; no workaround in this app.
+- Bilingual UI (see [i18n-design.md](i18n-design.md)): the system prompt, tool descriptions and tool results for the LLM stay Vietnamese (the bot replies in the language the user types). Stored data is not translated: an image-only chat's auto title is written in the language active at that moment, and zod's built-in messages (e.g. "Invalid input") stay English.
