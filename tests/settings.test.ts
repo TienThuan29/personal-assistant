@@ -63,6 +63,24 @@ describe('settings', () => {
     expect(getUi(db)).toEqual({ language: 'en', moneyStyle: 'vi', defaultCurrency: 'USD' });
   });
 
+  it('ignores a __proto__ key in the UI patch', () => {
+    const { db } = testDb();
+    const saved = saveUi(db, JSON.parse('{"__proto__": {"polluted": 1}, "language": "en"}'));
+    expect(saved).toEqual({ ...DEFAULT_UI, language: 'en' });
+    expect(Object.keys(saved)).not.toContain('__proto__');
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(getSetting<object>(db, 'ui', {})).not.toHaveProperty('polluted');
+    expect(JSON.stringify(getSetting(db, 'ui', {}))).not.toContain('__proto__');
+  });
+
+  it('reads an invalid stored row as the defaults', () => {
+    const { db } = testDb();
+    setSetting(db, 'ui', { language: 'fr', defaultCurrency: 'USD' });
+    expect(getUi(db)).toEqual(DEFAULT_UI);
+    setSetting(db, 'ui', 'en');
+    expect(getUi(db)).toEqual(DEFAULT_UI);
+  });
+
   it('rejects invalid UI settings and keeps the saved ones', () => {
     const { db } = testDb();
     expect(() => saveUi(db, { defaultCurrency: 'dollars' })).toThrow('Mã tiền tệ ISO 4217');

@@ -33,8 +33,12 @@ export const uiSettingsSchema = z.object({
     .regex(/^[A-Z]{3}$/, 'errors:currencyFormat'),
 });
 
-/** Stored values over the defaults (only saveUi writes them, so they are valid). */
-export const getUi = (db: Db): UiSettings => ({ ...DEFAULT_UI, ...getSetting<Partial<UiSettings>>(db, 'ui', {}) });
+/** Stored values over the defaults; a row that fails validation (hand-edited, corrupt) reads as the defaults. */
+export function getUi(db: Db): UiSettings {
+  const stored = getSetting<unknown>(db, 'ui', {});
+  const parsed = uiSettingsSchema.safeParse({ ...DEFAULT_UI, ...(typeof stored === 'object' ? stored : {}) });
+  return parsed.success ? parsed.data : DEFAULT_UI;
+}
 
 /** Merges a patch from the renderer over the current settings, validates and saves. Throws the translated zod messages. */
 export function saveUi(db: Db, patch: unknown): UiSettings {

@@ -56,5 +56,7 @@ describe('money', () => {
     expect(formatMoney(55_000, 'VND', 'intl')).toBe('₫55,000');
     expect(formatMoney(1250, 'USD', 'intl')).toBe('$12.50');
   });
-  it('falls back for unknown currencies', () => expect(formatMoney(5, 'XXXX')).toBe('5 XXXX'));
+  it('falls back for malformed codes', () => expect(formatMoney(5, 'XXXX')).toBe('5 XXXX'));
+  it('formats a well-formed but unknown code with 2 decimals', () =>
+    expect(formatMoney(5, 'XYZ', 'intl')).toBe('XYZ 0.05'));
 });
