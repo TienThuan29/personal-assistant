@@ -2,7 +2,7 @@ import { newAttachmentId, saveAttachment } from '../src/main/attachments';
 import { findTool, parseArgs } from '../src/main/tools';
 import { updateRows } from '../src/main/tools/common';
 import type { TaskRow } from '../src/shared/types';
-import { callTool, testCtx } from './helpers';
+import { callTool, NOW, testCtx } from './helpers';
 
 describe('task tools', () => {
   it('creates a task with defaults', () => {
@@ -40,6 +40,70 @@ describe('task tools', () => {
     const [done] = callTool<TaskRow[]>(ctx, 'list_tasks', { status: 'done' });
     expect(done).toMatchObject({ id: t.id, recurrence: null });
     expect(done.completed_at).not.toBeNull();
+  });
+
+  it('completing twice spawns only once', () => {
+    const ctx = testCtx();
+    const t = callTool<TaskRow>(ctx, 'create_task', { title: 'A', due_date: '2026-09-28', recurrence: 'daily' });
+    callTool(ctx, 'update_tasks', { ids: [t.id], patch: { status: 'done' } });
+    const r = callTool<{ spawned: TaskRow[] }>(ctx, 'update_tasks', { ids: [t.id], patch: { status: 'done' } });
+    expect(r.spawned).toEqual([]);
+    expect(callTool<TaskRow[]>(ctx, 'list_tasks', { status: 'all' })).toHaveLength(2);
+  });
+
+  it('bulk-completing spawns only for recurring tasks', () => {
+    const ctx = testCtx();
+    const a = callTool<TaskRow>(ctx, 'create_task', { title: 'A', due_date: '2026-09-28', recurrence: 'daily' });
+    const b = callTool<TaskRow>(ctx, 'create_task', { title: 'B', due_date: '2026-09-28' });
+    const r = callTool<{ spawned: TaskRow[] }>(ctx, 'update_tasks', { ids: [a.id, b.id], patch: { status: 'done' } });
+    expect(r.spawned.map((t) => [t.title, t.due_date])).toEqual([['A', '2026-09-29']]);
+  });
+
+  it('spawns from today when the task has no due date or is overdue', () => {
+    const ctx = testCtx();
+    const a = callTool<TaskRow>(ctx, 'create_task', { title: 'A', recurrence: 'daily' });
+    const b = callTool<TaskRow>(ctx, 'create_task', { title: 'B', due_date: '2026-09-01', recurrence: 'daily' });
+    const r = callTool<{ spawned: TaskRow[] }>(ctx, 'update_tasks', { ids: [a.id, b.id], patch: { status: 'done' } });
+    expect(r.spawned.map((t) => t.due_date)).toEqual(['2026-09-29', '2026-09-29']);
+  });
+
+  it('cancelling a recurring task skips to the next occurrence', () => {
+    const ctx = testCtx();
+    const t = callTool<TaskRow>(ctx, 'create_task', { title: 'A', due_date: '2026-09-28', recurrence: 'weekly:1,3' });
+    const r = callTool<{ updated: TaskRow[]; spawned: TaskRow[] }>(ctx, 'update_tasks', { ids: [t.id], patch: { status: 'cancelled' } });
+    expect(r.spawned[0]).toMatchObject({ due_date: '2026-09-30', recurrence: 'weekly:1,3', status: 'todo' });
+    expect(r.updated[0]).toMatchObject({ status: 'cancelled', recurrence: null, completed_at: null });
+  });
+
+  it('spawns from the updated row', () => {
+    const ctx = testCtx();
+    const t = callTool<TaskRow>(ctx, 'create_task', { title: 'A', due_date: '2026-09-28', recurrence: 'weekly:1,3' });
+    const r = callTool<{ spawned: TaskRow[] }>(ctx, 'update_tasks', {
+      ids: [t.id],
+      patch: { status: 'done', title: 'B', recurrence: 'daily' },
+    });
+    expect(r.spawned[0]).toMatchObject({ title: 'B', due_date: '2026-09-29', recurrence: 'daily' });
+  });
+
+  it('keeps completed_at on re-complete and clears it on un-complete', () => {
+    let now = NOW;
+    const ctx = testCtx(() => now);
+    const t = callTool<TaskRow>(ctx, 'create_task', { title: 'A' });
+    const done = (status: string) => callTool<{ updated: TaskRow[] }>(ctx, 'update_tasks', { ids: [t.id], patch: { status } }).updated[0];
+    expect(done('done').completed_at).toBe(NOW.toISOString());
+    now = new Date(2026, 8, 28, 10, 0);
+    expect(done('done').completed_at).toBe(NOW.toISOString());
+    expect(done('todo').completed_at).toBeNull();
+    expect(done('done').completed_at).toBe(now.toISOString());
+  });
+
+  it('searches ignoring accents and case, with literal wildcards', () => {
+    const ctx = testCtx();
+    for (const title of ['Đi chợ', 'Họp', '50% off']) callTool(ctx, 'create_task', { title });
+    const find = (query: string) => callTool<TaskRow[]>(ctx, 'list_tasks', { query }).map((r) => r.title);
+    expect(find('di cho')).toEqual(['Đi chợ']);
+    expect(find('ĐI')).toEqual(['Đi chợ']);
+    expect(find('%')).toEqual(['50% off']);
   });
 
   it('refuses unknown ids and empty patches', () => {

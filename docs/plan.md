@@ -793,6 +793,10 @@ export type Params = Record<string, SQLInputValue>;
 export function openDb(path: string): Db {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+  // fold(s): lowercase without Vietnamese accents, for accent-insensitive LIKE search.
+  db.function('fold', { deterministic: true }, (s) =>
+    typeof s === 'string' ? s.normalize('NFD').replace(/\p{M}/gu, '').replace(/[đĐ]/g, 'd').toLowerCase() : s
+  );
   migrate(db);
   return db;
 }
@@ -896,7 +900,7 @@ export const instant = z
     error: 'Cần ngày YYYY-MM-DD hoặc thời điểm ISO 8601, vd 2026-09-29T09:00',
   })
   .describe('Ngày YYYY-MM-DD hoặc thời điểm ISO 8601 theo giờ máy, vd 2026-09-29T09:00');
-export const ids = z.array(z.number().int().positive()).min(1);
+export const ids = z.array(z.number().int().positive()).min(1).describe('ID lấy từ kết quả tool');
 export const attachmentIds = z
   .array(z.string())
   .optional()
@@ -1253,7 +1257,7 @@ import { newAttachmentId, saveAttachment } from '../src/main/attachments';
 import { findTool, parseArgs } from '../src/main/tools';
 import { updateRows } from '../src/main/tools/common';
 import type { TaskRow } from '../src/shared/types';
-import { callTool, testCtx } from './helpers';
+import { callTool, NOW, testCtx } from './helpers';
 
 describe('task tools', () => {
   it('creates a task with defaults', () => {
@@ -1291,6 +1295,70 @@ describe('task tools', () => {
     const [done] = callTool<TaskRow[]>(ctx, 'list_tasks', { status: 'done' });
     expect(done).toMatchObject({ id: t.id, recurrence: null });
     expect(done.completed_at).not.toBeNull();
+  });
+
+  it('completing twice spawns only once', () => {
+    const ctx = testCtx();
+    const t = callTool<TaskRow>(ctx, 'create_task', { title: 'A', due_date: '2026-09-28', recurrence: 'daily' });
+    callTool(ctx, 'update_tasks', { ids: [t.id], patch: { status: 'done' } });
+    const r = callTool<{ spawned: TaskRow[] }>(ctx, 'update_tasks', { ids: [t.id], patch: { status: 'done' } });
+    expect(r.spawned).toEqual([]);
+    expect(callTool<TaskRow[]>(ctx, 'list_tasks', { status: 'all' })).toHaveLength(2);
+  });
+
+  it('bulk-completing spawns only for recurring tasks', () => {
+    const ctx = testCtx();
+    const a = callTool<TaskRow>(ctx, 'create_task', { title: 'A', due_date: '2026-09-28', recurrence: 'daily' });
+    const b = callTool<TaskRow>(ctx, 'create_task', { title: 'B', due_date: '2026-09-28' });
+    const r = callTool<{ spawned: TaskRow[] }>(ctx, 'update_tasks', { ids: [a.id, b.id], patch: { status: 'done' } });
+    expect(r.spawned.map((t) => [t.title, t.due_date])).toEqual([['A', '2026-09-29']]);
+  });
+
+  it('spawns from today when the task has no due date or is overdue', () => {
+    const ctx = testCtx();
+    const a = callTool<TaskRow>(ctx, 'create_task', { title: 'A', recurrence: 'daily' });
+    const b = callTool<TaskRow>(ctx, 'create_task', { title: 'B', due_date: '2026-09-01', recurrence: 'daily' });
+    const r = callTool<{ spawned: TaskRow[] }>(ctx, 'update_tasks', { ids: [a.id, b.id], patch: { status: 'done' } });
+    expect(r.spawned.map((t) => t.due_date)).toEqual(['2026-09-29', '2026-09-29']);
+  });
+
+  it('cancelling a recurring task skips to the next occurrence', () => {
+    const ctx = testCtx();
+    const t = callTool<TaskRow>(ctx, 'create_task', { title: 'A', due_date: '2026-09-28', recurrence: 'weekly:1,3' });
+    const r = callTool<{ updated: TaskRow[]; spawned: TaskRow[] }>(ctx, 'update_tasks', { ids: [t.id], patch: { status: 'cancelled' } });
+    expect(r.spawned[0]).toMatchObject({ due_date: '2026-09-30', recurrence: 'weekly:1,3', status: 'todo' });
+    expect(r.updated[0]).toMatchObject({ status: 'cancelled', recurrence: null, completed_at: null });
+  });
+
+  it('spawns from the updated row', () => {
+    const ctx = testCtx();
+    const t = callTool<TaskRow>(ctx, 'create_task', { title: 'A', due_date: '2026-09-28', recurrence: 'weekly:1,3' });
+    const r = callTool<{ spawned: TaskRow[] }>(ctx, 'update_tasks', {
+      ids: [t.id],
+      patch: { status: 'done', title: 'B', recurrence: 'daily' },
+    });
+    expect(r.spawned[0]).toMatchObject({ title: 'B', due_date: '2026-09-29', recurrence: 'daily' });
+  });
+
+  it('keeps completed_at on re-complete and clears it on un-complete', () => {
+    let now = NOW;
+    const ctx = testCtx(() => now);
+    const t = callTool<TaskRow>(ctx, 'create_task', { title: 'A' });
+    const done = (status: string) => callTool<{ updated: TaskRow[] }>(ctx, 'update_tasks', { ids: [t.id], patch: { status } }).updated[0];
+    expect(done('done').completed_at).toBe(NOW.toISOString());
+    now = new Date(2026, 8, 28, 10, 0);
+    expect(done('done').completed_at).toBe(NOW.toISOString());
+    expect(done('todo').completed_at).toBeNull();
+    expect(done('done').completed_at).toBe(now.toISOString());
+  });
+
+  it('searches ignoring accents and case, with literal wildcards', () => {
+    const ctx = testCtx();
+    for (const title of ['Đi chợ', 'Họp', '50% off']) callTool(ctx, 'create_task', { title });
+    const find = (query: string) => callTool<TaskRow[]>(ctx, 'list_tasks', { query }).map((r) => r.title);
+    expect(find('di cho')).toEqual(['Đi chợ']);
+    expect(find('ĐI')).toEqual(['Đi chợ']);
+    expect(find('%')).toEqual(['50% off']);
   });
 
   it('refuses unknown ids and empty patches', () => {
@@ -1335,7 +1403,7 @@ Expected: FAIL, `no tool create_task`.
 import { z } from 'zod/v4';
 import { nextOccurrence, RECURRENCE_RE, toLocalDate } from '../../shared/dates';
 import type { TaskRow } from '../../shared/types';
-import type { Db, Params } from '../db';
+import type { Db } from '../db';
 import {
   attachmentIds,
   attachmentsCol,
@@ -1358,9 +1426,10 @@ const category = z.string().min(1).describe("'work' (công việc) | 'personal' 
 
 const getTask = (db: Db, id: number): TaskRow => getRows<TaskRow>(db, 'tasks', [id])[0];
 
-/** Next occurrence of a recurring task; the rule moves to the new row so re-completing never spawns twice. */
+/** Next occurrence (after the due date or today, whichever is later); the rule moves to the new row so re-completing never spawns twice. */
 function spawnNext(db: Db, t: TaskRow, now: Date): TaskRow {
-  const due = nextOccurrence(t.recurrence!, t.due_date ?? toLocalDate(now));
+  const today = toLocalDate(now);
+  const due = nextOccurrence(t.recurrence!, t.due_date && t.due_date > today ? t.due_date : today);
   const r = db
     .prepare('INSERT INTO tasks (title, notes, category, priority, due_date, due_time, recurrence) VALUES (?, ?, ?, ?, ?, ?, ?)')
     .run(t.title, t.notes, t.category, t.priority, due, t.due_time, t.recurrence);
@@ -1371,13 +1440,14 @@ function spawnNext(db: Db, t: TaskRow, now: Date): TaskRow {
 export const taskTools = [
   readTool({
     name: 'list_tasks',
-    description: 'Liệt kê task theo khoảng ngày đến hạn (due_date), trạng thái, phân loại hoặc từ khóa.',
+    description:
+      'Liệt kê task (tối đa 200) theo khoảng ngày đến hạn due_date (from/to tính cả hai đầu), trạng thái, phân loại hoặc từ khóa.',
     schema: z.object({
       from: date.optional(),
       to: date.optional(),
       status: z.enum(['todo', 'done', 'cancelled', 'all']).default('todo'),
-      category: z.string().optional(),
-      query: z.string().optional().describe('Tìm trong tiêu đề và ghi chú'),
+      category: category.optional(),
+      query: z.string().optional().describe('Tìm trong tiêu đề và ghi chú, không phân biệt dấu và hoa thường'),
     }),
     run: (a, { db }) => {
       const w = where([
@@ -1385,7 +1455,11 @@ export const taskTools = [
         ['t.due_date >= :from', 'from', a.from],
         ['t.due_date <= :to', 'to', a.to],
         ['t.category = :category', 'category', a.category],
-        ['(t.title LIKE :q OR t.notes LIKE :q)', 'q', a.query ? `%${a.query}%` : undefined],
+        [
+          "(fold(t.title) LIKE fold(:q) ESCAPE '\\' OR fold(t.notes) LIKE fold(:q) ESCAPE '\\')",
+          'q',
+          a.query ? `%${a.query.replace(/[\\%_]/g, '\\$&')}%` : undefined,
+        ],
       ]);
       return db
         .prepare(
@@ -1433,7 +1507,9 @@ export const taskTools = [
   writeTool({
     name: 'update_tasks',
     description:
-      'Sửa một hoặc nhiều task: đánh dấu xong (status=done), dời ngày, đổi phân loại, ưu tiên... Task lặp lại khi xong sẽ tự sinh lần kế tiếp.',
+      'Sửa một hoặc nhiều task: đánh dấu xong (status=done), dời ngày, đổi phân loại, ưu tiên... ' +
+      'Task lặp lại khi xong hoặc hủy (status=cancelled, tức bỏ qua lần này) sẽ tự sinh lần kế tiếp; ' +
+      'muốn dừng chuỗi lặp thì đặt recurrence=null. Đặt lại status=todo không xóa lần kế tiếp đã sinh.',
     schema: z.object({
       ids,
       patch: z
@@ -1452,10 +1528,17 @@ export const taskTools = [
     preview: (a, { db }) => ({ before: requireRows<TaskRow>(db, 'tasks', a.ids) }),
     apply: (a, { db, now }) => {
       const before = requireRows<TaskRow>(db, 'tasks', a.ids);
-      const completing = a.patch.status === 'done';
-      const extra: Params = a.patch.status === undefined ? {} : { completed_at: completing ? now().toISOString() : null };
-      updateRows(db, 'tasks', a.ids, a.patch, extra);
-      const spawned = completing ? before.filter((t) => t.status !== 'done' && t.recurrence).map((t) => spawnNext(db, t, now())) : [];
+      const { status } = a.patch;
+      updateRows(db, 'tasks', a.ids, a.patch, status && status !== 'done' ? { completed_at: null } : {});
+      if (status === 'done') {
+        const stmt = db.prepare('UPDATE tasks SET completed_at = COALESCE(completed_at, ?) WHERE id = ?');
+        for (const id of a.ids) stmt.run(now().toISOString(), id);
+      }
+      const updated = getRows<TaskRow>(db, 'tasks', a.ids);
+      // Closing an open task spawns the next occurrence from the row as updated (new title, rule...).
+      const wasOpen = new Set(before.filter((t) => t.status === 'todo').map((t) => t.id));
+      const closing = status === 'done' || status === 'cancelled';
+      const spawned = closing ? updated.filter((t) => wasOpen.has(t.id) && t.recurrence).map((t) => spawnNext(db, t, now())) : [];
       return { updated: getRows<TaskRow>(db, 'tasks', a.ids), spawned };
     },
   }),

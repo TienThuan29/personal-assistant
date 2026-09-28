@@ -32,7 +32,7 @@ export const instant = z
     error: 'Cần ngày YYYY-MM-DD hoặc thời điểm ISO 8601, vd 2026-09-29T09:00',
   })
   .describe('Ngày YYYY-MM-DD hoặc thời điểm ISO 8601 theo giờ máy, vd 2026-09-29T09:00');
-export const ids = z.array(z.number().int().positive()).min(1);
+export const ids = z.array(z.number().int().positive()).min(1).describe('ID lấy từ kết quả tool');
 export const attachmentIds = z
   .array(z.string())
   .optional()
