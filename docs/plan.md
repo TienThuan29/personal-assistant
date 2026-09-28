@@ -2579,6 +2579,7 @@ describe('settings', () => {
     expect(ok('http://localhost:4000/v1').data?.endpoint).toBe('http://localhost:4000/v1');
     expect(ok('http://example.com').success).toBe(false);
     expect(ok('javascript:alert(1)').success).toBe(false);
+    for (const bad of ['', '   ', 'not a url', 'https://']) expect(ok(bad).success).toBe(false); // no throw either
     expect(ok('https://r.openai.azure.com', { model: '   ' }).success).toBe(false);
   });
 });
@@ -2601,7 +2602,7 @@ import type { Db } from './db';
 const endpoint = z
   .string()
   .trim()
-  .pipe(z.url())
+  .pipe(z.url({ abort: true })) // abort: otherwise the refine below still runs, and new URL() throws
   .refine((u) => {
     const { protocol, hostname } = new URL(u);
     return protocol === 'https:' || (protocol === 'http:' && ['localhost', '127.0.0.1'].includes(hostname));

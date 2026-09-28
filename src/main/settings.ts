@@ -7,7 +7,7 @@ import type { Db } from './db';
 const endpoint = z
   .string()
   .trim()
-  .pipe(z.url())
+  .pipe(z.url({ abort: true })) // abort: otherwise the refine below still runs, and new URL() throws
   .refine((u) => {
     const { protocol, hostname } = new URL(u);
     return protocol === 'https:' || (protocol === 'http:' && ['localhost', '127.0.0.1'].includes(hostname));

@@ -44,6 +44,7 @@ describe('settings', () => {
     expect(ok('http://localhost:4000/v1').data?.endpoint).toBe('http://localhost:4000/v1');
     expect(ok('http://example.com').success).toBe(false);
     expect(ok('javascript:alert(1)').success).toBe(false);
+    for (const bad of ['', '   ', 'not a url', 'https://']) expect(ok(bad).success).toBe(false); // no throw either
     expect(ok('https://r.openai.azure.com', { model: '   ' }).success).toBe(false);
   });
 });
