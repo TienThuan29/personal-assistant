@@ -8,6 +8,10 @@ const FENCE = '```tool_calls';
 /** The call a malformed block becomes; its arguments hold the raw block. The agent answers it with an error (G9). */
 export const BAD_BLOCK = 'invalid_tool_calls';
 
+/** The gateway serves everything under /v1: users enter just the host; a trailing /v1 is tolerated (never /v1/v1). */
+export const gatewayBaseURL = (endpoint: string): string =>
+  `${endpoint.trim().replace(/\/+$/, '').replace(/\/v1$/i, '')}/v1`;
+
 /** The tool catalog and calling protocol appended to the system prompt (G5). */
 export function toolProtocol(tools: ChatCompletionFunctionTool[]): string {
   return [

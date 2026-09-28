@@ -131,6 +131,9 @@ describe('createLlm', () => {
     const msg = await collect(createLlm(gateway, 'tok', { fetch: f }).stream({ messages: [] }), () => {});
     expect(msg.content).toBe('ok');
     expect(seen[0].url).toBe('https://gw.example/v1/chat/completions');
+    const host = stubFetch([sse('ok'), DONE]);
+    await collect(createLlm({ ...gateway, endpoint: 'https://gw.example' }, 'tok', { fetch: host.f }).stream({ messages: [] }), () => {});
+    expect(host.seen[0].url).toBe('https://gw.example/v1/chat/completions'); // host only: the app adds /v1
     expect(seen[0].headers.get('authorization')).toBe('Bearer tok');
   });
 

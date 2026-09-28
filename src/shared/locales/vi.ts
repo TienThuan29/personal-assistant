@@ -174,7 +174,7 @@ export const vi = {
     provider: 'Nhà cung cấp',
     providerDesc: 'Mỗi nhà cung cấp giữ cấu hình và key riêng',
     endpointAzure: 'vd https://<resource>.openai.azure.com/',
-    endpointGateway: 'Base URL, vd https://gateway.example.com/v1',
+    endpointGateway: 'Địa chỉ gateway, vd https://gateway.example.com (app tự thêm /v1)',
     modelDesc: 'Model phải hỗ trợ tool calling và đọc ảnh',
     modelPlaceholder: 'vd gpt-4o',
     modelDescGateway: 'Chọn từ danh sách gateway trả về (lưu endpoint và token rồi bấm tải lại), hoặc gõ tên model. Chỉ để trống nếu gateway tự chọn model',

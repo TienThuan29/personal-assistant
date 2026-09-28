@@ -168,7 +168,7 @@ export const en: Resources = {
     provider: 'Provider',
     providerDesc: 'Each provider keeps its own settings and key',
     endpointAzure: 'e.g. https://<resource>.openai.azure.com/',
-    endpointGateway: 'Base URL, e.g. https://gateway.example.com/v1',
+    endpointGateway: 'Gateway address, e.g. https://gateway.example.com (the app adds /v1)',
     modelDesc: 'The model must support tool calling and images',
     modelPlaceholder: 'e.g. gpt-4o',
     modelDescGateway: 'Pick from the list the gateway returns (save the endpoint and token, then reload), or type a name. Leave empty only if the gateway picks one',

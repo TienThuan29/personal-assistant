@@ -2,7 +2,7 @@ import OpenAI, { APIConnectionError, APIError, APIUserAbortError, AzureOpenAI } 
 import type { ChatCompletionChunk, ChatCompletionFunctionTool, ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import type { AssistantMessage, LlmConfig, ToolCall } from '../shared/types';
 import { errMsg, te, UserError } from './errors';
-import { fromGateway, toGatewayMessages } from './gateway';
+import { fromGateway, gatewayBaseURL, toGatewayMessages } from './gateway';
 
 export type StreamParams = { messages: ChatCompletionMessageParam[]; tools?: ChatCompletionFunctionTool[]; signal?: AbortSignal };
 /** `textOnly`: the provider takes no images (the gateway, design G8). */
@@ -19,7 +19,7 @@ export function createLlm(cfg: LlmConfig, apiKey: string, opts: { fetch?: typeof
   const client =
     cfg.provider === 'azure'
       ? new AzureOpenAI({ ...common, endpoint: cfg.endpoint, apiVersion: cfg.apiVersion, deployment: cfg.model })
-      : new OpenAI({ ...common, baseURL: cfg.endpoint });
+      : new OpenAI({ ...common, baseURL: gatewayBaseURL(cfg.endpoint) });
   const gateway = cfg.provider === 'gateway';
   return {
     textOnly: gateway,
@@ -35,10 +35,10 @@ export function createLlm(cfg: LlmConfig, apiKey: string, opts: { fetch?: typeof
   };
 }
 
-/** A gateway's model ids: GET <endpoint>/models with the key as a bearer token (design G2). */
+/** A gateway's model ids: GET <host>/v1/models with the key as a bearer token (design G2). */
 export async function listModels(endpoint: string, apiKey: string, opts: { fetch?: typeof fetch } = {}): Promise<string[]> {
   if (!endpoint || !apiKey) throw new UserError('modelsNeedConfig');
-  const client = new OpenAI({ apiKey, baseURL: endpoint, maxRetries: 1, timeout: 20_000, fetch: opts.fetch });
+  const client = new OpenAI({ apiKey, baseURL: gatewayBaseURL(endpoint), maxRetries: 1, timeout: 20_000, fetch: opts.fetch });
   const ids: string[] = [];
   for await (const m of client.models.list()) if (typeof m?.id === 'string') ids.push(m.id);
   return ids.sort();

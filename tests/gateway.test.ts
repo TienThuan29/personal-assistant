@@ -1,7 +1,7 @@
 import type { ChatCompletionChunk, ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { buildLlmMessages, resolveAction, runTurn } from '../src/main/agent';
 import { newAttachmentId, saveAttachment } from '../src/main/attachments';
-import { BAD_BLOCK, fromGateway, parseToolCalls, toGatewayMessages, visibleText } from '../src/main/gateway';
+import { gatewayBaseURL, BAD_BLOCK, fromGateway, parseToolCalls, toGatewayMessages, visibleText } from '../src/main/gateway';
 import { collect, createLlm } from '../src/main/llm';
 import { addMessage, createConversation, getMessages, listActions } from '../src/main/store';
 import { toOpenAITools } from '../src/main/tools';
@@ -230,5 +230,12 @@ describe('agent loop over a gateway (prompt-based tools)', () => {
     saveAttachment(deps.db, deps.attachmentsDir, { id, bytes: new Uint8Array([1]), mime: 'image/jpeg', ownerType: 'message', ownerId: msg });
     expect(buildLlmMessages(deps, conv, true)[1]).toEqual({ role: 'user', content: `Hóa đơn\n[ảnh #${id}] (mô hình này không xem được ảnh, chỉ thấy nhãn)` });
     expect(Array.isArray(buildLlmMessages(deps, conv)[1].content)).toBe(true); // Foundry still gets the image
+  });
+});
+
+describe('gatewayBaseURL', () => {
+  it('adds /v1 to a bare host and never doubles it', () => {
+    for (const e of ['https://gw.example', 'https://gw.example/', 'https://gw.example/v1', 'https://gw.example/v1/', ' https://gw.example/V1 '])
+      expect(gatewayBaseURL(e)).toBe('https://gw.example/v1');
   });
 });
