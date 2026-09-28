@@ -2067,6 +2067,33 @@ describe('expense tools', () => {
     expect(() => parseArgs(tool, { amount: 0, category: 'x' })).toThrow();
   });
 
+  it('normalizes currency to uppercase ISO 4217 and totals each currency', () => {
+    const ctx = testCtx();
+    const tool = findTool('create_expense')!;
+    expect(() => parseArgs(tool, { amount: 1, category: 'x', currency: 'đồng' })).toThrow();
+    expect(() => parseArgs(tool, { amount: 1, category: 'x', currency: 'US1' })).toThrow();
+    callTool(ctx, 'create_expense', { amount: 1250, category: 'x', currency: 'usd' });
+    callTool(ctx, 'create_expense', { amount: 50, category: 'x', currency: ' USD ' });
+    callTool(ctx, 'create_expense', { amount: 10_000, category: 'x' });
+    const r = callTool<ExpenseList>(ctx, 'list_expenses', { from: '2026-09-28', to: '2026-09-28' });
+    expect(r.totals).toEqual(
+      expect.arrayContaining([
+        { currency: 'USD', total: 1300 },
+        { currency: 'VND', total: 10_000 },
+      ])
+    );
+    expect(r.totals).toHaveLength(2);
+  });
+
+  it('filters by category ignoring case', () => {
+    const ctx = testCtx();
+    callTool(ctx, 'create_expense', { amount: 45_000, category: 'Ăn uống' });
+    callTool(ctx, 'create_expense', { amount: 30_000, category: 'đi lại' });
+    const r = callTool<ExpenseList>(ctx, 'list_expenses', { from: '2026-09-28', to: '2026-09-28', category: 'ăn uống' });
+    expect(r.items.map((e) => e.amount)).toEqual([45_000]);
+    expect(r.totals).toEqual([{ currency: 'VND', total: 45_000 }]);
+  });
+
   it('updates and deletes', () => {
     const ctx = testCtx();
     const e = callTool<ExpenseRow>(ctx, 'create_expense', { amount: 10, category: 'x' });
@@ -2105,19 +2132,29 @@ import {
 } from './common';
 
 const amount = z.number().int().positive().describe('Số nguyên theo đơn vị nhỏ nhất: VND = đồng, USD = cent (12.50 USD → 1250)');
-const currency = z.string().length(3).describe('Mã ISO 4217, vd VND, USD');
+const currency = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z]{3}$/, 'Mã tiền tệ ISO 4217 gồm 3 chữ cái, vd VND, USD')
+  .describe('Mã ISO 4217, vd VND, USD');
 const category = z.string().min(1).describe('vd: ăn uống, đi lại, nhà cửa, mua sắm, giải trí, sức khỏe, khác (ưu tiên category đã có)');
 
 export const expenseTools = [
   readTool({
     name: 'list_expenses',
-    description: 'Liệt kê khoản chi trong khoảng ngày chi (spent_at), kèm tổng theo tiền tệ.',
-    schema: z.object({ from: date, to: date, category: z.string().optional() }),
+    description:
+      'Liệt kê khoản chi (tối đa 500, mới nhất trước) theo ngày chi spent_at từ from đến to (tính cả hai đầu), kèm tổng theo tiền tệ (tính trên mọi khoản khớp, không bị giới hạn 500). Số tiền theo đơn vị nhỏ nhất.',
+    schema: z.object({
+      from: date,
+      to: date,
+      category: z.string().optional().describe('Lọc đúng category, không phân biệt hoa thường và dấu'),
+    }),
     run: (a, { db }) => {
       const w = where([
         ['e.spent_at >= :from', 'from', a.from],
         ['e.spent_at <= :to', 'to', a.to],
-        ['e.category = :category', 'category', a.category],
+        ['fold(e.category) = fold(:category)', 'category', a.category],
       ]);
       return {
         items: db
@@ -2136,7 +2173,7 @@ export const expenseTools = [
       currency: currency.default('VND'),
       category,
       description: z.string().optional(),
-      spent_at: date.optional().describe('Mặc định hôm nay'),
+      spent_at: date.optional().describe('Ngày chi YYYY-MM-DD, mặc định hôm nay'),
       attachment_ids: attachmentIds,
     }),
     apply: (a, { db, now }) => {
