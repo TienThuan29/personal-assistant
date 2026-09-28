@@ -6289,36 +6289,55 @@ portable:
 ```markdown
 # Smoke test (run before each release)
 
-Setup: packaged exe (`bun run pack` → release/PersonalAssistant-portable.exe), real LLM configured.
+Setup: packaged exe (`bun run pack` → `release/PersonalAssistant-portable.exe`), real LLM configured.
+The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-assistant/`
+(`assistant.db`, `attachments/`, `backups/`, `secrets.bin`). Rename it first for a truly fresh start.
 
-- [ ] Fresh start: window opens, a new conversation exists, `%APPDATA%/personal-assistant/backups/` has today's file.
-- [ ] "Hôm nay tôi có việc gì?" answers from data (empty DB: says there is nothing).
+**Start and settings**
+- [ ] Fresh start: window "Trợ lý cá nhân" opens, `backups/` has `assistant-<today>.db`.
+- [ ] No LLM configured → sending a message says to open Cài đặt.
+- [ ] Settings: `http://…` endpoint → "Endpoint phải dùng https"; a non-URL → "Endpoint chưa đúng dạng URL". Saving a valid config works.
+- [ ] Settings: the key is never shown back ("Đã lưu (mã hóa bằng Windows)…"); `secrets.bin` has no readable key.
+
+**Chat**
+- [ ] "Hôm nay tôi có việc gì?" (or the "Tóm tắt hôm nay" quick command, `/`) answers from data (empty DB: says there is nothing).
 - [ ] Create a task via chat → confirm card → Task page shows it; "mai"/"thứ 6" resolved to the right date.
-- [ ] Three tasks in one message → "Xác nhận tất cả" creates all three.
+- [ ] Three tasks in one message → "Xác nhận tất cả (3)" creates all three.
 - [ ] Edit a field on a card before confirming → the saved record has the edited value.
-- [ ] Cancel a card → nothing saved, bot acknowledges.
-- [ ] Receipt photo → expense card with amount from the image; thumbnail visible under Chi tiêu.
+- [ ] "Hủy" a card → nothing saved, bot acknowledges and does not retry.
+- [ ] "Đánh dấu xong task …" → bot looks the task up first (list_tasks), then shows an update card.
+- [ ] Receipt photo (paste or drag in) → expense card with the amount from the image; thumbnail visible under Chi tiêu.
 - [ ] Two images in one message attached to two different records.
-- [ ] Reminder 2 minutes ahead → Windows toast on time, **with the window hidden in the tray**. Click → opens Task page.
+- [ ] "So sánh chi tiêu tháng này với tháng trước" → bot uses query_readonly_sql, numbers match the Chi tiêu page.
+- [ ] Wrong API key → "API key/token sai hoặc hết hạn…" + "Thử lại"; network off → "Không kết nối được tới LLM endpoint…"; "Dừng" mid-stream keeps the partial text.
+
+**Pages**
+- [ ] Task page: tick a task done; a weekly recurring task ticked → the next occurrence appears.
+- [ ] Notes search without diacritics ("ngan sach") finds accented text ("ngân sách").
+- [ ] Chi tiêu page shows this month grouped by category.
+- [ ] Data pages refresh after a chat change and when the window regains focus.
+
+**Reminders and tray**
+- [ ] Reminder 2 minutes ahead → Windows toast on time, **with the window hidden in the tray**. Click → opens the Task page.
 - [ ] Reminder while the app is quit → on next start one grouped "Bạn có N nhắc nhở" toast.
 - [ ] Sleep the PC past a reminder, wake → toast fires shortly after resume.
-- [ ] Recurring task (weekly) ticked on the Task page → next occurrence appears.
-- [ ] Notes search without diacritics finds accented text.
-- [ ] "So sánh chi tiêu tháng này với tháng trước" → bot uses query_readonly_sql, numbers match the Chi tiêu page.
-- [ ] Wrong API key → clear error + "Thử lại"; network off → connection error; Dừng mid-stream keeps partial text.
-- [ ] Settings: key is never shown back; `secrets.bin` has no readable key.
-- [ ] Tray: close hides, tray click shows, Thoát quits; second launch focuses the running instance.
-- [ ] "Khởi động cùng Windows" on → sign out/in → app runs hidden in the tray.
+- [ ] Tray: close hides the window, tray click shows it, right-click menu "Mở Trợ lý" / "Thoát" work; a second launch focuses the running instance.
+- [ ] "Khởi động cùng Windows" (Settings or tray menu) on → sign out/in → app runs hidden in the tray. Note: the portable exe registers its own path, so moving the exe breaks this.
 - [ ] Dark mode follows Windows.
 
 If toasts don't appear from the portable exe (Windows can require a Start-menu shortcut carrying the
-AppUserModelID), switch `win.target` to `nsis`, which creates that shortcut.
+AppUserModelID `com.personal-assistant.app`), switch `win.target` to `nsis`, which creates that shortcut.
 ```
 
 **Step 3: Build and run the checklist**
 
 Run: `bun run pack`
-Expected: `release/PersonalAssistant-portable.exe`. Run it and go through `docs/smoke-test.md`.
+Expected: `release/PersonalAssistant-portable.exe` (~86 MB; NSIS comes from the local electron-builder cache, so no download). Run it and go through `docs/smoke-test.md`.
+
+Checks done when this task was implemented:
+- `app.asar` holds only `out/**` and `package.json` (no `node_modules`). `resources/default_app.asar` is copied along with `electronDist`; it is unused and harmless.
+- The packaged `package.json` has no `productName`, so `userData` is `%APPDATA%/personal-assistant`, the same folder as `bun run dev`. `productName` in `electron-builder.yml` only names the exe (`Personal Assistant.exe`). Dev and packaged builds share one DB.
+- The exe unpacks to `%TEMP%` and starts; the window "Trợ lý cá nhân" opens and writes to that DB.
 
 **Step 4: Commit**
 
@@ -6331,7 +6350,7 @@ git commit -m "build: portable Windows package and release smoke checklist"
 
 ## Done criteria
 
-- `bun run test` passes (≈60 tests; eval skipped) and `bun run typecheck` exits 0.
+- `bun run test` passes (135 tests; the 20 eval cases skipped) and `bun run typecheck` exits 0.
 - `docs/smoke-test.md` is fully checked on the packaged exe.
 - The eval passes at least 17 of 20 against the chosen model.
 

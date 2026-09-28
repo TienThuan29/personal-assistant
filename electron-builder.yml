@@ -1,0 +1,16 @@
+# Everything is bundled by electron-vite (all deps are devDependencies), so ship only out/.
+appId: com.personal-assistant.app
+productName: Personal Assistant
+directories:
+  output: release
+files:
+  - out/**/*
+  - '!**/*.map'
+  - '!node_modules/**/*'
+# Reuse the installed Electron instead of downloading it (TLS proxy).
+electronDist: node_modules/electron/dist
+win:
+  target: portable
+  signAndEditExecutable: false
+portable:
+  artifactName: PersonalAssistant-portable.exe
