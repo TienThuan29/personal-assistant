@@ -3230,13 +3230,17 @@ export function registerIpc(m: MainCtx): void {
     if (!Array.isArray(images) || images.length > MAX_IMAGES) throw new Error(`Tối đa ${MAX_IMAGES} ảnh mỗi tin nhắn`);
     if (!text.trim() && !images.length) throw new Error('Tin nhắn trống');
     const jpegs = images.map((img) => toJpeg(img.bytes)); // validate everything before saving anything
-    cancelOpenActions(deps, id);
     const attachmentIds = jpegs.map(() => newAttachmentId());
-    const messageId = addMessage(m.db, id, { role: 'user', content: text, attachment_ids: attachmentIds });
-    jpegs.forEach((bytes, i) =>
-      saveAttachment(m.db, m.attachmentsDir, { id: attachmentIds[i], bytes, mime: 'image/jpeg', ownerType: 'message', ownerId: messageId })
-    );
-    setTitleIfNew(m.db, id, text);
+    // One transaction: a failed image save leaves no message pointing at missing attachments
+    // (files already written become orphans, swept at startup).
+    tx(m.db, () => {
+      cancelOpenActions(deps, id);
+      const messageId = addMessage(m.db, id, { role: 'user', content: text, attachment_ids: attachmentIds });
+      jpegs.forEach((bytes, i) =>
+        saveAttachment(m.db, m.attachmentsDir, { id: attachmentIds[i], bytes, mime: 'image/jpeg', ownerType: 'message', ownerId: messageId })
+      );
+      setTitleIfNew(m.db, id, text);
+    });
     startTurn(id);
   });
   ipcMain.handle('chat:stop', (_e, id: number) => running.get(id)?.abort());
