@@ -18,7 +18,7 @@ const startHidden = process.argv.includes('--hidden');
 let win: BrowserWindow | undefined;
 let tray: Tray | undefined; // module scope keeps the tray from being garbage-collected
 let quitting = false;
-const notifications = new Set<Notification>(); // referenced until closed, or GC drops their click handler
+const notifications = new Set<Notification>(); // referenced until clicked (capped), or GC drops their click handler
 
 /** Sends to the window unless it is gone (quit in progress). */
 function send(channel: string, payload?: unknown): void {
@@ -70,7 +70,7 @@ function createWindow(): BrowserWindow {
   w.on('maximize', () => w.webContents.send('win:maximized', true));
   w.on('unmaximize', () => w.webContents.send('win:maximized', false));
   w.webContents.on('render-process-gone', (_e, d) => {
-    if (d.reason !== 'clean-exit') w.webContents.reload(); // ponytail: a renderer that crashes on load reloads in a loop; add a retry cap if seen
+    if (d.reason !== 'clean-exit' && !w.isDestroyed()) w.webContents.reload(); // ponytail: a renderer that crashes on load reloads in a loop; add a retry cap if seen
   });
   w.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url);
@@ -95,8 +95,8 @@ function notify(rows: ReminderRow[]): void {
       ? { title: 'Nhắc nhở', body: rows[0].message }
       : { title: `Bạn có ${rows.length} nhắc nhở`, body: rows.map((r) => `• ${r.message}`).join('\n') }
   );
-  notifications.add(n);
-  n.on('close', () => notifications.delete(n));
+  notifications.add(n); // no 'close' cleanup: Windows fires it when the toast moves to Action Center, where it can still be clicked
+  if (notifications.size > 50) notifications.delete(notifications.values().next().value!);
   n.on('click', () => {
     notifications.delete(n);
     showWindow();
