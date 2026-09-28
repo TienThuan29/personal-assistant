@@ -26,6 +26,7 @@ export const MIGRATIONS: string[] = [
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'fired', 'dismissed'))
   );
   CREATE INDEX idx_reminders_at ON reminders (status, remind_at);
+  CREATE INDEX idx_reminders_task ON reminders (task_id);
 
   CREATE TABLE notes (
     id INTEGER PRIMARY KEY,
@@ -44,7 +45,7 @@ export const MIGRATIONS: string[] = [
   CREATE TRIGGER notes_ad AFTER DELETE ON notes BEGIN
     INSERT INTO notes_fts (notes_fts, rowid, title, body) VALUES ('delete', old.id, old.title, old.body);
   END;
-  CREATE TRIGGER notes_au AFTER UPDATE ON notes BEGIN
+  CREATE TRIGGER notes_au AFTER UPDATE OF title, body ON notes BEGIN
     INSERT INTO notes_fts (notes_fts, rowid, title, body) VALUES ('delete', old.id, old.title, old.body);
     INSERT INTO notes_fts (rowid, title, body) VALUES (new.id, new.title, new.body);
   END;
@@ -96,6 +97,7 @@ export const MIGRATIONS: string[] = [
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'cancelled')),
     result TEXT
   );
+  CREATE INDEX idx_pending_conv ON pending_actions (conversation_id, status);
 
   CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   `,
