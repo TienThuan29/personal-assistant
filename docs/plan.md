@@ -1,0 +1,4834 @@
+# Personal Assistant Implementation Plan
+
+> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Goal:** A Windows Electron app where a chatbot manages tasks, reminders, notes and expenses. The data lives in a local SQLite file, and every write the bot proposes goes through a confirm card.
+
+**Architecture:** Everything sensitive runs in the Electron main process: `node:sqlite`, the agent loop, the LLM client and the secrets. The loop streams from an OpenAI-compatible endpoint (Azure Foundry or a gateway) and runs **read** tools at once. **Write** tools are stored as `pending_actions` and applied only after the user confirms. The renderer is React 19 + `@aionui/ui` + Arco and talks to main only through a typed preload API.
+
+**Tech Stack:** Electron 37.10.3, electron-vite 5, React 19, `@aionui/ui` (`file:../aionui-ui`), Arco Design, `openai@5.23.2`, `zod@3.25.76` (imported as `zod/v4`), `node:sqlite` + FTS5, Vitest 4 (run on Electron's Node).
+
+**Design:** [design.md](design.md). Read it first; decision numbers (D1–D17) below refer to it.
+
+---
+
+## Conventions (read before Task 1)
+
+- **Working dir:** `ElectronUI-Extraction/personal-assistant` (next to `aionui-ui`). All paths below are relative to it.
+- **Package manager:** bun. Install with `bun install --ignore-scripts`, because native postinstalls fail behind the TLS proxy. Task 1 covers the Electron binary.
+- **Tests run on Electron's Node 22**, not the system Node 26 (`bun run test` sets `ELECTRON_RUN_AS_NODE=1`). This matters because `node:sqlite` in Node 22 **throws when binding `undefined`** and Node 26 does not. Always bind `?? null`, never `undefined`.
+- **SQL params:** node:sqlite throws on *unknown* named params. Only pass keys the SQL uses. The `where()` helper (Task 5) does this for you.
+- **Timestamps:** `*_at` columns hold UTC ISO strings (`toISOString()`). `due_date` / `spent_at` hold **local** `YYYY-MM-DD`. Use `src/shared/dates.ts`, never `new Date('YYYY-MM-DD')`, which parses as UTC.
+- **Money:** `INTEGER` in the currency's minor unit (VND: đồng, USD: cent).
+- **Style:** single quotes, semicolons, 2-space indent, `import type` for type-only imports. UI strings are Vietnamese; code and comments are English.
+- **Commits:** Conventional Commits. End each message with the trailer `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. The `git commit -m` lines below omit the trailer for brevity, so add it as a second `-m`.
+- **If `bun run dev` shows no window** from the VS Code terminal, run `env -u ELECTRON_RUN_AS_NODE bun run dev`.
+
+### Deviations from design.md (intentional, smaller)
+
+| Design said | Plan does | Why |
+|---|---|---|
+| `src/main/db/`, `agent/`, `llm/`, `reminders/` folders | flat files in `src/main/` + `src/main/tools/` | fewer files; one module each |
+| one confirm-card renderer per entity | one generic `ConfirmCard` with a field-label map | same UX, a quarter of the code |
+| notification click opens the related task | opens the Task page | no per-task deep link needed yet |
+| `@aionui/ui` via `file:../aionui-ui` (D1) | packed tarball `vendor/aionui-ui-0.1.0.tgz` | bun copies the whole directory (incl. `node_modules`, `.git`) and fails with EPERM. To update the library: `cd ../aionui-ui && bun pm pack --destination ../personal-assistant/vendor`, then `bun install --ignore-scripts` |
+| read tools listed in §6 | adds `get_notes({ids})` | `search_notes` returns only snippets; the bot needs full text |
+
+---
+
+## Phase 0: Scaffold
+
+### Task 1: Project scaffold and hello window
+
+**Files:**
+- Create: `package.json`, `tsconfig.json`, `electron.vite.config.ts`, `.gitignore`
+- Create: `src/main/index.ts`, `src/preload/index.ts`, `src/renderer/index.html`, `src/renderer/main.tsx`
+
+**Step 1: Create `package.json`**
+
+Every package is a devDependency on purpose. electron-vite externalizes only `dependencies`, so `openai` and `zod` get bundled into `out/main`, and the packaged app needs no `node_modules`.
+
+```json
+{
+  "name": "personal-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "ELECTRON_RUN_AS_NODE=1 electron node_modules/vitest/vitest.mjs run",
+    "pack": "electron-vite build && electron-builder --config electron-builder.yml"
+  },
+  "devDependencies": {
+    "@aionui/ui": "file:./vendor/aionui-ui-0.1.0.tgz",
+    "@arco-design/web-react": "^2.66.1",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@icon-park/react": "^1.4.2",
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.1.6",
+    "diff2html": "^3.4.55",
+    "electron": "37.10.3",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "json5": "^2.2.3",
+    "katex": "^0.16.22",
+    "mermaid": "^11.13.0",
+    "openai": "5.23.2",
+    "postcss": "^8.5.8",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "react-syntax-highlighter": "^16.1.0",
+    "rehype-katex": "^7.0.1",
+    "rehype-raw": "^7.0.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.4.1",
+    "vitest": "^4.0.18",
+    "wavedrom": "^3.6.2",
+    "zod": "3.25.76"
+  }
+}
+```
+
+**Step 2: Create `tsconfig.json`**
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "types": ["node", "vite/client", "vitest/globals"]
+  },
+  "include": ["src", "tests", "electron.vite.config.ts", "vitest.config.ts"]
+}
+```
+
+**Step 3: Create `electron.vite.config.ts`**
+
+`dedupe` is required. `@aionui/ui` comes from `../aionui-ui`, which has its own `react`, and two Reacts break hooks.
+
+```ts
+import { defineConfig } from 'electron-vite';
+
+export default defineConfig({
+  main: {
+    build: { rollupOptions: { external: ['node:sqlite'] } },
+  },
+  preload: {
+    // Sandboxed preloads must be CommonJS.
+    build: { rollupOptions: { output: { format: 'cjs', entryFileNames: '[name].js' } } },
+  },
+  renderer: {
+    resolve: { dedupe: ['react', 'react-dom', '@arco-design/web-react', '@icon-park/react'] },
+  },
+});
+```
+
+**Step 4: Create `.gitignore`**
+
+```
+node_modules/
+out/
+release/
+*.db
+*.db-*
+```
+
+**Step 5: Create the hello window**
+
+`src/main/index.ts` (replaced in Task 18):
+
+```ts
+import { app, BrowserWindow } from 'electron';
+import { join } from 'node:path';
+
+void app.whenReady().then(() => {
+  const win = new BrowserWindow({
+    width: 1000,
+    height: 700,
+    webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: true },
+  });
+  if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL);
+  else void win.loadFile(join(__dirname, '../renderer/index.html'));
+});
+
+app.on('window-all-closed', () => app.quit());
+```
+
+`src/preload/index.ts` (replaced in Task 18):
+
+```ts
+export {};
+```
+
+`src/renderer/index.html` (final version):
+
+```html
+<!doctype html>
+<html lang="vi" data-color-scheme="default" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' att: data: blob:; font-src 'self' data:; connect-src 'self' ws:"
+    />
+    <title>Trợ lý cá nhân</title>
+  </head>
+  <body arco-theme="light">
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>
+```
+
+`src/renderer/main.tsx` (replaced in Task 19):
+
+```tsx
+import '@arco-design/web-react/dist/css/arco.css';
+import '@aionui/ui/styles.css';
+import '@aionui/ui/arco-theme.css';
+import { UiProvider } from '@aionui/ui';
+import { Markdown } from '@aionui/ui/markdown';
+import { createRoot } from 'react-dom/client';
+
+createRoot(document.getElementById('root')!).render(
+  <UiProvider>
+    <Markdown>{'**Xin chào** — `@aionui/ui` hoạt động.'}</Markdown>
+  </UiProvider>
+);
+```
+
+**Step 6: Install and get the Electron binary**
+
+```bash
+cd personal-assistant
+git init
+bun install --ignore-scripts
+node node_modules/electron/install.js || { cp -r ../aionui-ui/node_modules/electron/dist node_modules/electron/dist && printf 'electron.exe' > node_modules/electron/path.txt; }
+ls node_modules/electron/dist/electron.exe
+```
+
+Expected: the file exists. The `cp` fallback reuses the identical 37.10.3 binary from `aionui-ui` when the download is blocked.
+
+**Step 7: Run it**
+
+Run: `bun run dev`
+Expected: a window shows bold "Xin chào" rendered by the library's Markdown, with no console errors. If you see an "Invalid hook call", the `dedupe` in Step 3 is missing.
+
+Run: `bun run typecheck`
+Expected: exit 0.
+
+**Step 8: Commit**
+
+```bash
+git add -A
+git commit -m "chore: scaffold electron-vite app with @aionui/ui"
+```
+
+---
+
+### Task 2: Test runner on Electron's Node
+
+**Files:**
+- Create: `vitest.config.ts`
+- Test: `tests/smoke.test.ts`
+
+**Step 1: Write the test**
+
+```ts
+import { DatabaseSync } from 'node:sqlite';
+
+it('runs on Electron Node with node:sqlite + FTS5', () => {
+  expect(process.versions.electron).toBeDefined();
+  const db = new DatabaseSync(':memory:');
+  db.exec("CREATE VIRTUAL TABLE t USING fts5(x, tokenize='unicode61 remove_diacritics 2')");
+  db.exec("INSERT INTO t VALUES ('xin chào thế giới')");
+  expect(db.prepare("SELECT x FROM t WHERE t MATCH 'chao'").all()).toHaveLength(1);
+});
+```
+
+**Step 2: Create `vitest.config.ts`**
+
+```ts
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: { globals: true, environment: 'node', include: ['tests/**/*.test.ts'] },
+});
+```
+
+**Step 3: Run it**
+
+Run: `bun run test`
+Expected: 1 passed.
+
+If `process.versions.electron` is undefined or the workers fail to start, change the script to plain `vitest run`. Then keep in mind that tests will run on Node 26, and review the `?? null` rule by hand.
+
+**Step 4: Commit**
+
+```bash
+git add -A
+git commit -m "test: run vitest on Electron's Node runtime"
+```
+
+---
+
+## Phase 1: Core (main process, no Electron APIs)
+
+### Task 3: Shared types, dates and money
+
+**Files:**
+- Create: `src/shared/types.ts`, `src/shared/dates.ts`, `src/shared/money.ts`
+- Test: `tests/dates.test.ts`
+
+**Step 1: Create `src/shared/types.ts`**
+
+It has no logic. Every later task imports from it.
+
+```ts
+// Types shared by main, preload and renderer. No runtime code except constants.
+
+export type TaskRow = {
+  id: number;
+  title: string;
+  notes: string | null;
+  category: string;
+  priority: 1 | 2 | 3;
+  due_date: string | null;
+  due_time: string | null;
+  status: 'todo' | 'done' | 'cancelled';
+  recurrence: string | null;
+  created_at: string;
+  completed_at: string | null;
+  attachment_ids?: string | null;
+};
+
+export type ReminderRow = {
+  id: number;
+  task_id: number | null;
+  message: string;
+  remind_at: string;
+  status: 'pending' | 'fired' | 'dismissed';
+};
+
+export type NoteRow = {
+  id: number;
+  kind: 'note' | 'journal';
+  title: string | null;
+  body?: string;
+  snippet?: string;
+  created_at: string;
+  updated_at: string;
+  attachment_ids?: string | null;
+};
+
+export type ExpenseRow = {
+  id: number;
+  amount: number;
+  currency: string;
+  category: string;
+  description: string | null;
+  spent_at: string;
+  created_at: string;
+  attachment_ids?: string | null;
+};
+
+export type ExpenseList = { items: ExpenseRow[]; totals: { currency: string; total: number }[] };
+
+export type ConversationRow = { id: number; title: string; updated_at: string };
+
+export type ToolCall = { id: string; type: 'function'; function: { name: string; arguments: string } };
+export type UserMessage = { role: 'user'; content: string; attachment_ids?: string[] };
+export type AssistantMessage = { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] };
+export type ToolMessage = { role: 'tool'; tool_call_id: string; content: string };
+export type StoredMessage = UserMessage | AssistantMessage | ToolMessage;
+export type ChatMessage = StoredMessage & { id: number; created_at: string };
+
+export type PendingAction = {
+  id: number;
+  conversation_id: number;
+  tool_call_id: string;
+  tool_name: string;
+  args: Record<string, unknown>;
+  preview: unknown;
+  status: 'pending' | 'confirmed' | 'cancelled';
+  result: unknown;
+};
+
+export type AgentEvent = { conversationId: number } & (
+  | { type: 'text'; delta: string }
+  | { type: 'tool'; name: string }
+  | { type: 'saved' }
+  | { type: 'pending' }
+  | { type: 'done' }
+  | { type: 'error'; message: string }
+);
+
+export type LlmConfig = { provider: 'azure' | 'gateway'; endpoint: string; model: string; apiVersion: string };
+export const DEFAULT_LLM: LlmConfig = { provider: 'gateway', endpoint: '', model: '', apiVersion: '2024-10-21' };
+
+export type SettingsView = { llm: LlmConfig; hasKey: Record<LlmConfig['provider'], boolean>; openAtLogin: boolean };
+export type SettingsInput = { llm: LlmConfig; apiKey?: string; openAtLogin: boolean };
+
+export type ImageInput = { name: string; bytes: Uint8Array };
+export type Page = 'chat' | 'tasks' | 'notes' | 'expenses' | 'settings';
+
+export type Api = {
+  conversations: {
+    list(): Promise<ConversationRow[]>;
+    create(): Promise<number>;
+    remove(id: number): Promise<void>;
+  };
+  chat: {
+    messages(id: number): Promise<ChatMessage[]>;
+    actions(id: number): Promise<PendingAction[]>;
+    send(id: number, text: string, images: ImageInput[]): Promise<void>;
+    stop(id: number): Promise<void>;
+    retry(id: number): Promise<void>;
+    resolve(actionId: number, decision: 'confirm' | 'cancel', args?: unknown): Promise<void>;
+    onEvent(cb: (e: AgentEvent) => void): () => void;
+  };
+  data: {
+    read<T = unknown>(tool: string, args: object): Promise<T>;
+    write(tool: string, args: object): Promise<unknown>;
+    onChanged(cb: () => void): () => void;
+  };
+  settings: {
+    get(): Promise<SettingsView>;
+    save(s: SettingsInput): Promise<void>;
+    test(): Promise<string>;
+  };
+  win: {
+    minimize(): Promise<void>;
+    toggleMaximize(): Promise<void>;
+    close(): Promise<void>;
+    isMaximized(): Promise<boolean>;
+    onMaximizedChange(cb: (maximized: boolean) => void): () => void;
+  };
+  onNavigate(cb: (page: Page) => void): () => void;
+};
+```
+
+**Step 2: Write the failing tests** in `tests/dates.test.ts`
+
+```ts
+import { addDays, localDayRange, nextOccurrence, toLocalDate } from '../src/shared/dates';
+import { formatMoney } from '../src/shared/money';
+
+describe('dates', () => {
+  it('toLocalDate uses local time', () => {
+    expect(toLocalDate(new Date(2026, 8, 28, 23, 59))).toBe('2026-09-28');
+  });
+  it('addDays crosses months', () => expect(addDays('2026-01-31', 1)).toBe('2026-02-01'));
+  it('daily', () => expect(nextOccurrence('daily', '2026-09-28')).toBe('2026-09-29'));
+  it('weekly picks the next listed weekday (2026-09-28 is a Monday)', () => {
+    expect(nextOccurrence('weekly:1,3', '2026-09-28')).toBe('2026-09-30');
+    expect(nextOccurrence('weekly:1', '2026-09-28')).toBe('2026-10-05');
+  });
+  it('monthly clamps to the month length and wraps the year', () => {
+    expect(nextOccurrence('monthly:31', '2026-01-31')).toBe('2026-02-28');
+    expect(nextOccurrence('monthly:15', '2026-12-15')).toBe('2027-01-15');
+  });
+  it('localDayRange spans one local day', () => {
+    const r = localDayRange('2026-09-28');
+    expect(new Date(r.start).getDate()).toBe(28);
+    expect(Date.parse(r.end) - Date.parse(r.start)).toBe(86_400_000);
+  });
+  it('rejects unknown rules', () => expect(() => nextOccurrence('yearly', '2026-09-28')).toThrow());
+});
+
+describe('money', () => {
+  it('formats minor units', () => {
+    expect(formatMoney(50_000, 'VND')).toContain('50.000');
+    expect(formatMoney(1250, 'USD')).toContain('12,50');
+  });
+  it('falls back for unknown currencies', () => expect(formatMoney(5, 'XXXX')).toBe('5 XXXX'));
+});
+```
+
+**Step 3: Run to verify it fails**
+
+Run: `bun run test tests/dates.test.ts`
+Expected: FAIL, cannot resolve `../src/shared/dates`.
+
+**Step 4: Implement `src/shared/dates.ts`**
+
+```ts
+const pad = (n: number): string => String(n).padStart(2, '0');
+
+/** 'YYYY-MM-DD' in the machine's local time zone. */
+export const toLocalDate = (d: Date = new Date()): string =>
+  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+/** 'HH:MM' in local time. */
+export const toLocalTime = (d: Date): string => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+/** Local midnight of a 'YYYY-MM-DD' (new Date('YYYY-MM-DD') would be UTC). */
+export const parseLocalDate = (date: string): Date => {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
+export const addDays = (date: string, n: number): string => {
+  const d = parseLocalDate(date);
+  d.setDate(d.getDate() + n);
+  return toLocalDate(d);
+};
+
+/** UTC ISO bounds [start, end) of a local day, to compare with stored *_at timestamps. */
+export const localDayRange = (date: string): { start: string; end: string } => ({
+  start: parseLocalDate(date).toISOString(),
+  end: parseLocalDate(addDays(date, 1)).toISOString(),
+});
+
+export const RECURRENCE_RE = /^(daily|weekly:[1-7](,[1-7])*|monthly:([1-9]|[12]\d|3[01]))$/;
+
+/** Next due date after `from`. weekly days: 1 = Monday … 7 = Sunday. */
+export function nextOccurrence(recurrence: string, from: string): string {
+  if (recurrence === 'daily') return addDays(from, 1);
+  if (recurrence.startsWith('weekly:')) {
+    const days = recurrence.slice(7).split(',').map(Number);
+    for (let i = 1; i <= 7; i++) {
+      const candidate = addDays(from, i);
+      if (days.includes(parseLocalDate(candidate).getDay() || 7)) return candidate;
+    }
+  }
+  if (recurrence.startsWith('monthly:')) {
+    const day = Number(recurrence.slice(8));
+    const d = parseLocalDate(from);
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 2, 0).getDate();
+    return toLocalDate(new Date(d.getFullYear(), d.getMonth() + 1, Math.min(day, lastDay)));
+  }
+  throw new Error(`Recurrence không hợp lệ: ${recurrence}`);
+}
+```
+
+**Step 5: Implement `src/shared/money.ts`**
+
+```ts
+/** Amounts are stored in the currency's minor unit (VND: đồng, USD: cent). */
+export function formatMoney(amount: number, currency: string): string {
+  try {
+    const digits = new Intl.NumberFormat('en', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits ?? 0;
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency }).format(amount / 10 ** digits);
+  } catch {
+    return `${amount} ${currency}`;
+  }
+}
+```
+
+**Step 6: Run to verify it passes**
+
+Run: `bun run test tests/dates.test.ts`
+Expected: PASS (9 tests).
+
+**Step 7: Commit**
+
+```bash
+git add -A
+git commit -m "feat(shared): shared types, local-date helpers, recurrence, money format"
+```
+
+---
+
+### Task 4: Database, migrations and backup
+
+**Files:**
+- Create: `src/main/migrations.ts`, `src/main/db.ts`
+- Test: `tests/db.test.ts`, `tests/helpers.ts`
+
+**Step 1: Create `tests/helpers.ts`**
+
+Later tasks extend this file.
+
+```ts
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { openDb } from '../src/main/db';
+
+export const tempDir = (): string => mkdtempSync(join(tmpdir(), 'pa-test-'));
+
+/** A file-backed DB (so a read-only second connection can see it) plus that read-only connection. */
+export function testDb() {
+  const dir = tempDir();
+  const path = join(dir, 'test.db');
+  const db = openDb(path);
+  const ro = new DatabaseSync(path, { readOnly: true });
+  return { dir, path, db, ro };
+}
+
+/** 2026-09-28 09:00 local, a Monday. */
+export const NOW = new Date(2026, 8, 28, 9, 0);
+```
+
+**Step 2: Write the failing tests** in `tests/db.test.ts`
+
+```ts
+import { existsSync, readdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { backupDb, openDb, tx } from '../src/main/db';
+import { MIGRATIONS } from '../src/main/migrations';
+import { NOW, tempDir, testDb } from './helpers';
+
+describe('db', () => {
+  it('migrates to the latest version and is idempotent', () => {
+    const { db, path } = testDb();
+    expect((db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(MIGRATIONS.length);
+    db.close();
+    expect(() => openDb(path)).not.toThrow();
+  });
+
+  it('enables foreign keys', () => {
+    const { db } = testDb();
+    expect((db.prepare('PRAGMA foreign_keys').get() as { foreign_keys: number }).foreign_keys).toBe(1);
+  });
+
+  it('tx rolls back on error', () => {
+    const { db } = testDb();
+    expect(() =>
+      tx(db, () => {
+        db.prepare("INSERT INTO tasks (title) VALUES ('a')").run();
+        throw new Error('boom');
+      })
+    ).toThrow('boom');
+    expect((db.prepare('SELECT COUNT(*) AS n FROM tasks').get() as { n: number }).n).toBe(0);
+  });
+
+  it('backs up once per day and keeps the newest 7', () => {
+    const { db } = testDb();
+    const dir = join(tempDir(), 'backups');
+    backupDb(db, dir, NOW);
+    backupDb(db, dir, NOW); // same day: no second file, no error
+    for (let d = 1; d <= 8; d++) writeFileSync(join(dir, `assistant-2026-08-0${d}.db`), '');
+    backupDb(db, dir, NOW);
+    const files = readdirSync(dir).sort();
+    expect(files).toHaveLength(7);
+    expect(files.at(-1)).toBe('assistant-2026-09-28.db');
+    expect(existsSync(join(dir, 'assistant-2026-08-01.db'))).toBe(false);
+  });
+});
+```
+
+**Step 3: Run to verify it fails**
+
+Run: `bun run test tests/db.test.ts`
+Expected: FAIL, cannot resolve `../src/main/db`.
+
+**Step 4: Implement `src/main/migrations.ts`**
+
+```ts
+// Append-only. Each entry runs once, in a transaction, and bumps PRAGMA user_version.
+const NOW_ISO = "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))";
+
+export const MIGRATIONS: string[] = [
+  `
+  CREATE TABLE tasks (
+    id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    notes TEXT,
+    category TEXT NOT NULL DEFAULT 'personal',
+    priority INTEGER NOT NULL DEFAULT 2 CHECK (priority IN (1, 2, 3)),
+    due_date TEXT,
+    due_time TEXT,
+    status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'done', 'cancelled')),
+    recurrence TEXT,
+    created_at TEXT NOT NULL DEFAULT ${NOW_ISO},
+    completed_at TEXT
+  );
+  CREATE INDEX idx_tasks_due ON tasks (status, due_date);
+
+  CREATE TABLE reminders (
+    id INTEGER PRIMARY KEY,
+    task_id INTEGER REFERENCES tasks (id) ON DELETE CASCADE,
+    message TEXT NOT NULL,
+    remind_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'fired', 'dismissed'))
+  );
+  CREATE INDEX idx_reminders_at ON reminders (status, remind_at);
+
+  CREATE TABLE notes (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL DEFAULT 'note' CHECK (kind IN ('note', 'journal')),
+    title TEXT,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT ${NOW_ISO},
+    updated_at TEXT NOT NULL DEFAULT ${NOW_ISO}
+  );
+  CREATE VIRTUAL TABLE notes_fts USING fts5 (
+    title, body, content = 'notes', content_rowid = 'id', tokenize = 'unicode61 remove_diacritics 2'
+  );
+  CREATE TRIGGER notes_ai AFTER INSERT ON notes BEGIN
+    INSERT INTO notes_fts (rowid, title, body) VALUES (new.id, new.title, new.body);
+  END;
+  CREATE TRIGGER notes_ad AFTER DELETE ON notes BEGIN
+    INSERT INTO notes_fts (notes_fts, rowid, title, body) VALUES ('delete', old.id, old.title, old.body);
+  END;
+  CREATE TRIGGER notes_au AFTER UPDATE ON notes BEGIN
+    INSERT INTO notes_fts (notes_fts, rowid, title, body) VALUES ('delete', old.id, old.title, old.body);
+    INSERT INTO notes_fts (rowid, title, body) VALUES (new.id, new.title, new.body);
+  END;
+
+  CREATE TABLE expenses (
+    id INTEGER PRIMARY KEY,
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    currency TEXT NOT NULL DEFAULT 'VND',
+    category TEXT NOT NULL,
+    description TEXT,
+    spent_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT ${NOW_ISO}
+  );
+  CREATE INDEX idx_expenses_at ON expenses (spent_at);
+
+  CREATE TABLE attachments (
+    id TEXT PRIMARY KEY,
+    owner_type TEXT NOT NULL CHECK (owner_type IN ('task', 'note', 'expense', 'message')),
+    owner_id INTEGER NOT NULL,
+    file_name TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT ${NOW_ISO}
+  );
+  CREATE INDEX idx_attachments_owner ON attachments (owner_type, owner_id);
+
+  CREATE TABLE conversations (
+    id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL DEFAULT 'Hội thoại mới',
+    created_at TEXT NOT NULL DEFAULT ${NOW_ISO},
+    updated_at TEXT NOT NULL DEFAULT ${NOW_ISO}
+  );
+
+  CREATE TABLE messages (
+    id INTEGER PRIMARY KEY,
+    conversation_id INTEGER NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT ${NOW_ISO}
+  );
+  CREATE INDEX idx_messages_conv ON messages (conversation_id, id);
+
+  CREATE TABLE pending_actions (
+    id INTEGER PRIMARY KEY,
+    conversation_id INTEGER NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
+    tool_call_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    args TEXT NOT NULL,
+    preview TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'cancelled')),
+    result TEXT
+  );
+
+  CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  `,
+];
+```
+
+**Step 5: Implement `src/main/db.ts`**
+
+```ts
+import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
+import { toLocalDate } from '../shared/dates';
+import { MIGRATIONS } from './migrations';
+
+export type Db = DatabaseSync;
+export type Params = Record<string, SQLInputValue>;
+
+export function openDb(path: string): Db {
+  const db = new DatabaseSync(path);
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+  migrate(db);
+  return db;
+}
+
+export function tx<T>(db: Db, fn: () => T): T {
+  db.exec('BEGIN');
+  try {
+    const result = fn();
+    db.exec('COMMIT');
+    return result;
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
+
+function migrate(db: Db): void {
+  const { user_version } = db.prepare('PRAGMA user_version').get() as { user_version: number };
+  for (let v = user_version; v < MIGRATIONS.length; v++) {
+    tx(db, () => {
+      db.exec(MIGRATIONS[v]);
+      db.exec(`PRAGMA user_version = ${v + 1}`);
+    });
+  }
+}
+
+const BACKUP_RE = /^assistant-\d{4}-\d{2}-\d{2}\.db$/;
+
+/** One snapshot per local day via VACUUM INTO; keeps the newest `keep`. */
+export function backupDb(db: Db, dir: string, now: Date, keep = 7): void {
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `assistant-${toLocalDate(now)}.db`);
+  if (!existsSync(file)) db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
+  const files = readdirSync(dir).filter((f) => BACKUP_RE.test(f)).sort();
+  for (const f of files.slice(0, -keep)) rmSync(join(dir, f));
+}
+```
+
+**Step 6: Run to verify it passes**
+
+Run: `bun run test tests/db.test.ts`
+Expected: PASS (4 tests).
+
+**Step 7: Commit**
+
+```bash
+git add -A
+git commit -m "feat(db): node:sqlite with migrations, transactions and daily backups"
+```
+
+---
+
+### Task 5: Tool framework and registry
+
+**Files:**
+- Create: `src/main/tools/common.ts`, `src/main/tools/index.ts`
+- Test: `tests/tools-registry.test.ts`
+
+**Step 1: Implement `src/main/tools/common.ts`**
+
+These are the helpers every tool module uses.
+
+```ts
+import { z } from 'zod/v4';
+import { localDayRange } from '../../shared/dates';
+import type { Db, Params } from '../db';
+
+export type ToolCtx = { db: Db; ro: Db; now: () => Date };
+
+type Base<S extends z.ZodType> = { name: string; description: string; schema: S };
+export type ReadTool<S extends z.ZodType = z.ZodType> = Base<S> & {
+  kind: 'read';
+  run: (args: z.output<S>, ctx: ToolCtx) => unknown;
+};
+export type WriteTool<S extends z.ZodType = z.ZodType> = Base<S> & {
+  kind: 'write';
+  /** Current rows the action will touch, for the confirm card (before → after). */
+  preview?: (args: z.output<S>, ctx: ToolCtx) => unknown;
+  apply: (args: z.output<S>, ctx: ToolCtx) => unknown;
+};
+// oxlint-disable-next-line no-explicit-any -- heterogeneous registry; each tool is typed at its definition
+export type Tool = ReadTool<any> | WriteTool<any>;
+
+export const readTool = <S extends z.ZodType>(t: Omit<ReadTool<S>, 'kind'>): Tool => ({ ...t, kind: 'read' });
+export const writeTool = <S extends z.ZodType>(t: Omit<WriteTool<S>, 'kind'>): Tool => ({ ...t, kind: 'write' });
+
+// ---- shared schemas ----
+export const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Định dạng YYYY-MM-DD');
+export const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Định dạng HH:MM');
+export const instant = z
+  .string()
+  .refine((s) => !Number.isNaN(Date.parse(s)), 'Thời điểm không hợp lệ')
+  .describe('ISO 8601 theo giờ máy, vd 2026-09-29T09:00');
+export const ids = z.array(z.number().int().positive()).min(1);
+export const attachmentIds = z
+  .array(z.string())
+  .optional()
+  .describe('ID ảnh từ tin nhắn của người dùng (nhãn [ảnh #id]) để đính kèm vào bản ghi');
+
+/** Instant → UTC ISO. A bare date means local midnight ('start') or the next local midnight ('end'). */
+export function toInstant(s: string, edge: 'start' | 'end' = 'start'): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return localDayRange(s)[edge];
+  return new Date(s).toISOString(); // 'YYYY-MM-DDTHH:MM' without offset parses as local time
+}
+
+// ---- SQL helpers ----
+export type OwnerType = 'task' | 'note' | 'expense';
+const placeholders = (n: number): string => Array(n).fill('?').join(', ');
+
+/** Selects the comma-separated attachment ids of each row. */
+export const attachmentsCol = (owner: OwnerType, idExpr: string): string =>
+  `(SELECT group_concat(a.id) FROM attachments a WHERE a.owner_type = '${owner}' AND a.owner_id = ${idExpr}) AS attachment_ids`;
+
+/** WHERE clause from optional conditions; a condition is skipped when its value is undefined. */
+export function where(conds: [sql: string, key: string, value: Params[string] | undefined][]): {
+  sql: string;
+  params: Params;
+} {
+  const parts: string[] = [];
+  const params: Params = {};
+  for (const [sql, key, value] of conds) {
+    if (value === undefined) continue;
+    parts.push(sql);
+    params[key] = value;
+  }
+  return { sql: parts.length ? `WHERE ${parts.join(' AND ')}` : '', params };
+}
+
+export function getRows<T>(db: Db, table: string, idList: number[]): T[] {
+  return db.prepare(`SELECT * FROM ${table} WHERE id IN (${placeholders(idList.length)})`).all(...idList) as unknown as T[];
+}
+
+/** Like getRows, but throws unless every id exists, so a confirm card never touches fewer rows than it showed. */
+export function requireRows<T>(db: Db, table: string, idList: number[]): T[] {
+  const rows = getRows<T & { id: number }>(db, table, idList);
+  const found = new Set(rows.map((r) => r.id));
+  const missing = [...new Set(idList)].filter((id) => !found.has(id));
+  if (missing.length) throw new Error(`Không tìm thấy ${table} #${missing.join(', #')}`);
+  return rows;
+}
+
+/** UPDATE by id. Column names come from a zod-parsed patch, so unknown keys were already stripped. */
+export function updateRows(db: Db, table: string, idList: number[], patch: Record<string, unknown>, extra: Params = {}): void {
+  const values = { ...(patch as Params), ...extra };
+  const set = Object.keys(values).map((k) => `${k} = :${k}`).join(', ');
+  const stmt = db.prepare(`UPDATE ${table} SET ${set} WHERE id = :id`);
+  for (const id of idList) stmt.run({ ...values, id });
+}
+
+/** Deletes rows and (for owners of images) their attachment rows; files are swept at startup. */
+export function deleteRows(db: Db, table: string, owner: OwnerType | null, idList: number[]): void {
+  if (owner) {
+    db.prepare(`DELETE FROM attachments WHERE owner_type = ? AND owner_id IN (${placeholders(idList.length)})`).run(owner, ...idList);
+  }
+  db.prepare(`DELETE FROM ${table} WHERE id IN (${placeholders(idList.length)})`).run(...idList);
+}
+
+/** Moves images from the chat message to the new record (one image belongs to one record). */
+export function attachTo(db: Db, owner: OwnerType, ownerId: number, attachmentIdList: string[] = []): void {
+  const stmt = db.prepare("UPDATE attachments SET owner_type = ?, owner_id = ? WHERE id = ? AND owner_type = 'message'");
+  for (const id of attachmentIdList) stmt.run(owner, ownerId, id);
+}
+
+export const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+```
+
+**Step 2: Implement `src/main/tools/index.ts`**
+
+Tool modules get added to `TOOLS` in Tasks 7–11.
+
+```ts
+import type { ChatCompletionFunctionTool } from 'openai/resources/chat/completions';
+import { z } from 'zod/v4';
+import type { Tool } from './common';
+
+export type { Tool, ToolCtx } from './common';
+
+export const TOOLS: Tool[] = [];
+
+export const findTool = (name: string): Tool | undefined => TOOLS.find((t) => t.name === name);
+
+/** Validates LLM (or UI) args against the tool's schema; the error text goes back to the model. */
+export function parseArgs(tool: Tool, raw: unknown): unknown {
+  const r = tool.schema.safeParse(raw);
+  if (!r.success) throw new Error(z.prettifyError(r.error));
+  return r.data;
+}
+
+export function toOpenAITools(): ChatCompletionFunctionTool[] {
+  return TOOLS.map((t) => {
+    // io: 'input' keeps fields with .default() optional for the model.
+    const { $schema: _drop, ...parameters } = z.toJSONSchema(t.schema, { io: 'input' }) as Record<string, unknown>;
+    return { type: 'function', function: { name: t.name, description: t.description, parameters } };
+  });
+}
+```
+
+**Step 3: Write the test** in `tests/tools-registry.test.ts`
+
+It passes vacuously now and starts guarding once tools exist.
+
+```ts
+import { TOOLS, toOpenAITools } from '../src/main/tools';
+
+describe('tool registry', () => {
+  it('has unique, API-safe names', () => {
+    const names = TOOLS.map((t) => t.name);
+    expect(new Set(names).size).toBe(names.length);
+    for (const n of names) expect(n).toMatch(/^[a-z_]{1,64}$/);
+  });
+
+  it('exports object JSON schemas without $schema', () => {
+    for (const t of toOpenAITools()) {
+      expect(t.function.parameters).toMatchObject({ type: 'object' });
+      expect(t.function.parameters).not.toHaveProperty('$schema');
+      expect(t.function.description?.length).toBeGreaterThan(10);
+    }
+  });
+});
+```
+
+**Step 4: Run it**
+
+Run: `bun run test tests/tools-registry.test.ts`
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat(tools): tool types, zod schemas, SQL helpers and registry"
+```
+
+---
+
+### Task 6: Attachments
+
+**Files:**
+- Create: `src/main/attachments.ts`
+- Test: `tests/attachments.test.ts`
+
+**Step 1: Write the failing tests**
+
+```ts
+import { existsSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { attachmentFile, cleanupOrphans, dataUrl, newAttachmentId, saveAttachment } from '../src/main/attachments';
+import { attachTo } from '../src/main/tools/common';
+import { testDb } from './helpers';
+
+const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+
+describe('attachments', () => {
+  it('saves the file and a row, and reads back a data URL', () => {
+    const { db, dir } = testDb();
+    const id = newAttachmentId();
+    saveAttachment(db, join(dir, 'att'), { id, bytes: JPEG, mime: 'image/jpeg', ownerType: 'message', ownerId: 1 });
+    expect(existsSync(attachmentFile(db, join(dir, 'att'), id)!.path)).toBe(true);
+    expect(dataUrl(db, join(dir, 'att'), id)).toBe(`data:image/jpeg;base64,${Buffer.from(JPEG).toString('base64')}`);
+  });
+
+  it('attachTo moves only message-owned images', () => {
+    const { db, dir } = testDb();
+    const id = newAttachmentId();
+    saveAttachment(db, dir, { id, bytes: JPEG, mime: 'image/jpeg', ownerType: 'message', ownerId: 1 });
+    attachTo(db, 'task', 7, [id]);
+    attachTo(db, 'note', 8, [id]); // already moved: no-op
+    expect(db.prepare('SELECT owner_type, owner_id FROM attachments WHERE id = ?').get(id)).toEqual({ owner_type: 'task', owner_id: 7 });
+  });
+
+  it('cleanupOrphans deletes files without a row', () => {
+    const { db, dir } = testDb();
+    const att = join(dir, 'att');
+    const kept = newAttachmentId();
+    saveAttachment(db, att, { id: kept, bytes: JPEG, mime: 'image/jpeg', ownerType: 'message', ownerId: 1 });
+    writeFileSync(join(att, 'orphan.jpg'), JPEG);
+    expect(cleanupOrphans(db, att)).toBe(1);
+    expect(existsSync(join(att, 'orphan.jpg'))).toBe(false);
+    expect(attachmentFile(db, att, kept)).toBeDefined();
+  });
+});
+```
+
+**Step 2: Run to verify it fails**
+
+Run: `bun run test tests/attachments.test.ts`
+Expected: FAIL, cannot resolve module.
+
+**Step 3: Implement `src/main/attachments.ts`**
+
+```ts
+import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { Db } from './db';
+
+/** Short id; the model sees it as the label [ảnh #id]. Lowercase hex, so it is a valid att:// host. */
+export const newAttachmentId = (): string => randomUUID().replace(/-/g, '').slice(0, 8);
+
+export function saveAttachment(
+  db: Db,
+  dir: string,
+  a: { id: string; bytes: Uint8Array; mime: string; ownerType: 'message' | 'task' | 'note' | 'expense'; ownerId: number }
+): void {
+  mkdirSync(dir, { recursive: true });
+  const fileName = `${a.id}.${a.mime === 'image/png' ? 'png' : 'jpg'}`;
+  writeFileSync(join(dir, fileName), a.bytes);
+  db.prepare('INSERT INTO attachments (id, owner_type, owner_id, file_name, mime) VALUES (?, ?, ?, ?, ?)').run(
+    a.id,
+    a.ownerType,
+    a.ownerId,
+    fileName,
+    a.mime
+  );
+}
+
+export function attachmentFile(db: Db, dir: string, id: string): { path: string; mime: string } | undefined {
+  const row = db.prepare('SELECT file_name, mime FROM attachments WHERE id = ?').get(id) as
+    | { file_name: string; mime: string }
+    | undefined;
+  if (!row) return undefined;
+  const path = join(dir, row.file_name);
+  return existsSync(path) ? { path, mime: row.mime } : undefined;
+}
+
+export function dataUrl(db: Db, dir: string, id: string): string | undefined {
+  const f = attachmentFile(db, dir, id);
+  return f && `data:${f.mime};base64,${readFileSync(f.path).toString('base64')}`;
+}
+
+/** Deletes files no attachment row points at (their owner was deleted). */
+export function cleanupOrphans(db: Db, dir: string): number {
+  if (!existsSync(dir)) return 0;
+  const known = new Set((db.prepare('SELECT file_name FROM attachments').all() as { file_name: string }[]).map((r) => r.file_name));
+  const orphans = readdirSync(dir).filter((f) => !known.has(f));
+  for (const f of orphans) rmSync(join(dir, f));
+  return orphans.length;
+}
+```
+
+**Step 4: Run to verify it passes**
+
+Run: `bun run test tests/attachments.test.ts`
+Expected: PASS (3 tests).
+
+**Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat(attachments): store images on disk, move to records, sweep orphans"
+```
+
+---
+
+### Task 7: Task tools
+
+**Files:**
+- Create: `src/main/tools/tasks.ts`
+- Modify: `src/main/tools/index.ts` (register `taskTools`)
+- Modify: `tests/helpers.ts` (add `testCtx`, `callTool`)
+- Test: `tests/tools-tasks.test.ts`
+
+**Step 1: Extend `tests/helpers.ts`**
+
+```ts
+import { findTool, parseArgs, type ToolCtx } from '../src/main/tools';
+
+export function testCtx(now: () => Date = () => NOW): ToolCtx & { dir: string } {
+  const { db, ro, dir } = testDb();
+  return { db, ro, now, dir };
+}
+
+/** Parses args like the agent does, then runs (read) or applies (write) the tool. */
+export function callTool<T = unknown>(ctx: ToolCtx, name: string, args: object): T {
+  const tool = findTool(name);
+  if (!tool) throw new Error(`no tool ${name}`);
+  const parsed = parseArgs(tool, args);
+  return (tool.kind === 'read' ? tool.run(parsed, ctx) : tool.apply(parsed, ctx)) as T;
+}
+```
+
+**Step 2: Write the failing tests** in `tests/tools-tasks.test.ts`
+
+```ts
+import { newAttachmentId, saveAttachment } from '../src/main/attachments';
+import { findTool, parseArgs } from '../src/main/tools';
+import type { TaskRow } from '../src/shared/types';
+import { callTool, testCtx } from './helpers';
+
+describe('task tools', () => {
+  it('creates a task with defaults', () => {
+    const ctx = testCtx();
+    const t = callTool<TaskRow>(ctx, 'create_task', { title: 'Nộp báo cáo', due_date: '2026-09-28' });
+    expect(t).toMatchObject({ title: 'Nộp báo cáo', category: 'personal', priority: 2, status: 'todo', due_date: '2026-09-28' });
+  });
+
+  it('lists by date range and category', () => {
+    const ctx = testCtx();
+    callTool(ctx, 'create_task', { title: 'A', due_date: '2026-09-28', category: 'work' });
+    callTool(ctx, 'create_task', { title: 'B', due_date: '2026-09-28' });
+    callTool(ctx, 'create_task', { title: 'C', due_date: '2026-09-29', category: 'work' });
+    const rows = callTool<TaskRow[]>(ctx, 'list_tasks', { from: '2026-09-28', to: '2026-09-28', category: 'work' });
+    expect(rows.map((r) => r.title)).toEqual(['A']);
+  });
+
+  it('rejects malformed dates with a readable message', () => {
+    expect(() => parseArgs(findTool('create_task')!, { title: 'x', due_date: '28/09' })).toThrow(/YYYY-MM-DD/);
+  });
+
+  it('bulk-reschedules', () => {
+    const ctx = testCtx();
+    const a = callTool<TaskRow>(ctx, 'create_task', { title: 'A', due_date: '2026-09-28' });
+    const b = callTool<TaskRow>(ctx, 'create_task', { title: 'B', due_date: '2026-09-28' });
+    callTool(ctx, 'update_tasks', { ids: [a.id, b.id], patch: { due_date: '2026-09-29' } });
+    expect(callTool<TaskRow[]>(ctx, 'list_tasks', { from: '2026-09-29' }).map((r) => r.title)).toEqual(['A', 'B']);
+  });
+
+  it('completing a recurring task spawns the next one and clears the rule on the old one', () => {
+    const ctx = testCtx();
+    const t = callTool<TaskRow>(ctx, 'create_task', { title: 'Tập gym', due_date: '2026-09-28', recurrence: 'weekly:1,3' });
+    const r = callTool<{ spawned: TaskRow[] }>(ctx, 'update_tasks', { ids: [t.id], patch: { status: 'done' } });
+    expect(r.spawned[0]).toMatchObject({ title: 'Tập gym', due_date: '2026-09-30', recurrence: 'weekly:1,3', status: 'todo' });
+    const [done] = callTool<TaskRow[]>(ctx, 'list_tasks', { status: 'done' });
+    expect(done).toMatchObject({ id: t.id, recurrence: null });
+    expect(done.completed_at).not.toBeNull();
+  });
+
+  it('refuses unknown ids and empty patches', () => {
+    const ctx = testCtx();
+    expect(() => callTool(ctx, 'update_tasks', { ids: [999], patch: { status: 'done' } })).toThrow(/#999/);
+    expect(() => parseArgs(findTool('update_tasks')!, { ids: [1], patch: {} })).toThrow(/rỗng/);
+  });
+
+  it('preview shows the current rows', () => {
+    const ctx = testCtx();
+    const t = callTool<TaskRow>(ctx, 'create_task', { title: 'A' });
+    const tool = findTool('delete_tasks')!;
+    expect(tool.kind === 'write' && tool.preview?.({ ids: [t.id] }, ctx)).toMatchObject({ before: [{ id: t.id, title: 'A' }] });
+  });
+
+  it('attaches message images and deletes them with the task', () => {
+    const ctx = testCtx();
+    const img = newAttachmentId();
+    saveAttachment(ctx.db, ctx.dir, { id: img, bytes: new Uint8Array([1]), mime: 'image/jpeg', ownerType: 'message', ownerId: 1 });
+    const t = callTool<TaskRow>(ctx, 'create_task', { title: 'A', attachment_ids: [img] });
+    expect(callTool<TaskRow[]>(ctx, 'list_tasks', {})[0].attachment_ids).toBe(img);
+    callTool(ctx, 'delete_tasks', { ids: [t.id] });
+    expect(ctx.db.prepare('SELECT COUNT(*) AS n FROM attachments').get()).toEqual({ n: 0 });
+  });
+});
+```
+
+**Step 3: Run to verify it fails**
+
+Run: `bun run test tests/tools-tasks.test.ts`
+Expected: FAIL, `no tool create_task`.
+
+**Step 4: Implement `src/main/tools/tasks.ts`**
+
+```ts
+import { z } from 'zod/v4';
+import { nextOccurrence, RECURRENCE_RE, toLocalDate } from '../../shared/dates';
+import type { TaskRow } from '../../shared/types';
+import type { Db } from '../db';
+import {
+  attachmentIds,
+  attachmentsCol,
+  attachTo,
+  date,
+  deleteRows,
+  getRows,
+  ids,
+  readTool,
+  requireRows,
+  time,
+  updateRows,
+  where,
+  writeTool,
+} from './common';
+
+const recurrence = z.string().regex(RECURRENCE_RE).describe("'daily' | 'weekly:1,3,5' (1 = T2 … 7 = CN) | 'monthly:15'");
+const priority = z.union([z.literal(1), z.literal(2), z.literal(3)]).describe('1 cao, 2 thường, 3 thấp');
+const category = z.string().min(1).describe("'work' (công việc) | 'personal' (cá nhân) | category đã có");
+
+const getTask = (db: Db, id: number): TaskRow => getRows<TaskRow>(db, 'tasks', [id])[0];
+
+/** Next occurrence of a recurring task; the rule moves to the new row so re-completing never spawns twice. */
+function spawnNext(db: Db, t: TaskRow, now: Date): TaskRow {
+  const due = nextOccurrence(t.recurrence!, t.due_date ?? toLocalDate(now));
+  const r = db
+    .prepare('INSERT INTO tasks (title, notes, category, priority, due_date, due_time, recurrence) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(t.title, t.notes, t.category, t.priority, due, t.due_time, t.recurrence);
+  db.prepare('UPDATE tasks SET recurrence = NULL WHERE id = ?').run(t.id);
+  return getTask(db, Number(r.lastInsertRowid));
+}
+
+export const taskTools = [
+  readTool({
+    name: 'list_tasks',
+    description: 'Liệt kê task theo khoảng ngày đến hạn (due_date), trạng thái, phân loại hoặc từ khóa.',
+    schema: z.object({
+      from: date.optional(),
+      to: date.optional(),
+      status: z.enum(['todo', 'done', 'cancelled', 'all']).default('todo'),
+      category: z.string().optional(),
+      query: z.string().optional().describe('Tìm trong tiêu đề và ghi chú'),
+    }),
+    run: (a, { db }) => {
+      const w = where([
+        ['t.status = :status', 'status', a.status === 'all' ? undefined : a.status],
+        ['t.due_date >= :from', 'from', a.from],
+        ['t.due_date <= :to', 'to', a.to],
+        ['t.category = :category', 'category', a.category],
+        ['(t.title LIKE :q OR t.notes LIKE :q)', 'q', a.query ? `%${a.query}%` : undefined],
+      ]);
+      return db
+        .prepare(
+          `SELECT t.*, ${attachmentsCol('task', 't.id')} FROM tasks t ${w.sql}
+           ORDER BY t.due_date IS NULL, t.due_date, t.due_time IS NULL, t.due_time, t.priority, t.id LIMIT 200`
+        )
+        .all(w.params);
+    },
+  }),
+
+  writeTool({
+    name: 'create_task',
+    description: 'Tạo một task mới. Người dùng sẽ xác nhận trước khi lưu.',
+    schema: z.object({
+      title: z.string().min(1),
+      notes: z.string().optional(),
+      category: category.optional(),
+      priority: priority.optional(),
+      due_date: date.optional(),
+      due_time: time.optional(),
+      recurrence: recurrence.optional(),
+      attachment_ids: attachmentIds,
+    }),
+    apply: (a, { db }) => {
+      const r = db
+        .prepare(
+          `INSERT INTO tasks (title, notes, category, priority, due_date, due_time, recurrence)
+           VALUES (:title, :notes, :category, :priority, :due_date, :due_time, :recurrence)`
+        )
+        .run({
+          title: a.title,
+          notes: a.notes ?? null,
+          category: a.category ?? 'personal',
+          priority: a.priority ?? 2,
+          due_date: a.due_date ?? null,
+          due_time: a.due_time ?? null,
+          recurrence: a.recurrence ?? null,
+        });
+      const id = Number(r.lastInsertRowid);
+      attachTo(db, 'task', id, a.attachment_ids);
+      return getTask(db, id);
+    },
+  }),
+
+  writeTool({
+    name: 'update_tasks',
+    description:
+      'Sửa một hoặc nhiều task: đánh dấu xong (status=done), dời ngày, đổi phân loại, ưu tiên... Task lặp lại khi xong sẽ tự sinh lần kế tiếp.',
+    schema: z.object({
+      ids,
+      patch: z
+        .object({
+          title: z.string().min(1).optional(),
+          notes: z.string().nullable().optional(),
+          category: category.optional(),
+          priority: priority.optional(),
+          due_date: date.nullable().optional(),
+          due_time: time.nullable().optional(),
+          status: z.enum(['todo', 'done', 'cancelled']).optional(),
+          recurrence: recurrence.nullable().optional(),
+        })
+        .refine((p) => Object.keys(p).length > 0, 'patch không được rỗng'),
+    }),
+    preview: (a, { db }) => ({ before: requireRows<TaskRow>(db, 'tasks', a.ids) }),
+    apply: (a, { db, now }) => {
+      const before = requireRows<TaskRow>(db, 'tasks', a.ids);
+      const completing = a.patch.status === 'done';
+      const extra = a.patch.status === undefined ? {} : { completed_at: completing ? now().toISOString() : null };
+      updateRows(db, 'tasks', a.ids, a.patch, extra);
+      const spawned = completing ? before.filter((t) => t.status !== 'done' && t.recurrence).map((t) => spawnNext(db, t, now())) : [];
+      return { updated: getRows<TaskRow>(db, 'tasks', a.ids), spawned };
+    },
+  }),
+
+  writeTool({
+    name: 'delete_tasks',
+    description: 'Xóa hẳn một hoặc nhiều task (kèm ảnh và nhắc nhở của chúng).',
+    schema: z.object({ ids }),
+    preview: (a, { db }) => ({ before: requireRows<TaskRow>(db, 'tasks', a.ids) }),
+    apply: (a, { db }) => {
+      requireRows(db, 'tasks', a.ids);
+      deleteRows(db, 'tasks', 'task', a.ids);
+      return { deleted: a.ids };
+    },
+  }),
+];
+```
+
+**Step 5: Register the tools** in `src/main/tools/index.ts`
+
+```ts
+import { taskTools } from './tasks';
+
+export const TOOLS: Tool[] = [...taskTools];
+```
+
+**Step 6: Run to verify it passes**
+
+Run: `bun run test tests/tools-tasks.test.ts tests/tools-registry.test.ts`
+Expected: PASS.
+
+**Step 7: Commit**
+
+```bash
+git add -A
+git commit -m "feat(tools): task tools with bulk update and recurrence"
+```
+
+---
+
+### Task 8: Reminder tools
+
+**Files:**
+- Create: `src/main/tools/reminders.ts`
+- Modify: `src/main/tools/index.ts` (add `...reminderTools`)
+- Test: `tests/tools-reminders.test.ts`
+
+**Step 1: Write the failing tests**
+
+```ts
+import type { ReminderRow, TaskRow } from '../src/shared/types';
+import { callTool, testCtx } from './helpers';
+
+describe('reminder tools', () => {
+  it('stores local times as UTC ISO', () => {
+    const ctx = testCtx();
+    const r = callTool<ReminderRow>(ctx, 'create_reminder', { message: 'Gọi mẹ', remind_at: '2026-09-28T15:00' });
+    expect(r.remind_at).toBe(new Date(2026, 8, 28, 15, 0).toISOString());
+    expect(r.status).toBe('pending');
+  });
+
+  it('rejects past times and unknown tasks', () => {
+    const ctx = testCtx();
+    expect(() => callTool(ctx, 'create_reminder', { message: 'x', remind_at: '2026-09-28T08:00' })).toThrow(/đã qua/);
+    expect(() => callTool(ctx, 'create_reminder', { message: 'x', remind_at: '2026-09-28T10:00', task_id: 42 })).toThrow(/#42/);
+  });
+
+  it('date-only bounds cover whole local days', () => {
+    const ctx = testCtx();
+    callTool(ctx, 'create_reminder', { message: 'A', remind_at: '2026-09-29T23:30' });
+    callTool(ctx, 'create_reminder', { message: 'B', remind_at: '2026-09-30T08:00' });
+    const rows = callTool<ReminderRow[]>(ctx, 'list_reminders', { from: '2026-09-29', to: '2026-09-29' });
+    expect(rows.map((r) => r.message)).toEqual(['A']);
+  });
+
+  it('rescheduling a fired reminder makes it pending again', () => {
+    const ctx = testCtx();
+    const r = callTool<ReminderRow>(ctx, 'create_reminder', { message: 'A', remind_at: '2026-09-28T10:00' });
+    ctx.db.prepare("UPDATE reminders SET status = 'fired' WHERE id = ?").run(r.id);
+    callTool(ctx, 'update_reminders', { ids: [r.id], patch: { remind_at: '2026-09-28T11:00' } });
+    expect(callTool<ReminderRow[]>(ctx, 'list_reminders', {})[0]).toMatchObject({ id: r.id, status: 'pending' });
+  });
+
+  it('deleting a task deletes its reminders (FK cascade)', () => {
+    const ctx = testCtx();
+    const t = callTool<TaskRow>(ctx, 'create_task', { title: 'A' });
+    callTool(ctx, 'create_reminder', { message: 'A', remind_at: '2026-09-28T10:00', task_id: t.id });
+    callTool(ctx, 'delete_tasks', { ids: [t.id] });
+    expect(callTool<ReminderRow[]>(ctx, 'list_reminders', { status: 'all' })).toEqual([]);
+  });
+});
+```
+
+**Step 2: Run to verify it fails**
+
+Run: `bun run test tests/tools-reminders.test.ts`
+Expected: FAIL, `no tool create_reminder`.
+
+**Step 3: Implement `src/main/tools/reminders.ts`**
+
+```ts
+import { z } from 'zod/v4';
+import type { ReminderRow } from '../../shared/types';
+import { deleteRows, getRows, ids, instant, readTool, requireRows, toInstant, updateRows, where, writeTool } from './common';
+
+const status = z.enum(['pending', 'fired', 'dismissed']);
+
+function futureInstant(s: string, now: Date): string {
+  const at = toInstant(s);
+  if (Date.parse(at) <= now.getTime()) throw new Error('Thời điểm nhắc đã qua');
+  return at;
+}
+
+export const reminderTools = [
+  readTool({
+    name: 'list_reminders',
+    description: 'Liệt kê nhắc nhở trong khoảng thời gian (ngày hoặc thời điểm).',
+    schema: z.object({ from: instant.optional(), to: instant.optional(), status: z.enum(['pending', 'fired', 'dismissed', 'all']).default('pending') }),
+    run: (a, { db }) => {
+      const w = where([
+        ['status = :status', 'status', a.status === 'all' ? undefined : a.status],
+        ['remind_at >= :from', 'from', a.from ? toInstant(a.from, 'start') : undefined],
+        ['remind_at < :to', 'to', a.to ? toInstant(a.to, 'end') : undefined],
+      ]);
+      return db.prepare(`SELECT * FROM reminders ${w.sql} ORDER BY remind_at LIMIT 200`).all(w.params);
+    },
+  }),
+
+  writeTool({
+    name: 'create_reminder',
+    description: 'Tạo nhắc nhở; app sẽ hiện thông báo Windows đúng giờ. Có thể gắn với một task.',
+    schema: z.object({ message: z.string().min(1), remind_at: instant, task_id: z.number().int().positive().optional() }),
+    apply: (a, { db, now }) => {
+      const at = futureInstant(a.remind_at, now());
+      if (a.task_id) requireRows(db, 'tasks', [a.task_id]);
+      const r = db.prepare('INSERT INTO reminders (task_id, message, remind_at) VALUES (?, ?, ?)').run(a.task_id ?? null, a.message, at);
+      return getRows<ReminderRow>(db, 'reminders', [Number(r.lastInsertRowid)])[0];
+    },
+  }),
+
+  writeTool({
+    name: 'update_reminders',
+    description: 'Sửa nhắc nhở: nội dung, thời điểm, hoặc status=dismissed để bỏ qua.',
+    schema: z.object({
+      ids,
+      patch: z
+        .object({ message: z.string().min(1).optional(), remind_at: instant.optional(), status: status.optional() })
+        .refine((p) => Object.keys(p).length > 0, 'patch không được rỗng'),
+    }),
+    preview: (a, { db }) => ({ before: requireRows<ReminderRow>(db, 'reminders', a.ids) }),
+    apply: (a, { db, now }) => {
+      requireRows(db, 'reminders', a.ids);
+      const patch: Record<string, unknown> = { ...a.patch };
+      if (a.patch.remind_at) {
+        patch.remind_at = futureInstant(a.patch.remind_at, now());
+        patch.status ??= 'pending';
+      }
+      updateRows(db, 'reminders', a.ids, patch);
+      return { updated: getRows<ReminderRow>(db, 'reminders', a.ids) };
+    },
+  }),
+
+  writeTool({
+    name: 'delete_reminders',
+    description: 'Xóa hẳn nhắc nhở.',
+    schema: z.object({ ids }),
+    preview: (a, { db }) => ({ before: requireRows<ReminderRow>(db, 'reminders', a.ids) }),
+    apply: (a, { db }) => {
+      requireRows(db, 'reminders', a.ids);
+      deleteRows(db, 'reminders', null, a.ids);
+      return { deleted: a.ids };
+    },
+  }),
+];
+```
+
+**Step 4: Register the tools**: `export const TOOLS: Tool[] = [...taskTools, ...reminderTools];`
+
+**Step 5: Run to verify it passes**
+
+Run: `bun run test tests/tools-reminders.test.ts tests/tools-registry.test.ts`
+Expected: PASS.
+
+**Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "feat(tools): reminder tools with local-time normalization"
+```
+
+---
+
+### Task 9: Note tools (FTS5)
+
+**Files:**
+- Create: `src/main/tools/notes.ts`
+- Modify: `src/main/tools/index.ts` (add `...noteTools`)
+- Test: `tests/tools-notes.test.ts`
+
+**Step 1: Write the failing tests**
+
+```ts
+import { ftsQuery } from '../src/main/tools/notes';
+import type { NoteRow } from '../src/shared/types';
+import { callTool, testCtx } from './helpers';
+
+describe('note tools', () => {
+  it('finds accented text without diacritics, with highlighted snippet', () => {
+    const ctx = testCtx();
+    callTool(ctx, 'create_note', { body: 'Họp với chị Lan về ngân sách quý 4' });
+    const [hit] = callTool<NoteRow[]>(ctx, 'search_notes', { query: 'ngan sach' });
+    expect(hit.snippet).toContain('**');
+  });
+
+  it('prefix-matches and survives punctuation-only queries', () => {
+    const ctx = testCtx();
+    callTool(ctx, 'create_note', { body: 'Ý tưởng khởi nghiệp' });
+    expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'khởi' })).toHaveLength(1);
+    expect(() => callTool(ctx, 'search_notes', { query: '" - *' })).not.toThrow();
+    expect(ftsQuery('a"b c')).toBe('"a""b"* "c"*');
+  });
+
+  it('re-indexes on update and forgets on delete', () => {
+    const ctx = testCtx();
+    const n = callTool<NoteRow>(ctx, 'create_note', { body: 'táo' });
+    callTool(ctx, 'update_notes', { ids: [n.id], patch: { body: 'chuối' } });
+    expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'tao' })).toHaveLength(0);
+    expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'chuoi' })).toHaveLength(1);
+    callTool(ctx, 'delete_notes', { ids: [n.id] });
+    expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'chuoi' })).toHaveLength(0);
+  });
+
+  it('filters by kind and returns full bodies via get_notes', () => {
+    const ctx = testCtx();
+    callTool(ctx, 'create_note', { body: 'ghi chú' });
+    const j = callTool<NoteRow>(ctx, 'create_note', { kind: 'journal', body: 'Hôm nay trời đẹp' });
+    expect(callTool<NoteRow[]>(ctx, 'search_notes', { kind: 'journal' }).map((n) => n.id)).toEqual([j.id]);
+    expect(callTool<NoteRow[]>(ctx, 'get_notes', { ids: [j.id] })[0].body).toBe('Hôm nay trời đẹp');
+  });
+});
+```
+
+**Step 2: Run to verify it fails**
+
+Run: `bun run test tests/tools-notes.test.ts`
+Expected: FAIL, cannot resolve `notes`.
+
+**Step 3: Implement `src/main/tools/notes.ts`**
+
+```ts
+import { z } from 'zod/v4';
+import type { NoteRow } from '../../shared/types';
+import {
+  attachmentIds,
+  attachmentsCol,
+  attachTo,
+  date,
+  deleteRows,
+  getRows,
+  ids,
+  readTool,
+  requireRows,
+  updateRows,
+  where,
+  writeTool,
+} from './common';
+
+const kind = z.enum(['note', 'journal']).describe("'note' ghi chú, 'journal' nhật ký");
+
+/** FTS5 query from free text: each word quoted (so no syntax errors) and prefix-matched. */
+export const ftsQuery = (text: string): string =>
+  text
+    .split(/\s+/)
+    .filter((w) => /[\p{L}\p{N}]/u.test(w))
+    .map((w) => `"${w.replace(/"/g, '""')}"*`)
+    .join(' ');
+
+export const noteTools = [
+  readTool({
+    name: 'search_notes',
+    description: 'Tìm ghi chú/nhật ký theo từ khóa (không phân biệt dấu) và khoảng ngày tạo. Bỏ trống query để lấy mới nhất. Trả về đoạn trích.',
+    schema: z.object({
+      query: z.string().optional(),
+      kind: kind.optional(),
+      from: date.optional(),
+      to: date.optional(),
+      limit: z.number().int().min(1).max(100).default(20),
+    }),
+    run: (a, { db }) => {
+      const q = a.query ? ftsQuery(a.query) || undefined : undefined;
+      const w = where([
+        ['notes_fts MATCH :q', 'q', q],
+        ['n.kind = :kind', 'kind', a.kind],
+        ["date(n.created_at, 'localtime') >= :from", 'from', a.from],
+        ["date(n.created_at, 'localtime') <= :to", 'to', a.to],
+      ]);
+      const source = q ? 'notes_fts JOIN notes n ON n.id = notes_fts.rowid' : 'notes n';
+      const snippet = q ? "snippet(notes_fts, 1, '**', '**', '…', 16)" : 'substr(n.body, 1, 300)';
+      return db
+        .prepare(
+          `SELECT n.id, n.kind, n.title, ${snippet} AS snippet, n.created_at, n.updated_at, ${attachmentsCol('note', 'n.id')}
+           FROM ${source} ${w.sql} ORDER BY ${q ? 'rank' : 'n.created_at DESC'} LIMIT :limit`
+        )
+        .all({ ...w.params, limit: a.limit });
+    },
+  }),
+
+  readTool({
+    name: 'get_notes',
+    description: 'Đọc toàn văn ghi chú theo ID (sau khi tìm bằng search_notes).',
+    schema: z.object({ ids }),
+    run: (a, { db }) => getRows<NoteRow>(db, 'notes', a.ids),
+  }),
+
+  writeTool({
+    name: 'create_note',
+    description: 'Tạo ghi chú hoặc nhật ký.',
+    schema: z.object({ kind: kind.default('note'), title: z.string().optional(), body: z.string().min(1), attachment_ids: attachmentIds }),
+    apply: (a, { db }) => {
+      const r = db.prepare('INSERT INTO notes (kind, title, body) VALUES (?, ?, ?)').run(a.kind, a.title ?? null, a.body);
+      const id = Number(r.lastInsertRowid);
+      attachTo(db, 'note', id, a.attachment_ids);
+      return getRows<NoteRow>(db, 'notes', [id])[0];
+    },
+  }),
+
+  writeTool({
+    name: 'update_notes',
+    description: 'Sửa ghi chú/nhật ký.',
+    schema: z.object({
+      ids,
+      patch: z
+        .object({ kind: kind.optional(), title: z.string().nullable().optional(), body: z.string().min(1).optional() })
+        .refine((p) => Object.keys(p).length > 0, 'patch không được rỗng'),
+    }),
+    preview: (a, { db }) => ({ before: requireRows<NoteRow>(db, 'notes', a.ids) }),
+    apply: (a, { db, now }) => {
+      requireRows(db, 'notes', a.ids);
+      updateRows(db, 'notes', a.ids, a.patch, { updated_at: now().toISOString() });
+      return { updated: getRows<NoteRow>(db, 'notes', a.ids) };
+    },
+  }),
+
+  writeTool({
+    name: 'delete_notes',
+    description: 'Xóa hẳn ghi chú/nhật ký (kèm ảnh).',
+    schema: z.object({ ids }),
+    preview: (a, { db }) => ({ before: requireRows<NoteRow>(db, 'notes', a.ids) }),
+    apply: (a, { db }) => {
+      requireRows(db, 'notes', a.ids);
+      deleteRows(db, 'notes', 'note', a.ids);
+      return { deleted: a.ids };
+    },
+  }),
+];
+```
+
+**Step 4: Register the tools**: `[...taskTools, ...reminderTools, ...noteTools]`
+
+**Step 5: Run to verify it passes**
+
+Run: `bun run test tests/tools-notes.test.ts tests/tools-registry.test.ts`
+Expected: PASS.
+
+**Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "feat(tools): notes with accent-insensitive FTS5 search"
+```
+
+---
+
+### Task 10: Expense tools
+
+**Files:**
+- Create: `src/main/tools/expenses.ts`
+- Modify: `src/main/tools/index.ts` (add `...expenseTools`)
+- Test: `tests/tools-expenses.test.ts`
+
+**Step 1: Write the failing tests**
+
+```ts
+import { findTool, parseArgs } from '../src/main/tools';
+import type { ExpenseList, ExpenseRow } from '../src/shared/types';
+import { callTool, testCtx } from './helpers';
+
+describe('expense tools', () => {
+  it('defaults to today and VND', () => {
+    const ctx = testCtx();
+    const e = callTool<ExpenseRow>(ctx, 'create_expense', { amount: 45_000, category: 'ăn uống' });
+    expect(e).toMatchObject({ amount: 45_000, currency: 'VND', spent_at: '2026-09-28' });
+  });
+
+  it('lists a range with totals per currency', () => {
+    const ctx = testCtx();
+    callTool(ctx, 'create_expense', { amount: 45_000, category: 'ăn uống', spent_at: '2026-09-01' });
+    callTool(ctx, 'create_expense', { amount: 30_000, category: 'đi lại', spent_at: '2026-09-15' });
+    callTool(ctx, 'create_expense', { amount: 999, category: 'khác', spent_at: '2026-10-01' });
+    const r = callTool<ExpenseList>(ctx, 'list_expenses', { from: '2026-09-01', to: '2026-09-30' });
+    expect(r.items).toHaveLength(2);
+    expect(r.totals).toEqual([{ currency: 'VND', total: 75_000 }]);
+  });
+
+  it('requires a positive integer amount', () => {
+    const tool = findTool('create_expense')!;
+    expect(() => parseArgs(tool, { amount: 12.5, category: 'x' })).toThrow();
+    expect(() => parseArgs(tool, { amount: 0, category: 'x' })).toThrow();
+  });
+
+  it('updates and deletes', () => {
+    const ctx = testCtx();
+    const e = callTool<ExpenseRow>(ctx, 'create_expense', { amount: 10, category: 'x' });
+    callTool(ctx, 'update_expenses', { ids: [e.id], patch: { amount: 20 } });
+    expect(callTool<ExpenseList>(ctx, 'list_expenses', { from: '2026-09-28', to: '2026-09-28' }).items[0].amount).toBe(20);
+    callTool(ctx, 'delete_expenses', { ids: [e.id] });
+    expect(callTool<ExpenseList>(ctx, 'list_expenses', { from: '2026-09-28', to: '2026-09-28' }).items).toEqual([]);
+  });
+});
+```
+
+**Step 2: Run to verify it fails**
+
+Run: `bun run test tests/tools-expenses.test.ts`
+Expected: FAIL, `no tool create_expense`.
+
+**Step 3: Implement `src/main/tools/expenses.ts`**
+
+```ts
+import { z } from 'zod/v4';
+import { toLocalDate } from '../../shared/dates';
+import type { ExpenseRow } from '../../shared/types';
+import {
+  attachmentIds,
+  attachmentsCol,
+  attachTo,
+  date,
+  deleteRows,
+  getRows,
+  ids,
+  readTool,
+  requireRows,
+  updateRows,
+  where,
+  writeTool,
+} from './common';
+
+const amount = z.number().int().positive().describe('Số nguyên theo đơn vị nhỏ nhất: VND = đồng, USD = cent (12.50 USD → 1250)');
+const currency = z.string().length(3).describe('Mã ISO 4217, vd VND, USD');
+const category = z.string().min(1).describe('vd: ăn uống, đi lại, nhà cửa, mua sắm, giải trí, sức khỏe, khác (ưu tiên category đã có)');
+
+export const expenseTools = [
+  readTool({
+    name: 'list_expenses',
+    description: 'Liệt kê khoản chi trong khoảng ngày chi (spent_at), kèm tổng theo tiền tệ.',
+    schema: z.object({ from: date, to: date, category: z.string().optional() }),
+    run: (a, { db }) => {
+      const w = where([
+        ['e.spent_at >= :from', 'from', a.from],
+        ['e.spent_at <= :to', 'to', a.to],
+        ['e.category = :category', 'category', a.category],
+      ]);
+      return {
+        items: db
+          .prepare(`SELECT e.*, ${attachmentsCol('expense', 'e.id')} FROM expenses e ${w.sql} ORDER BY e.spent_at DESC, e.id DESC LIMIT 500`)
+          .all(w.params),
+        totals: db.prepare(`SELECT e.currency, SUM(e.amount) AS total FROM expenses e ${w.sql} GROUP BY e.currency`).all(w.params),
+      };
+    },
+  }),
+
+  writeTool({
+    name: 'create_expense',
+    description: 'Ghi một khoản chi (có thể đọc từ ảnh hóa đơn).',
+    schema: z.object({
+      amount,
+      currency: currency.default('VND'),
+      category,
+      description: z.string().optional(),
+      spent_at: date.optional().describe('Mặc định hôm nay'),
+      attachment_ids: attachmentIds,
+    }),
+    apply: (a, { db, now }) => {
+      const r = db
+        .prepare('INSERT INTO expenses (amount, currency, category, description, spent_at) VALUES (?, ?, ?, ?, ?)')
+        .run(a.amount, a.currency, a.category, a.description ?? null, a.spent_at ?? toLocalDate(now()));
+      const id = Number(r.lastInsertRowid);
+      attachTo(db, 'expense', id, a.attachment_ids);
+      return getRows<ExpenseRow>(db, 'expenses', [id])[0];
+    },
+  }),
+
+  writeTool({
+    name: 'update_expenses',
+    description: 'Sửa khoản chi.',
+    schema: z.object({
+      ids,
+      patch: z
+        .object({
+          amount: amount.optional(),
+          currency: currency.optional(),
+          category: category.optional(),
+          description: z.string().nullable().optional(),
+          spent_at: date.optional(),
+        })
+        .refine((p) => Object.keys(p).length > 0, 'patch không được rỗng'),
+    }),
+    preview: (a, { db }) => ({ before: requireRows<ExpenseRow>(db, 'expenses', a.ids) }),
+    apply: (a, { db }) => {
+      requireRows(db, 'expenses', a.ids);
+      updateRows(db, 'expenses', a.ids, a.patch);
+      return { updated: getRows<ExpenseRow>(db, 'expenses', a.ids) };
+    },
+  }),
+
+  writeTool({
+    name: 'delete_expenses',
+    description: 'Xóa hẳn khoản chi (kèm ảnh).',
+    schema: z.object({ ids }),
+    preview: (a, { db }) => ({ before: requireRows<ExpenseRow>(db, 'expenses', a.ids) }),
+    apply: (a, { db }) => {
+      requireRows(db, 'expenses', a.ids);
+      deleteRows(db, 'expenses', 'expense', a.ids);
+      return { deleted: a.ids };
+    },
+  }),
+];
+```
+
+**Step 4: Register the tools**: `[...taskTools, ...reminderTools, ...noteTools, ...expenseTools]`
+
+**Step 5: Run to verify it passes**
+
+Run: `bun run test tests/tools-expenses.test.ts tests/tools-registry.test.ts`
+Expected: PASS.
+
+**Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "feat(tools): expense tools with per-currency totals"
+```
+
+---
+
+### Task 11: Today overview and read-only SQL
+
+**Files:**
+- Create: `src/main/tools/overview.ts`, `src/main/tools/sql.ts`
+- Modify: `src/main/tools/index.ts` (final order below)
+- Test: `tests/tools-overview-sql.test.ts`
+
+**Step 1: Write the failing tests**
+
+```ts
+import { callTool, testCtx } from './helpers';
+
+type Overview = { today: string; tasks_today: unknown[]; overdue: unknown[]; reminders_today: unknown[]; spent_today: unknown[] };
+type SqlResult = { rows: Record<string, unknown>[]; truncated?: boolean };
+
+describe('get_today_overview', () => {
+  it('splits today vs overdue and sums today spending', () => {
+    const ctx = testCtx();
+    callTool(ctx, 'create_task', { title: 'hôm nay', due_date: '2026-09-28' });
+    callTool(ctx, 'create_task', { title: 'trễ', due_date: '2026-09-20' });
+    callTool(ctx, 'create_task', { title: 'mai', due_date: '2026-09-29' });
+    callTool(ctx, 'create_reminder', { message: 'r1', remind_at: '2026-09-28T20:00' });
+    callTool(ctx, 'create_reminder', { message: 'r2', remind_at: '2026-09-29T08:00' });
+    callTool(ctx, 'create_expense', { amount: 30_000, category: 'ăn uống' });
+    const o = callTool<Overview>(ctx, 'get_today_overview', {});
+    expect(o.today).toBe('2026-09-28');
+    expect(o.tasks_today).toMatchObject([{ title: 'hôm nay' }]);
+    expect(o.overdue).toMatchObject([{ title: 'trễ' }]);
+    expect(o.reminders_today).toMatchObject([{ message: 'r1' }]);
+    expect(o.spent_today).toEqual([{ currency: 'VND', total: 30_000 }]);
+  });
+});
+
+describe('query_readonly_sql', () => {
+  it('runs SELECT and WITH, sees committed writes', () => {
+    const ctx = testCtx();
+    callTool(ctx, 'create_task', { title: 'A' });
+    expect(callTool<SqlResult>(ctx, 'query_readonly_sql', { sql: 'SELECT COUNT(*) AS n FROM tasks;' }).rows).toEqual([{ n: 1 }]);
+  });
+
+  it('refuses anything that writes', () => {
+    const ctx = testCtx();
+    expect(() => callTool(ctx, 'query_readonly_sql', { sql: 'DELETE FROM tasks' })).toThrow(/SELECT/);
+    expect(() => callTool(ctx, 'query_readonly_sql', { sql: 'WITH x AS (SELECT 1) DELETE FROM tasks' })).toThrow();
+  });
+
+  it('caps rows at 200', () => {
+    const ctx = testCtx();
+    const sql = 'WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 500) SELECT i FROM n';
+    const r = callTool<SqlResult>(ctx, 'query_readonly_sql', { sql });
+    expect(r.rows).toHaveLength(200);
+    expect(r.truncated).toBe(true);
+  });
+});
+```
+
+**Step 2: Run to verify it fails**
+
+Run: `bun run test tests/tools-overview-sql.test.ts`
+Expected: FAIL, `no tool get_today_overview`.
+
+**Step 3: Implement `src/main/tools/overview.ts`**
+
+```ts
+import { z } from 'zod/v4';
+import { localDayRange, toLocalDate } from '../../shared/dates';
+import { readTool } from './common';
+
+export const overviewTools = [
+  readTool({
+    name: 'get_today_overview',
+    description: 'Tổng quan hôm nay: task đến hạn hôm nay, task quá hạn, nhắc nhở hôm nay và tổng chi hôm nay.',
+    schema: z.object({}),
+    run: (_a, { db, now }) => {
+      const today = toLocalDate(now());
+      const { start, end } = localDayRange(today);
+      return {
+        today,
+        tasks_today: db
+          .prepare("SELECT * FROM tasks WHERE status = 'todo' AND due_date = ? ORDER BY due_time IS NULL, due_time, priority")
+          .all(today),
+        overdue: db.prepare("SELECT * FROM tasks WHERE status = 'todo' AND due_date < ? ORDER BY due_date").all(today),
+        reminders_today: db
+          .prepare("SELECT * FROM reminders WHERE status = 'pending' AND remind_at >= ? AND remind_at < ? ORDER BY remind_at")
+          .all(start, end),
+        spent_today: db.prepare('SELECT currency, SUM(amount) AS total FROM expenses WHERE spent_at = ? GROUP BY currency').all(today),
+      };
+    },
+  }),
+];
+```
+
+**Step 4: Implement `src/main/tools/sql.ts`**
+
+```ts
+import { z } from 'zod/v4';
+import { readTool } from './common';
+
+const MAX_ROWS = 200;
+const SCHEMA = `tasks(id, title, notes, category, priority 1-3, due_date 'YYYY-MM-DD', due_time 'HH:MM', status todo|done|cancelled, recurrence, created_at, completed_at)
+reminders(id, task_id, message, remind_at, status pending|fired|dismissed)
+notes(id, kind note|journal, title, body, created_at, updated_at)
+expenses(id, amount INTEGER minor unit, currency, category, description, spent_at 'YYYY-MM-DD', created_at)
+attachments(id, owner_type task|note|expense|message, owner_id, file_name, mime, created_at)`;
+
+export const sqlTools = [
+  readTool({
+    name: 'query_readonly_sql',
+    description:
+      'Chạy MỘT câu SELECT/WITH chỉ-đọc trên SQLite cho thống kê mà tool khác không làm được. ' +
+      "Cột *_at là ISO UTC: dùng date(x, 'localtime') để lấy ngày địa phương; due_date/spent_at đã là ngày địa phương. " +
+      `Tối đa ${MAX_ROWS} dòng. Schema:\n${SCHEMA}`,
+    schema: z.object({ sql: z.string().min(1) }),
+    run: (a, { ro }) => {
+      const sql = a.sql.trim().replace(/;\s*$/, '');
+      if (!/^(select|with)\b/i.test(sql)) throw new Error('Chỉ chấp nhận SELECT hoặc WITH');
+      // The connection is opened readOnly; the wrapper also rejects WITH … DELETE and caps the row count.
+      const rows = ro.prepare(`SELECT * FROM (${sql}) LIMIT ${MAX_ROWS + 1}`).all();
+      return rows.length > MAX_ROWS ? { rows: rows.slice(0, MAX_ROWS), truncated: true } : { rows };
+    },
+  }),
+];
+```
+
+**Step 5: Final registry order** in `src/main/tools/index.ts`
+
+```ts
+import { expenseTools } from './expenses';
+import { noteTools } from './notes';
+import { overviewTools } from './overview';
+import { reminderTools } from './reminders';
+import { sqlTools } from './sql';
+import { taskTools } from './tasks';
+
+export const TOOLS: Tool[] = [...overviewTools, ...taskTools, ...reminderTools, ...noteTools, ...expenseTools, ...sqlTools];
+```
+
+**Step 6: Run the whole suite**
+
+Run: `bun run test`
+Expected: all PASS.
+
+**Step 7: Commit**
+
+```bash
+git add -A
+git commit -m "feat(tools): today overview and capped read-only SQL"
+```
+
+---
+
+## Phase 2: Agent
+
+### Task 12: Settings and secrets
+
+**Files:**
+- Create: `src/main/settings.ts`
+- Test: `tests/settings.test.ts`
+
+**Step 1: Write the failing tests**
+
+```ts
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { type Cipher, getSetting, readSecrets, setSetting, writeSecret } from '../src/main/settings';
+import { tempDir, testDb } from './helpers';
+
+// Stand-in for Electron safeStorage: reversible, but not plaintext.
+const cipher: Cipher = {
+  encrypt: (s) => Buffer.from(s, 'utf8').reverse(),
+  decrypt: (b) => Buffer.from(b).reverse().toString('utf8'),
+};
+
+describe('settings', () => {
+  it('round-trips JSON values with a fallback', () => {
+    const { db } = testDb();
+    expect(getSetting(db, 'llm', { a: 1 })).toEqual({ a: 1 });
+    setSetting(db, 'llm', { a: 2 });
+    setSetting(db, 'llm', { a: 3 });
+    expect(getSetting(db, 'llm', { a: 1 })).toEqual({ a: 3 });
+  });
+
+  it('keeps secrets per provider, encrypted, outside the DB', () => {
+    const file = join(tempDir(), 'secrets.bin');
+    expect(readSecrets(file, cipher)).toEqual({});
+    writeSecret(file, cipher, 'azure', 'sk-secret');
+    writeSecret(file, cipher, 'gateway', 'tok');
+    expect(readSecrets(file, cipher)).toEqual({ azure: 'sk-secret', gateway: 'tok' });
+    expect(readFileSync(file).toString('utf8')).not.toContain('sk-secret');
+  });
+});
+```
+
+**Step 2: Run to verify it fails**
+
+Run: `bun run test tests/settings.test.ts`
+Expected: FAIL, cannot resolve module.
+
+**Step 3: Implement `src/main/settings.ts`**
+
+```ts
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { z } from 'zod/v4';
+import type { LlmConfig } from '../shared/types';
+import type { Db } from './db';
+
+export const llmConfigSchema = z.object({
+  provider: z.enum(['azure', 'gateway']),
+  endpoint: z.url(),
+  model: z.string().min(1),
+  apiVersion: z.string().min(1),
+});
+
+export function getSetting<T>(db: Db, key: string, fallback: T): T {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+  return row ? (JSON.parse(row.value) as T) : fallback;
+}
+
+export function setSetting(db: Db, key: string, value: unknown): void {
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value').run(
+    key,
+    JSON.stringify(value)
+  );
+}
+
+/** Electron safeStorage in the app; a fake in tests. */
+export type Cipher = { encrypt: (plain: string) => Buffer; decrypt: (data: Buffer) => string };
+type Secrets = Partial<Record<LlmConfig['provider'], string>>;
+
+/** Secrets live in their own file, never in the DB, so query_readonly_sql can't leak them (design D14). */
+export function readSecrets(file: string, cipher: Cipher): Secrets {
+  return existsSync(file) ? (JSON.parse(cipher.decrypt(readFileSync(file))) as Secrets) : {};
+}
+
+export function writeSecret(file: string, cipher: Cipher, provider: LlmConfig['provider'], value: string): void {
+  writeFileSync(file, cipher.encrypt(JSON.stringify({ ...readSecrets(file, cipher), [provider]: value })));
+}
+```
+
+**Step 4: Run to verify it passes**
+
+Run: `bun run test tests/settings.test.ts`
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat(settings): JSON settings and encrypted per-provider secrets"
+```
+
+---
+
+### Task 13: LLM client
+
+**Files:**
+- Create: `src/main/llm.ts`
+- Modify: `tests/helpers.ts` (add `chunk`, `fakeLlm`, `say`, `call`)
+- Test: `tests/llm.test.ts`
+
+**Step 1: Extend `tests/helpers.ts`**
+
+```ts
+import type { ChatCompletionChunk } from 'openai/resources/chat/completions';
+import type { Llm } from '../src/main/llm';
+import type { AssistantMessage } from '../src/shared/types';
+
+export const chunk = (delta: object): ChatCompletionChunk =>
+  ({ id: 'c', object: 'chat.completion.chunk', created: 0, model: 'fake', choices: [{ index: 0, delta, finish_reason: null }] }) as unknown as ChatCompletionChunk;
+
+/** Streams one scripted assistant message per LLM call; tool-call arguments arrive split in two chunks. */
+export function fakeLlm(script: AssistantMessage[]): Llm {
+  let i = 0;
+  return {
+    async *stream() {
+      const m = script[i++];
+      if (!m) throw new Error('fake LLM script exhausted');
+      if (m.content) yield chunk({ content: m.content });
+      for (const [index, tc] of (m.tool_calls ?? []).entries()) {
+        const args = tc.function.arguments;
+        const half = Math.floor(args.length / 2);
+        yield chunk({ tool_calls: [{ index, id: tc.id, type: 'function', function: { name: tc.function.name, arguments: args.slice(0, half) } }] });
+        yield chunk({ tool_calls: [{ index, function: { arguments: args.slice(half) } }] });
+      }
+    },
+  };
+}
+
+export const say = (content: string): AssistantMessage => ({ role: 'assistant', content });
+export const call = (id: string, name: string, args: object): AssistantMessage => ({
+  role: 'assistant',
+  content: null,
+  tool_calls: [{ id, type: 'function', function: { name, arguments: JSON.stringify(args) } }],
+});
+```
+
+**Step 2: Write the failing tests** in `tests/llm.test.ts`
+
+```ts
+import { APIConnectionError, APIError } from 'openai';
+import { collect, createLlm, describeLlmError } from '../src/main/llm';
+import { DEFAULT_LLM } from '../src/shared/types';
+import { call, chunk, fakeLlm } from './helpers';
+
+describe('collect', () => {
+  it('merges text and split tool-call deltas', async () => {
+    const texts: string[] = [];
+    const scripted = fakeLlm([{ ...call('c1', 'list_tasks', { status: 'todo' }), content: 'Để mình xem' }]);
+    const msg = await collect(scripted.stream({ messages: [] }), (d) => texts.push(d));
+    expect(texts.join('')).toBe('Để mình xem');
+    expect(msg.tool_calls).toEqual([{ id: 'c1', type: 'function', function: { name: 'list_tasks', arguments: '{"status":"todo"}' } }]);
+  });
+
+  it('keeps partial text when the stream breaks', async () => {
+    const partial = { content: '' };
+    async function* broken() {
+      yield chunk({ content: 'Đang tra' });
+      throw new Error('socket hang up');
+    }
+    await expect(collect(broken(), () => {}, partial)).rejects.toThrow('socket hang up');
+    expect(partial.content).toBe('Đang tra');
+  });
+});
+
+describe('describeLlmError', () => {
+  it('maps common failures to Vietnamese hints', () => {
+    expect(describeLlmError(new APIError(401, undefined, 'Unauthorized', undefined))).toMatch(/Cài đặt/);
+    expect(describeLlmError(new APIError(404, undefined, 'Not found', undefined))).toMatch(/model/);
+    expect(describeLlmError(new APIConnectionError({ message: 'down' }))).toMatch(/kết nối/);
+  });
+});
+
+it('createLlm refuses an unconfigured provider', () => {
+  expect(() => createLlm(DEFAULT_LLM, '')).toThrow(/Cài đặt/);
+});
+```
+
+**Step 3: Run to verify it fails**
+
+Run: `bun run test tests/llm.test.ts`
+Expected: FAIL, cannot resolve `../src/main/llm`.
+
+**Step 4: Implement `src/main/llm.ts`**
+
+```ts
+import OpenAI, { APIConnectionError, APIError, APIUserAbortError, AzureOpenAI } from 'openai';
+import type { ChatCompletionChunk, ChatCompletionFunctionTool, ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+import type { AssistantMessage, LlmConfig, ToolCall } from '../shared/types';
+
+export type StreamParams = { messages: ChatCompletionMessageParam[]; tools?: ChatCompletionFunctionTool[]; signal?: AbortSignal };
+export type Llm = { stream: (p: StreamParams) => AsyncIterable<ChatCompletionChunk> };
+
+/** One client for both providers; both speak OpenAI chat completions (design D2). */
+export function createLlm(cfg: LlmConfig, apiKey: string): Llm {
+  if (!cfg.endpoint || !cfg.model || !apiKey) throw new Error('Chưa cấu hình LLM. Mở Cài đặt để nhập endpoint, model và key.');
+  const client =
+    cfg.provider === 'azure'
+      ? new AzureOpenAI({ endpoint: cfg.endpoint, apiKey, apiVersion: cfg.apiVersion, deployment: cfg.model, maxRetries: 2 })
+      : new OpenAI({ baseURL: cfg.endpoint, apiKey, maxRetries: 2 });
+  return {
+    async *stream({ messages, tools, signal }) {
+      yield* await client.chat.completions.create(
+        { model: cfg.model, messages, tools: tools?.length ? tools : undefined, stream: true },
+        { signal }
+      );
+    },
+  };
+}
+
+/** Accumulates a streamed reply. `partial` keeps the text so far if the stream breaks. */
+export async function collect(
+  stream: AsyncIterable<ChatCompletionChunk>,
+  onText: (delta: string) => void,
+  partial: { content: string } = { content: '' }
+): Promise<AssistantMessage> {
+  const calls: ToolCall[] = [];
+  for await (const c of stream) {
+    const delta = c.choices[0]?.delta;
+    if (!delta) continue;
+    if (delta.content) {
+      partial.content += delta.content;
+      onText(delta.content);
+    }
+    for (const tc of delta.tool_calls ?? []) {
+      const acc = (calls[tc.index] ??= { id: '', type: 'function', function: { name: '', arguments: '' } });
+      if (tc.id) acc.id = tc.id;
+      if (tc.function?.name) acc.function.name += tc.function.name;
+      if (tc.function?.arguments) acc.function.arguments += tc.function.arguments;
+    }
+  }
+  const toolCalls = calls.filter(Boolean);
+  toolCalls.forEach((tc, i) => (tc.id ||= `call_${Date.now()}_${i}`));
+  return { role: 'assistant', content: partial.content || null, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) };
+}
+
+export function describeLlmError(e: unknown): string {
+  if (e instanceof APIUserAbortError) return 'Đã dừng.';
+  if (e instanceof APIConnectionError) return 'Không kết nối được tới LLM endpoint. Kiểm tra mạng/proxy và URL trong Cài đặt.';
+  if (e instanceof APIError) {
+    if (e.status === 401 || e.status === 403) return 'API key/token sai hoặc hết hạn. Kiểm tra trong Cài đặt.';
+    if (e.status === 404) return 'Không tìm thấy model/deployment. Kiểm tra endpoint và tên model trong Cài đặt.';
+    if (e.status === 429) return 'LLM đang giới hạn tốc độ (429). Thử lại sau ít phút.';
+    return `LLM trả lỗi ${e.status ?? ''}: ${e.message}`;
+  }
+  return e instanceof Error ? e.message : String(e);
+}
+```
+
+**Step 5: Run to verify it passes**
+
+Run: `bun run test tests/llm.test.ts`
+Expected: PASS.
+
+**Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "feat(llm): OpenAI/Azure streaming client, delta accumulation, error hints"
+```
+
+---
+
+### Task 14: Conversation store
+
+**Files:**
+- Create: `src/main/store.ts`
+- Test: `tests/store.test.ts`
+
+**Step 1: Write the failing tests**
+
+```ts
+import { newAttachmentId, saveAttachment } from '../src/main/attachments';
+import {
+  addMessage,
+  createAction,
+  createConversation,
+  deleteConversation,
+  finishAction,
+  getMessages,
+  listActions,
+  listConversations,
+  pruneEmptyConversations,
+  setTitleIfNew,
+} from '../src/main/store';
+import { testDb } from './helpers';
+
+describe('store', () => {
+  it('round-trips messages as JSON and titles new conversations once', () => {
+    const { db } = testDb();
+    const c = createConversation(db);
+    addMessage(db, c, { role: 'user', content: 'Hôm nay có gì?', attachment_ids: ['abc12345'] });
+    setTitleIfNew(db, c, 'Hôm nay có gì?');
+    setTitleIfNew(db, c, 'khác');
+    expect(getMessages(db, c)[0]).toMatchObject({ role: 'user', content: 'Hôm nay có gì?', attachment_ids: ['abc12345'] });
+    expect(listConversations(db)[0].title).toBe('Hôm nay có gì?');
+  });
+
+  it('tracks pending actions', () => {
+    const { db } = testDb();
+    const c = createConversation(db);
+    const id = createAction(db, { conversation_id: c, tool_call_id: 't1', tool_name: 'create_task', args: { title: 'A' }, preview: null });
+    expect(listActions(db, c, 'pending')).toMatchObject([{ id, args: { title: 'A' }, preview: null, result: null }]);
+    finishAction(db, id, 'confirmed', { title: 'B' }, { ok: 1 });
+    expect(listActions(db, c)[0]).toMatchObject({ status: 'confirmed', args: { title: 'B' }, result: { ok: 1 } });
+  });
+
+  it('deleting a conversation removes its messages, actions and message images', () => {
+    const { db, dir } = testDb();
+    const c = createConversation(db);
+    const m = addMessage(db, c, { role: 'user', content: 'x' });
+    saveAttachment(db, dir, { id: newAttachmentId(), bytes: new Uint8Array([1]), mime: 'image/jpeg', ownerType: 'message', ownerId: m });
+    createAction(db, { conversation_id: c, tool_call_id: 't', tool_name: 'x', args: {}, preview: null });
+    deleteConversation(db, c);
+    for (const t of ['messages', 'pending_actions', 'attachments']) {
+      expect(db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get()).toEqual({ n: 0 });
+    }
+  });
+
+  it('prunes conversations without messages', () => {
+    const { db } = testDb();
+    createConversation(db);
+    const kept = createConversation(db);
+    addMessage(db, kept, { role: 'user', content: 'x' });
+    pruneEmptyConversations(db);
+    expect(listConversations(db).map((c) => c.id)).toEqual([kept]);
+  });
+});
+```
+
+**Step 2: Run to verify it fails**
+
+Run: `bun run test tests/store.test.ts`
+Expected: FAIL, cannot resolve module.
+
+**Step 3: Implement `src/main/store.ts`**
+
+```ts
+import type { ChatMessage, ConversationRow, PendingAction, StoredMessage } from '../shared/types';
+import { type Db, tx } from './db';
+
+const DEFAULT_TITLE = 'Hội thoại mới';
+const NOW_ISO = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
+
+export const createConversation = (db: Db): number =>
+  Number(db.prepare('INSERT INTO conversations DEFAULT VALUES').run().lastInsertRowid);
+
+export const listConversations = (db: Db): ConversationRow[] =>
+  db.prepare('SELECT id, title, updated_at FROM conversations ORDER BY updated_at DESC, id DESC').all() as unknown as ConversationRow[];
+
+export function deleteConversation(db: Db, id: number): void {
+  tx(db, () => {
+    db.prepare(
+      "DELETE FROM attachments WHERE owner_type = 'message' AND owner_id IN (SELECT id FROM messages WHERE conversation_id = ?)"
+    ).run(id);
+    db.prepare('DELETE FROM conversations WHERE id = ?').run(id); // messages + pending_actions cascade
+  });
+}
+
+export function pruneEmptyConversations(db: Db): void {
+  db.prepare('DELETE FROM conversations WHERE id NOT IN (SELECT DISTINCT conversation_id FROM messages)').run();
+}
+
+export function setTitleIfNew(db: Db, id: number, text: string): void {
+  const title = text.replace(/\s+/g, ' ').trim().slice(0, 40) || 'Ảnh';
+  db.prepare('UPDATE conversations SET title = ? WHERE id = ? AND title = ?').run(title, id, DEFAULT_TITLE);
+}
+
+export function addMessage(db: Db, conversationId: number, m: StoredMessage): number {
+  const r = db
+    .prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)')
+    .run(conversationId, m.role, JSON.stringify(m));
+  db.prepare(`UPDATE conversations SET updated_at = ${NOW_ISO} WHERE id = ?`).run(conversationId);
+  return Number(r.lastInsertRowid);
+}
+
+export function getMessages(db: Db, conversationId: number): ChatMessage[] {
+  const rows = db.prepare('SELECT id, content, created_at FROM messages WHERE conversation_id = ? ORDER BY id').all(conversationId) as {
+    id: number;
+    content: string;
+    created_at: string;
+  }[];
+  return rows.map((r) => ({ ...(JSON.parse(r.content) as StoredMessage), id: r.id, created_at: r.created_at }));
+}
+
+type ActionRow = Omit<PendingAction, 'args' | 'preview' | 'result'> & { args: string; preview: string; result: string | null };
+const toAction = (r: ActionRow): PendingAction => ({
+  ...r,
+  args: JSON.parse(r.args),
+  preview: JSON.parse(r.preview),
+  result: r.result === null ? null : JSON.parse(r.result),
+});
+
+export function createAction(
+  db: Db,
+  a: { conversation_id: number; tool_call_id: string; tool_name: string; args: unknown; preview: unknown }
+): number {
+  return Number(
+    db
+      .prepare('INSERT INTO pending_actions (conversation_id, tool_call_id, tool_name, args, preview) VALUES (?, ?, ?, ?, ?)')
+      .run(a.conversation_id, a.tool_call_id, a.tool_name, JSON.stringify(a.args), JSON.stringify(a.preview ?? null)).lastInsertRowid
+  );
+}
+
+export function getAction(db: Db, id: number): PendingAction | undefined {
+  const row = db.prepare('SELECT * FROM pending_actions WHERE id = ?').get(id) as ActionRow | undefined;
+  return row && toAction(row);
+}
+
+export function listActions(db: Db, conversationId: number, status?: PendingAction['status']): PendingAction[] {
+  const rows = (
+    status
+      ? db.prepare('SELECT * FROM pending_actions WHERE conversation_id = ? AND status = ? ORDER BY id').all(conversationId, status)
+      : db.prepare('SELECT * FROM pending_actions WHERE conversation_id = ? ORDER BY id').all(conversationId)
+  ) as unknown as ActionRow[];
+  return rows.map(toAction);
+}
+
+export function finishAction(db: Db, id: number, status: 'confirmed' | 'cancelled', args: unknown, result: unknown): void {
+  db.prepare('UPDATE pending_actions SET status = ?, args = ?, result = ? WHERE id = ?').run(
+    status,
+    JSON.stringify(args),
+    JSON.stringify(result ?? null),
+    id
+  );
+}
+```
+
+**Step 4: Run to verify it passes**
+
+Run: `bun run test tests/store.test.ts`
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat(store): conversations, messages and pending actions"
+```
+
+---
+
+### Task 15: System prompt
+
+**Files:**
+- Create: `src/main/prompt.ts`
+- Test: `tests/prompt.test.ts`
+
+**Step 1: Write the failing test**
+
+```ts
+import { systemPrompt } from '../src/main/prompt';
+import { callTool, NOW, testCtx } from './helpers';
+
+it('states the current date, weekday and existing categories', () => {
+  const ctx = testCtx();
+  callTool(ctx, 'create_expense', { amount: 1, category: 'ăn uống' });
+  const p = systemPrompt(ctx.db, NOW);
+  expect(p).toContain('2026-09-28 09:00');
+  expect(p).toMatch(/thứ hai/i);
+  expect(p).toContain('ăn uống');
+  expect(p).toContain('work, personal'); // fallback while there are no tasks yet
+});
+```
+
+**Step 2: Run to verify it fails**
+
+Run: `bun run test tests/prompt.test.ts`
+Expected: FAIL, cannot resolve module.
+
+**Step 3: Implement `src/main/prompt.ts`**
+
+```ts
+import { toLocalDate, toLocalTime } from '../shared/dates';
+import type { Db } from './db';
+
+const utcOffset = (d: Date): string => {
+  const m = -d.getTimezoneOffset();
+  const abs = Math.abs(m);
+  return `UTC${m >= 0 ? '+' : '-'}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
+};
+
+export function systemPrompt(db: Db, now: Date): string {
+  const distinct = (sql: string): string => (db.prepare(sql).all() as { c: string }[]).map((r) => r.c).join(', ');
+  const taskCats = distinct('SELECT DISTINCT category AS c FROM tasks ORDER BY c') || 'work, personal';
+  const expenseCats = distinct('SELECT DISTINCT category AS c FROM expenses ORDER BY c') || 'chưa có';
+  const weekday = now.toLocaleDateString('vi-VN', { weekday: 'long' });
+  return [
+    'Bạn là trợ lý cá nhân của người dùng: quản lý task, nhắc nhở, ghi chú/nhật ký và chi tiêu lưu trong cơ sở dữ liệu trên máy của họ.',
+    `Bây giờ là ${weekday}, ${toLocalDate(now)} ${toLocalTime(now)} (${utcOffset(now)}).`,
+    '',
+    'Quy tắc:',
+    '- Luôn dùng tool để tra dữ liệu trước khi nói về task, nhắc nhở, ghi chú hay chi tiêu. Không bịa dữ liệu.',
+    '- Đổi mọi ngày tương đối ("mai", "thứ 6 tuần sau", "cuối tháng") thành ngày tuyệt đối trước khi gọi tool.',
+    '- Tool ghi (create_/update_/delete_) hiện thẻ để người dùng xác nhận, nên cứ gọi thẳng, không hỏi "bạn có muốn…" trước. Nhiều việc thì gọi nhiều tool trong cùng một lượt.',
+    '- Thiếu thông tin bắt buộc (vd số tiền) hoặc yêu cầu mơ hồ thì hỏi lại ngắn gọn.',
+    '- Chỉ dùng ID lấy từ kết quả tool. Muốn sửa/xóa thì tìm ID trước.',
+    '- Ảnh người dùng gửi có nhãn [ảnh #id]. Đọc nội dung ảnh để điền thông tin, và truyền id vào attachment_ids của bản ghi liên quan.',
+    '- Tiền là số nguyên theo đơn vị nhỏ nhất (VND = đồng, USD = cent).',
+    `- Phân loại task đang có: ${taskCats}. Danh mục chi tiêu đang có: ${expenseCats}. Ưu tiên dùng lại.`,
+    '- Tool trả lỗi thì đọc lỗi và sửa tham số. Người dùng hủy thì không thử lại trừ khi họ yêu cầu.',
+    '- Trả lời bằng ngôn ngữ người dùng dùng, ngắn gọn, dùng Markdown.',
+  ].join('\n');
+}
+```
+
+**Step 4: Run to verify it passes**
+
+Run: `bun run test tests/prompt.test.ts`
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat(agent): Vietnamese system prompt with date and known categories"
+```
+
+---
+
+### Task 16: Agent loop with propose/confirm
+
+**Files:**
+- Create: `src/main/agent.ts`
+- Modify: `tests/helpers.ts` (add `testDeps`)
+- Test: `tests/agent.test.ts`
+
+**Step 1: Extend `tests/helpers.ts`**
+
+```ts
+import type { AgentDeps } from '../src/main/agent';
+import type { AgentEvent } from '../src/shared/types';
+
+export function testDeps(script: AssistantMessage[], llm: Llm = fakeLlm(script)): AgentDeps & { events: AgentEvent[] } {
+  const { db, ro, dir } = testDb();
+  const events: AgentEvent[] = [];
+  return { db, ro, attachmentsDir: join(dir, 'att'), now: () => NOW, llm: () => llm, emit: (e) => void events.push(e), events };
+}
+```
+
+**Step 2: Write the failing tests** in `tests/agent.test.ts`
+
+```ts
+import { APIConnectionError } from 'openai';
+import { buildLlmMessages, cancelOpenActions, MAX_ROUNDS, resolveAction, runTurn } from '../src/main/agent';
+import { newAttachmentId, saveAttachment } from '../src/main/attachments';
+import type { Llm } from '../src/main/llm';
+import { addMessage, createConversation, getAction, getMessages, listActions } from '../src/main/store';
+import { call, chunk, say, testDeps } from './helpers';
+
+type Deps = ReturnType<typeof testDeps>;
+
+const start = (deps: Deps, text = 'hi'): number => {
+  const conv = createConversation(deps.db);
+  addMessage(deps.db, conv, { role: 'user', content: text });
+  return conv;
+};
+const count = (deps: Deps, table: string): number => (deps.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+const toolResults = (deps: Deps, conv: number) =>
+  getMessages(deps.db, conv).flatMap((m) => (m.role === 'tool' ? [JSON.parse(m.content)] : []));
+
+describe('runTurn', () => {
+  it('runs read tools immediately and continues', async () => {
+    const deps = testDeps([call('c1', 'list_tasks', {}), say('Bạn không có task nào.')]);
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    expect(getMessages(deps.db, conv).map((m) => m.role)).toEqual(['user', 'assistant', 'tool', 'assistant']);
+    expect(toolResults(deps, conv)).toEqual([[]]);
+    expect(deps.events.map((e) => e.type)).toContain('tool');
+    expect(deps.events.at(-1)).toMatchObject({ type: 'done' });
+  });
+
+  it('parks write tools without touching data', async () => {
+    const deps = testDeps([call('c1', 'create_task', { title: 'Mua sữa' })]);
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    expect(listActions(deps.db, conv, 'pending')).toHaveLength(1);
+    expect(count(deps, 'tasks')).toBe(0);
+    expect(deps.events.at(-1)).toMatchObject({ type: 'pending' });
+  });
+
+  it('confirm applies, answers the tool call, and the turn resumes', async () => {
+    const deps = testDeps([call('c1', 'create_task', { title: 'Mua sữa' }), say('Đã tạo task.')]);
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    const [action] = listActions(deps.db, conv, 'pending');
+    expect(resolveAction(deps, action.id, 'confirm')).toBe(true);
+    await runTurn(deps, conv);
+    expect(count(deps, 'tasks')).toBe(1);
+    expect(toolResults(deps, conv)[0]).toMatchObject({ ok: true });
+    expect(getMessages(deps.db, conv).at(-1)).toMatchObject({ role: 'assistant', content: 'Đã tạo task.' });
+  });
+
+  it('re-validates edited args; invalid edits keep the action pending', async () => {
+    const deps = testDeps([call('c1', 'create_task', { title: 'Mua sữa' })]);
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    const [action] = listActions(deps.db, conv, 'pending');
+    expect(() => resolveAction(deps, action.id, 'confirm', { title: '' })).toThrow();
+    expect(getAction(deps.db, action.id)?.status).toBe('pending');
+    resolveAction(deps, action.id, 'confirm', { title: 'Mua bánh' });
+    expect(deps.db.prepare('SELECT title FROM tasks').get()).toEqual({ title: 'Mua bánh' });
+  });
+
+  it('cancel tells the model', async () => {
+    const deps = testDeps([call('c1', 'create_task', { title: 'x' })]);
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    resolveAction(deps, listActions(deps.db, conv)[0].id, 'cancel');
+    expect(toolResults(deps, conv)[0]).toMatchObject({ cancelled: true });
+    expect(count(deps, 'tasks')).toBe(0);
+  });
+
+  it('apply errors are recorded on the action and sent to the model', async () => {
+    const deps = testDeps([call('c1', 'create_reminder', { message: 'x', remind_at: '2026-09-28T08:00' })]);
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    const [action] = listActions(deps.db, conv);
+    resolveAction(deps, action.id, 'confirm');
+    expect(getAction(deps.db, action.id)).toMatchObject({ status: 'cancelled', result: { error: expect.stringMatching(/đã qua/) } });
+    expect(toolResults(deps, conv)[0]).toMatchObject({ error: expect.stringMatching(/đã qua/) });
+  });
+
+  it('invalid tool args become a tool error and the loop continues', async () => {
+    const deps = testDeps([call('c1', 'create_task', {}), say('Bạn muốn đặt tên task là gì?')]);
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    expect(toolResults(deps, conv)[0].error).toMatch(/title/);
+    expect(listActions(deps.db, conv)).toEqual([]);
+  });
+
+  it(`stops after ${MAX_ROUNDS} rounds`, async () => {
+    const deps = testDeps(Array.from({ length: MAX_ROUNDS }, (_, i) => call(`c${i}`, 'list_tasks', {})));
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    expect(getMessages(deps.db, conv).at(-1)).toMatchObject({ role: 'assistant', content: expect.stringContaining(String(MAX_ROUNDS)) });
+  });
+
+  it('a new user message cancels open actions', async () => {
+    const deps = testDeps([call('c1', 'create_task', { title: 'x' })]);
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    cancelOpenActions(deps, conv);
+    expect(listActions(deps.db, conv, 'pending')).toEqual([]);
+  });
+
+  it('LLM errors keep partial text and emit an error', async () => {
+    const broken: Llm = {
+      async *stream() {
+        yield chunk({ content: 'Đang tra' });
+        throw new APIConnectionError({ message: 'down' });
+      },
+    };
+    const deps = testDeps([], broken);
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    expect(getMessages(deps.db, conv).at(-1)).toMatchObject({ role: 'assistant', content: expect.stringContaining('Đang tra') });
+    expect(deps.events.at(-1)).toMatchObject({ type: 'error', message: expect.stringMatching(/kết nối/) });
+  });
+});
+
+describe('buildLlmMessages', () => {
+  it('sends images only with the latest user message; older ones become labels', () => {
+    const deps = testDeps([]);
+    const conv = createConversation(deps.db);
+    for (const text of ['ảnh 1', 'ảnh 2']) {
+      const id = newAttachmentId();
+      const msg = addMessage(deps.db, conv, { role: 'user', content: text, attachment_ids: [id] });
+      saveAttachment(deps.db, deps.attachmentsDir, { id, bytes: new Uint8Array([1]), mime: 'image/jpeg', ownerType: 'message', ownerId: msg });
+      addMessage(deps.db, conv, say('ok'));
+    }
+    const msgs = buildLlmMessages(deps, conv);
+    expect(msgs[0].role).toBe('system');
+    expect(msgs[1].content).toMatch(/\[ảnh #[0-9a-f]{8}\]/);
+    expect(msgs[3].content).toEqual([
+      { type: 'text', text: expect.stringContaining('ảnh 2') },
+      { type: 'image_url', image_url: { url: expect.stringMatching(/^data:image\/jpeg;base64,/) } },
+    ]);
+  });
+});
+```
+
+**Step 3: Run to verify it fails**
+
+Run: `bun run test tests/agent.test.ts`
+Expected: FAIL, cannot resolve `../src/main/agent`.
+
+**Step 4: Implement `src/main/agent.ts`**
+
+```ts
+import type { ChatCompletionContentPartImage, ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+import type { AgentEvent, AssistantMessage, ChatMessage, ToolCall } from '../shared/types';
+import { dataUrl } from './attachments';
+import { type Db, tx } from './db';
+import { collect, describeLlmError, type Llm } from './llm';
+import { systemPrompt } from './prompt';
+import { addMessage, createAction, finishAction, getAction, getMessages, listActions } from './store';
+import { findTool, parseArgs, toOpenAITools, type ToolCtx } from './tools';
+import { errMsg } from './tools/common';
+
+export const MAX_ROUNDS = 8;
+const HISTORY = 20;
+
+export type AgentDeps = {
+  db: Db;
+  ro: Db;
+  attachmentsDir: string;
+  now: () => Date;
+  llm: () => Llm;
+  emit: (e: AgentEvent) => void;
+};
+
+const ctxOf = (d: AgentDeps): ToolCtx => ({ db: d.db, ro: d.ro, now: d.now });
+
+/** System prompt + roughly the last HISTORY messages, starting on a user message so tool replies never dangle. */
+export function buildLlmMessages(deps: AgentDeps, conversationId: number): ChatCompletionMessageParam[] {
+  const all = getMessages(deps.db, conversationId);
+  let start = Math.max(0, all.length - HISTORY);
+  while (start > 0 && all[start].role !== 'user') start--;
+  const recent = all.slice(start);
+  const lastUser = recent.map((m) => m.role).lastIndexOf('user');
+  return [{ role: 'system', content: systemPrompt(deps.db, deps.now()) }, ...recent.map((m, i) => toLlm(deps, m, i === lastUser))];
+}
+
+/** Images go only with the latest user message (token cost); older ones stay as [ảnh #id] labels. */
+function toLlm(deps: AgentDeps, m: ChatMessage, withImages: boolean): ChatCompletionMessageParam {
+  if (m.role === 'assistant') return { role: 'assistant', content: m.content, ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}) };
+  if (m.role === 'tool') return { role: 'tool', tool_call_id: m.tool_call_id, content: m.content };
+  const ids = m.attachment_ids ?? [];
+  const text = [m.content, ids.map((id) => `[ảnh #${id}]`).join(' ')].filter(Boolean).join('\n');
+  const images: ChatCompletionContentPartImage[] = withImages
+    ? ids.flatMap((id) => {
+        const url = dataUrl(deps.db, deps.attachmentsDir, id);
+        return url ? [{ type: 'image_url' as const, image_url: { url } }] : [];
+      })
+    : [];
+  return images.length ? { role: 'user', content: [{ type: 'text', text }, ...images] } : { role: 'user', content: text };
+}
+
+/** One user turn: stream, run read tools, loop. Returns early when write tools are parked for confirmation. */
+export async function runTurn(deps: AgentDeps, conversationId: number, signal?: AbortSignal): Promise<void> {
+  const tools = toOpenAITools();
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    const partial = { content: '' };
+    let reply: AssistantMessage;
+    try {
+      const stream = deps.llm().stream({ messages: buildLlmMessages(deps, conversationId), tools, signal });
+      reply = await collect(stream, (delta) => deps.emit({ type: 'text', conversationId, delta }), partial);
+    } catch (e) {
+      if (partial.content) addMessage(deps.db, conversationId, { role: 'assistant', content: `${partial.content}\n\n_(bị gián đoạn)_` });
+      deps.emit(signal?.aborted ? { type: 'done', conversationId } : { type: 'error', conversationId, message: describeLlmError(e) });
+      return;
+    }
+    addMessage(deps.db, conversationId, reply);
+    deps.emit({ type: 'saved', conversationId });
+    if (!reply.tool_calls?.length) {
+      deps.emit({ type: 'done', conversationId });
+      return;
+    }
+    let parked = false;
+    for (const c of reply.tool_calls) parked = handleCall(deps, conversationId, c) || parked;
+    if (parked) {
+      deps.emit({ type: 'pending', conversationId });
+      return;
+    }
+  }
+  addMessage(deps.db, conversationId, {
+    role: 'assistant',
+    content: `Mình dừng lại vì yêu cầu này đã dùng quá ${MAX_ROUNDS} bước. Bạn thử chia nhỏ yêu cầu nhé.`,
+  });
+  deps.emit({ type: 'done', conversationId });
+}
+
+/** Runs a read tool now, or parks a write tool as a pending action. Returns true when parked. */
+function handleCall(deps: AgentDeps, conversationId: number, c: ToolCall): boolean {
+  const respond = (result: unknown): void =>
+    void addMessage(deps.db, conversationId, { role: 'tool', tool_call_id: c.id, content: JSON.stringify(result) });
+  const tool = findTool(c.function.name);
+  if (!tool) {
+    respond({ error: `Không có tool ${c.function.name}` });
+    return false;
+  }
+  let args: unknown;
+  try {
+    args = parseArgs(tool, JSON.parse(c.function.arguments || '{}'));
+  } catch (e) {
+    respond({ error: `Tham số không hợp lệ: ${errMsg(e)}` });
+    return false;
+  }
+  if (tool.kind === 'read') {
+    deps.emit({ type: 'tool', conversationId, name: tool.name });
+    try {
+      respond(tool.run(args, ctxOf(deps)));
+    } catch (e) {
+      respond({ error: errMsg(e) });
+    }
+    return false;
+  }
+  let preview: unknown = null;
+  try {
+    preview = tool.preview?.(args, ctxOf(deps)) ?? null;
+  } catch (e) {
+    respond({ error: errMsg(e) }); // e.g. unknown ids: tell the model instead of showing a broken card
+    return false;
+  }
+  createAction(deps.db, { conversation_id: conversationId, tool_call_id: c.id, tool_name: tool.name, args, preview });
+  return true;
+}
+
+/**
+ * Confirms or cancels a parked write and answers its tool call.
+ * Invalid (edited) args throw and leave the action pending so the user can fix them.
+ * Returns true when no pending action is left, meaning the caller should resume the turn.
+ */
+export function resolveAction(deps: AgentDeps, actionId: number, decision: 'confirm' | 'cancel', editedArgs?: unknown): boolean {
+  const action = getAction(deps.db, actionId);
+  if (!action || action.status !== 'pending') throw new Error('Thao tác này đã được xử lý');
+  const respond = (content: unknown): void =>
+    void addMessage(deps.db, action.conversation_id, { role: 'tool', tool_call_id: action.tool_call_id, content: JSON.stringify(content) });
+
+  if (decision === 'cancel') {
+    finishAction(deps.db, actionId, 'cancelled', action.args, null);
+    respond({ cancelled: true, message: 'Người dùng đã hủy thao tác này' });
+  } else {
+    const tool = findTool(action.tool_name);
+    if (tool?.kind !== 'write') throw new Error(`Không có tool ghi ${action.tool_name}`);
+    const args = parseArgs(tool, editedArgs ?? action.args);
+    try {
+      const result = tx(deps.db, () => tool.apply(args, ctxOf(deps)));
+      finishAction(deps.db, actionId, 'confirmed', args, result);
+      respond({ ok: true, result, ...(editedArgs ? { note: 'Người dùng đã chỉnh sửa trước khi xác nhận' } : {}) });
+    } catch (e) {
+      finishAction(deps.db, actionId, 'cancelled', args, { error: errMsg(e) });
+      respond({ error: errMsg(e) });
+    }
+  }
+  return listActions(deps.db, action.conversation_id, 'pending').length === 0;
+}
+
+/** A new user message abandons unresolved actions, so every tool call is answered before the next user turn. */
+export function cancelOpenActions(deps: AgentDeps, conversationId: number): void {
+  for (const a of listActions(deps.db, conversationId, 'pending')) resolveAction(deps, a.id, 'cancel');
+}
+```
+
+**Step 5: Run to verify it passes**
+
+Run: `bun run test tests/agent.test.ts`
+Expected: PASS (11 tests).
+
+Run: `bun run test && bun run typecheck`
+Expected: all PASS, typecheck exit 0.
+
+**Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "feat(agent): tool loop with propose/confirm pending actions"
+```
+
+---
+
+### Task 17: Reminder scheduler
+
+**Files:**
+- Create: `src/main/reminders.ts`
+- Test: `tests/reminders.test.ts`
+
+**Step 1: Write the failing tests**
+
+```ts
+import { createScheduler } from '../src/main/reminders';
+import type { ReminderRow } from '../src/shared/types';
+import { callTool, NOW, testCtx } from './helpers';
+
+const HOUR = 3_600_000;
+
+describe('reminder scheduler', () => {
+  beforeEach(() => vi.useFakeTimers({ now: NOW }));
+  afterEach(() => vi.useRealTimers());
+
+  const setup = () => {
+    const ctx = testCtx(() => new Date());
+    const fired: string[][] = [];
+    const s = createScheduler({ db: ctx.db, now: () => new Date(), notify: (rows) => fired.push(rows.map((r) => r.message)) });
+    return { ctx, fired, s };
+  };
+
+  it('fires each reminder once, on time', () => {
+    const { ctx, fired, s } = setup();
+    callTool(ctx, 'create_reminder', { message: 'A', remind_at: '2026-09-28T09:01' });
+    callTool(ctx, 'create_reminder', { message: 'B', remind_at: '2026-09-28T09:30' });
+    s.refresh();
+    expect(fired).toEqual([]);
+    vi.advanceTimersByTime(60_000);
+    expect(fired).toEqual([['A']]);
+    vi.advanceTimersByTime(29 * 60_000);
+    expect(fired).toEqual([['A'], ['B']]);
+    expect(callTool<ReminderRow[]>(ctx, 'list_reminders', { status: 'fired' })).toHaveLength(2);
+    s.stop();
+  });
+
+  it('groups reminders missed while the app was off', () => {
+    const { ctx, fired, s } = setup();
+    callTool(ctx, 'create_reminder', { message: 'A', remind_at: '2026-09-28T09:10' });
+    callTool(ctx, 'create_reminder', { message: 'B', remind_at: '2026-09-28T09:20' });
+    vi.setSystemTime(new Date(2026, 8, 28, 11, 0));
+    s.refresh();
+    expect(fired).toEqual([['A', 'B']]);
+    s.stop();
+  });
+
+  it('re-arms at least hourly for far reminders', () => {
+    const { ctx, fired, s } = setup();
+    callTool(ctx, 'create_reminder', { message: 'Far', remind_at: '2026-09-28T13:00' });
+    s.refresh();
+    vi.advanceTimersByTime(3 * HOUR);
+    expect(fired).toEqual([]);
+    vi.advanceTimersByTime(HOUR);
+    expect(fired).toEqual([['Far']]);
+    s.stop();
+  });
+});
+```
+
+**Step 2: Run to verify it fails**
+
+Run: `bun run test tests/reminders.test.ts`
+Expected: FAIL, cannot resolve module.
+
+**Step 3: Implement `src/main/reminders.ts`**
+
+```ts
+import type { ReminderRow } from '../shared/types';
+import type { Db } from './db';
+
+const MAX_WAIT = 60 * 60 * 1000;
+
+/**
+ * Fires due reminders (several at once = one grouped notification) and sleeps until the next one,
+ * at most an hour at a time so clock changes and sleep/resume can't make it miss.
+ * Call refresh() after any reminder write and on powerMonitor 'resume'.
+ */
+export function createScheduler(opts: { db: Db; now: () => Date; notify: (due: ReminderRow[]) => void }) {
+  const { db, now, notify } = opts;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  function refresh(): void {
+    clearTimeout(timer);
+    const due = db
+      .prepare("SELECT * FROM reminders WHERE status = 'pending' AND remind_at <= ? ORDER BY remind_at")
+      .all(now().toISOString()) as unknown as ReminderRow[];
+    if (due.length) {
+      const mark = db.prepare("UPDATE reminders SET status = 'fired' WHERE id = ?");
+      for (const r of due) mark.run(r.id);
+      notify(due);
+    }
+    const { at } = db.prepare("SELECT MIN(remind_at) AS at FROM reminders WHERE status = 'pending'").get() as { at: string | null };
+    if (at) timer = setTimeout(refresh, Math.min(Math.max(Date.parse(at) - now().getTime(), 0), MAX_WAIT));
+  }
+
+  return { refresh, stop: () => clearTimeout(timer) };
+}
+```
+
+**Step 4: Run to verify it passes**
+
+Run: `bun run test tests/reminders.test.ts`
+Expected: PASS (3 tests).
+
+**Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat(reminders): drift-safe scheduler with grouped missed reminders"
+```
+
+---
+
+## Phase 3: Electron wiring
+
+### Task 18: IPC, preload, main process, tray
+
+**Files:**
+- Create: `src/main/ipc.ts`
+- Replace: `src/main/index.ts`, `src/preload/index.ts`
+
+There are no unit tests here, since this is glue around Electron APIs. It is verified by typecheck and a DevTools check.
+
+**Step 1: Create `src/main/ipc.ts`**
+
+```ts
+import { type BrowserWindow, ipcMain, nativeImage } from 'electron';
+import { z } from 'zod/v4';
+import { DEFAULT_LLM, type ImageInput, type LlmConfig, type SettingsInput, type SettingsView } from '../shared/types';
+import { type AgentDeps, cancelOpenActions, resolveAction, runTurn } from './agent';
+import { newAttachmentId, saveAttachment } from './attachments';
+import { type Db, tx } from './db';
+import { collect, createLlm, describeLlmError } from './llm';
+import { type Cipher, getSetting, llmConfigSchema, readSecrets, setSetting, writeSecret } from './settings';
+import {
+  addMessage,
+  createConversation,
+  deleteConversation,
+  getAction,
+  getMessages,
+  listActions,
+  listConversations,
+  setTitleIfNew,
+} from './store';
+import { findTool, parseArgs } from './tools';
+
+export type MainCtx = {
+  db: Db;
+  ro: Db;
+  attachmentsDir: string;
+  secretsFile: string;
+  cipher: Cipher;
+  win: () => BrowserWindow | undefined;
+  onDataChanged: () => void;
+  loginItem: { get: () => boolean; set: (on: boolean) => void };
+};
+
+/** Writes the renderer may run directly: a click is the user's own intent (design D7). */
+const UI_WRITES = new Set(['update_tasks', 'delete_tasks', 'update_reminders', 'delete_reminders', 'delete_notes', 'delete_expenses']);
+const MAX_TEXT = 20_000;
+const MAX_IMAGES = 10;
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_SIDE = 1568;
+
+/** PNG/JPEG → JPEG with the longest side ≤ 1568px (vision models downscale to about that anyway). */
+function toJpeg(bytes: unknown): Buffer {
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_IMAGE_BYTES) throw new Error('Ảnh không hợp lệ hoặc lớn hơn 20MB');
+  let img = nativeImage.createFromBuffer(Buffer.from(bytes));
+  if (img.isEmpty()) throw new Error('Chỉ hỗ trợ ảnh PNG hoặc JPEG');
+  const { width, height } = img.getSize();
+  const scale = Math.min(1, MAX_SIDE / Math.max(width, height));
+  if (scale < 1) img = img.resize({ width: Math.round(width * scale), height: Math.round(height * scale), quality: 'good' });
+  return img.toJPEG(85);
+}
+
+export function registerIpc(m: MainCtx): void {
+  const now = (): Date => new Date();
+  const ctx = { db: m.db, ro: m.ro, now };
+  const llmConfig = (): LlmConfig => getSetting(m.db, 'llm', DEFAULT_LLM);
+  const deps: AgentDeps = {
+    ...ctx,
+    attachmentsDir: m.attachmentsDir,
+    emit: (e) => m.win()?.webContents.send('chat:event', e),
+    llm: () => {
+      const cfg = llmConfig();
+      return createLlm(cfg, readSecrets(m.secretsFile, m.cipher)[cfg.provider] ?? '');
+    },
+  };
+  const running = new Map<number, AbortController>();
+
+  function startTurn(conversationId: number): void {
+    running.get(conversationId)?.abort();
+    const ctl = new AbortController();
+    running.set(conversationId, ctl);
+    void runTurn(deps, conversationId, ctl.signal)
+      .catch((e) => deps.emit({ type: 'error', conversationId, message: describeLlmError(e) }))
+      .finally(() => {
+        if (running.get(conversationId) === ctl) running.delete(conversationId);
+      });
+  }
+
+  ipcMain.handle('conv:list', () => listConversations(m.db));
+  ipcMain.handle('conv:create', () => createConversation(m.db));
+  ipcMain.handle('conv:remove', (_e, id: number) => {
+    running.get(id)?.abort();
+    deleteConversation(m.db, id);
+  });
+
+  ipcMain.handle('chat:messages', (_e, id: number) => getMessages(m.db, id));
+  ipcMain.handle('chat:actions', (_e, id: number) => listActions(m.db, id));
+  ipcMain.handle('chat:send', (_e, id: number, text: unknown, images: ImageInput[]) => {
+    if (typeof text !== 'string' || text.length > MAX_TEXT) throw new Error('Tin nhắn không hợp lệ');
+    if (!Array.isArray(images) || images.length > MAX_IMAGES) throw new Error(`Tối đa ${MAX_IMAGES} ảnh mỗi tin nhắn`);
+    if (!text.trim() && !images.length) throw new Error('Tin nhắn trống');
+    const jpegs = images.map((img) => toJpeg(img.bytes)); // validate everything before saving anything
+    cancelOpenActions(deps, id);
+    const attachmentIds = jpegs.map(() => newAttachmentId());
+    const messageId = addMessage(m.db, id, { role: 'user', content: text, attachment_ids: attachmentIds });
+    jpegs.forEach((bytes, i) =>
+      saveAttachment(m.db, m.attachmentsDir, { id: attachmentIds[i], bytes, mime: 'image/jpeg', ownerType: 'message', ownerId: messageId })
+    );
+    setTitleIfNew(m.db, id, text);
+    startTurn(id);
+  });
+  ipcMain.handle('chat:stop', (_e, id: number) => running.get(id)?.abort());
+  ipcMain.handle('chat:retry', (_e, id: number) => startTurn(id));
+  ipcMain.handle('chat:resolve', (_e, actionId: number, decision: 'confirm' | 'cancel', args?: unknown) => {
+    const action = getAction(m.db, actionId);
+    const last = resolveAction(deps, actionId, decision, args);
+    if (decision === 'confirm') m.onDataChanged();
+    if (last && action) startTurn(action.conversation_id);
+  });
+
+  ipcMain.handle('data:read', (_e, name: string, args: unknown) => {
+    const tool = findTool(name);
+    if (tool?.kind !== 'read') throw new Error(`Không cho phép: ${name}`);
+    return tool.run(parseArgs(tool, args), ctx);
+  });
+  ipcMain.handle('data:write', (_e, name: string, args: unknown) => {
+    const tool = findTool(name);
+    if (tool?.kind !== 'write' || !UI_WRITES.has(name)) throw new Error(`Không cho phép: ${name}`);
+    const parsed = parseArgs(tool, args);
+    const result = tx(m.db, () => tool.apply(parsed, ctx));
+    m.onDataChanged();
+    return result;
+  });
+
+  ipcMain.handle('settings:get', (): SettingsView => {
+    const secrets = readSecrets(m.secretsFile, m.cipher);
+    return { llm: llmConfig(), hasKey: { azure: !!secrets.azure, gateway: !!secrets.gateway }, openAtLogin: m.loginItem.get() };
+  });
+  ipcMain.handle('settings:save', (_e, s: SettingsInput) => {
+    const parsed = llmConfigSchema.safeParse(s.llm);
+    if (!parsed.success) throw new Error(`Cấu hình chưa hợp lệ: ${z.prettifyError(parsed.error)}`);
+    setSetting(m.db, 'llm', parsed.data);
+    if (s.apiKey) writeSecret(m.secretsFile, m.cipher, parsed.data.provider, s.apiKey);
+    m.loginItem.set(!!s.openAtLogin);
+  });
+  ipcMain.handle('settings:test', async () => {
+    try {
+      const reply = await collect(deps.llm().stream({ messages: [{ role: 'user', content: 'Trả lời đúng một từ: OK' }] }), () => {});
+      return reply.content ?? '(trống)';
+    } catch (e) {
+      throw new Error(describeLlmError(e));
+    }
+  });
+}
+```
+
+**Step 2: Replace `src/main/index.ts`**
+
+```ts
+import { app, BrowserWindow, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, shell, Tray } from 'electron';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { pathToFileURL } from 'node:url';
+import type { ReminderRow } from '../shared/types';
+import { attachmentFile, cleanupOrphans } from './attachments';
+import { backupDb, openDb } from './db';
+import { registerIpc } from './ipc';
+import { createScheduler } from './reminders';
+import type { Cipher } from './settings';
+import { pruneEmptyConversations } from './store';
+
+protocol.registerSchemesAsPrivileged([{ scheme: 'att', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
+
+const startHidden = process.argv.includes('--hidden');
+let win: BrowserWindow | undefined;
+let tray: Tray | undefined; // module scope keeps the tray from being garbage-collected
+let quitting = false;
+
+// Login items only make sense for the packaged app; the portable exe exposes its real path in this env var.
+const loginItemOpts = () => ({ path: process.env.PORTABLE_EXECUTABLE_FILE ?? process.execPath, args: ['--hidden'] });
+const loginItem = {
+  get: (): boolean => app.isPackaged && app.getLoginItemSettings(loginItemOpts()).openAtLogin,
+  set: (openAtLogin: boolean): void => {
+    if (app.isPackaged) app.setLoginItemSettings({ openAtLogin, ...loginItemOpts() });
+  },
+};
+
+const cipher: Cipher = {
+  encrypt: (s) => {
+    if (!safeStorage.isEncryptionAvailable()) throw new Error('Hệ điều hành không hỗ trợ mã hóa (safeStorage)');
+    return safeStorage.encryptString(s);
+  },
+  decrypt: (b) => safeStorage.decryptString(b),
+};
+
+function showWindow(): void {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+function createWindow(): BrowserWindow {
+  const w = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    minWidth: 800,
+    minHeight: 560,
+    frame: false,
+    show: !startHidden,
+    webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: true },
+  });
+  w.on('close', (e) => {
+    if (quitting) return;
+    e.preventDefault();
+    w.hide(); // keep running in the tray so reminders still fire
+  });
+  w.on('maximize', () => w.webContents.send('win:maximized', true));
+  w.on('unmaximize', () => w.webContents.send('win:maximized', false));
+  w.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  const appUrl = process.env.ELECTRON_RENDERER_URL;
+  w.webContents.on('will-navigate', (e, url) => {
+    if (!url.startsWith(appUrl ?? 'file://')) e.preventDefault();
+  });
+  if (appUrl) void w.loadURL(appUrl);
+  else void w.loadFile(join(__dirname, '../renderer/index.html'));
+  return w;
+}
+
+function notify(rows: ReminderRow[]): void {
+  const n = new Notification(
+    rows.length === 1
+      ? { title: 'Nhắc nhở', body: rows[0].message }
+      : { title: `Bạn có ${rows.length} nhắc nhở`, body: rows.map((r) => `• ${r.message}`).join('\n') }
+  );
+  n.on('click', () => {
+    showWindow();
+    win?.webContents.send('nav', 'tasks');
+  });
+  n.show();
+}
+
+async function createTray(): Promise<Tray> {
+  const t = new Tray(await app.getFileIcon(process.execPath, { size: 'small' }));
+  const menu = () =>
+    Menu.buildFromTemplate([
+      { label: 'Mở Trợ lý', click: showWindow },
+      ...(app.isPackaged
+        ? [{ label: 'Khởi động cùng Windows', type: 'checkbox' as const, checked: loginItem.get(), click: () => loginItem.set(!loginItem.get()) }]
+        : []),
+      { type: 'separator' },
+      { label: 'Thoát', click: () => app.quit() },
+    ]);
+  t.setToolTip('Trợ lý cá nhân');
+  t.on('click', showWindow);
+  t.on('right-click', () => t.popUpContextMenu(menu())); // rebuilt each time so the checkbox is current
+  return t;
+}
+
+async function start(): Promise<void> {
+  app.setAppUserModelId(app.isPackaged ? 'com.personal-assistant.app' : process.execPath);
+  const dataDir = app.getPath('userData');
+  const dbPath = join(dataDir, 'assistant.db');
+  const attachmentsDir = join(dataDir, 'attachments');
+  mkdirSync(attachmentsDir, { recursive: true });
+
+  const db = openDb(dbPath);
+  const ro = new DatabaseSync(dbPath, { readOnly: true });
+  backupDb(db, join(dataDir, 'backups'), new Date());
+  pruneEmptyConversations(db);
+  cleanupOrphans(db, attachmentsDir);
+
+  protocol.handle('att', (req) => {
+    const f = attachmentFile(db, attachmentsDir, new URL(req.url).hostname);
+    return f ? net.fetch(pathToFileURL(f.path).toString()) : new Response('Not found', { status: 404 });
+  });
+
+  ipcMain.handle('win:minimize', () => win?.minimize());
+  ipcMain.handle('win:toggleMaximize', () => (win?.isMaximized() ? win.unmaximize() : win?.maximize()));
+  ipcMain.handle('win:close', () => win?.close());
+  ipcMain.handle('win:isMaximized', () => win?.isMaximized() ?? false);
+
+  const scheduler = createScheduler({ db, now: () => new Date(), notify });
+  registerIpc({
+    db,
+    ro,
+    attachmentsDir,
+    secretsFile: join(dataDir, 'secrets.bin'),
+    cipher,
+    win: () => win,
+    loginItem,
+    onDataChanged: () => {
+      scheduler.refresh();
+      win?.webContents.send('data:changed');
+    },
+  });
+
+  win = createWindow();
+  scheduler.refresh();
+  powerMonitor.on('resume', () => scheduler.refresh());
+  tray = await createTray();
+}
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', showWindow);
+  app.on('before-quit', () => {
+    quitting = true;
+  });
+  void app.whenReady().then(start);
+}
+```
+
+**Step 3: Replace `src/preload/index.ts`**
+
+```ts
+import { contextBridge, ipcRenderer } from 'electron';
+import type { Api } from '../shared/types';
+
+const invoke = (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args);
+const listen =
+  <T>(channel: string) =>
+  (cb: (value: T) => void) => {
+    const listener = (_: unknown, value: T) => cb(value);
+    ipcRenderer.on(channel, listener);
+    return () => void ipcRenderer.removeListener(channel, listener);
+  };
+
+const api: Api = {
+  conversations: {
+    list: () => invoke('conv:list'),
+    create: () => invoke('conv:create'),
+    remove: (id) => invoke('conv:remove', id),
+  },
+  chat: {
+    messages: (id) => invoke('chat:messages', id),
+    actions: (id) => invoke('chat:actions', id),
+    send: (id, text, images) => invoke('chat:send', id, text, images),
+    stop: (id) => invoke('chat:stop', id),
+    retry: (id) => invoke('chat:retry', id),
+    resolve: (actionId, decision, args) => invoke('chat:resolve', actionId, decision, args),
+    onEvent: listen('chat:event'),
+  },
+  data: {
+    read: (tool, args) => invoke('data:read', tool, args),
+    write: (tool, args) => invoke('data:write', tool, args),
+    onChanged: listen<void>('data:changed'),
+  },
+  settings: {
+    get: () => invoke('settings:get'),
+    save: (s) => invoke('settings:save', s),
+    test: () => invoke('settings:test'),
+  },
+  win: {
+    minimize: () => invoke('win:minimize'),
+    toggleMaximize: () => invoke('win:toggleMaximize'),
+    close: () => invoke('win:close'),
+    isMaximized: () => invoke('win:isMaximized'),
+    onMaximizedChange: listen<boolean>('win:maximized'),
+  },
+  onNavigate: listen('nav'),
+};
+
+contextBridge.exposeInMainWorld('api', api);
+```
+
+**Step 4: Verify**
+
+Run: `bun run typecheck`
+Expected: exit 0.
+
+Run: `bun run dev`, then in DevTools (Ctrl+Shift+I) run:
+
+```js
+await window.api.data.read('get_today_overview', {})
+```
+
+Expected: `{ today: '<today>', tasks_today: [], overdue: [], reminders_today: [], spent_today: [] }`. Closing the window hides it to the tray, clicking the tray icon brings it back, and right-click → Thoát quits. `%APPDATA%/personal-assistant/` contains `assistant.db`, `attachments/` and `backups/assistant-<today>.db`.
+
+**Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat(main): IPC, preload API, att:// protocol, tray and notifications"
+```
+
+---
+
+## Phase 4: UI
+
+UI tasks have no automated tests: the logic lives in main and is covered there. Each UI task ends with `bun run typecheck` plus a manual check in `bun run dev`.
+
+### Task 19: App shell
+
+**Files:**
+- Create: `src/renderer/api.ts`, `src/renderer/styles.css`, `src/renderer/App.tsx`
+- Create (stubs, replaced later): `src/renderer/chat/ChatPage.tsx`, `src/renderer/pages/TasksPage.tsx`, `src/renderer/pages/NotesPage.tsx`, `src/renderer/pages/ExpensesPage.tsx`, `src/renderer/pages/SettingsPage.tsx`
+- Replace: `src/renderer/main.tsx`
+
+**Step 1: `src/renderer/api.ts`**
+
+```ts
+import type { Api } from '../shared/types';
+
+export const api = (window as unknown as { api: Api }).api;
+
+/** IPC errors arrive as "Error invoking remote method 'x': Error: <message>". */
+export const errorText = (e: unknown): string =>
+  (e instanceof Error ? e.message : String(e)).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+
+export const attUrl = (id: string): string => `att://${id}`;
+export const splitIds = (csv: string | null | undefined): string[] => (csv ? csv.split(',') : []);
+```
+
+**Step 2: `src/renderer/styles.css`**
+
+```css
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--bg-1);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+.app { display: flex; flex-direction: column; height: 100%; }
+.titlebar {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 12px;
+  border-bottom: 1px solid var(--border-base);
+  -webkit-app-region: drag;
+}
+.titlebar button,
+.titlebar [role='button'] { -webkit-app-region: no-drag; }
+.titlebar-title { font-weight: 600; }
+.app-body { flex: 1; display: flex; min-height: 0; }
+.sider {
+  width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 8px;
+  border-right: 1px solid var(--border-base);
+  background: var(--bg-2);
+}
+.sider-label { font-size: 12px; color: var(--text-secondary); padding: 12px 8px 4px; }
+.sider-list { flex: 1; min-height: 0; }
+.content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.page { flex: 1; overflow: auto; padding: 16px 24px; }
+.muted { color: var(--text-secondary); font-size: 12px; }
+
+.chat { display: flex; flex-direction: column; height: 100%; }
+.messages { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 24px; }
+.msg-list { display: flex; flex-direction: column; gap: 12px; max-width: 860px; margin: 0 auto; }
+.msg-user {
+  align-self: flex-end;
+  max-width: 75%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--message-user-bg);
+  white-space: pre-wrap;
+}
+.msg-assistant { display: flex; flex-direction: column; gap: 8px; }
+.empty-hint { margin: 20vh auto 0; text-align: center; color: var(--text-secondary); }
+
+.thumbs { display: flex; gap: 8px; flex-wrap: wrap; }
+.thumbs img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; cursor: zoom-in; }
+
+.confirm-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border-base);
+  border-radius: 12px;
+  background: var(--bg-2);
+}
+.confirm-title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.confirm-row { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; }
+
+.sendbox { position: relative; padding: 12px 24px; border-top: 1px solid var(--border-base); }
+.sendbox-inner { display: flex; flex-direction: column; gap: 8px; max-width: 860px; margin: 0 auto; }
+.sendbox-actions { display: flex; justify-content: space-between; align-items: center; }
+.slash-menu { position: absolute; bottom: 100%; left: 24px; width: min(480px, calc(100% - 48px)); }
+
+.group-title { margin: 16px 0 4px; font-weight: 600; }
+.row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border-light); }
+.row-main { flex: 1; min-width: 0; }
+```
+
+**Step 3: Page stubs.** Create each of these files with a one-line placeholder, for example `src/renderer/pages/TasksPage.tsx`:
+
+```tsx
+export function TasksPage() {
+  return <div className='page'>Task</div>;
+}
+```
+
+Do the same for `NotesPage`, `ExpensesPage` and `SettingsPage` in `src/renderer/pages/`. `src/renderer/chat/ChatPage.tsx` also takes a prop:
+
+```tsx
+export function ChatPage({ conversationId }: { conversationId: number }) {
+  return <div className='page'>Hội thoại #{conversationId}</div>;
+}
+```
+
+**Step 4: `src/renderer/App.tsx`**
+
+```tsx
+import { AionScrollArea, SiderItem, UiProvider, WindowControls } from '@aionui/ui';
+import { Button, ConfigProvider, Modal } from '@arco-design/web-react';
+import viVN from '@arco-design/web-react/es/locale/vi-VN';
+import { CheckOne, Comment, Delete, Notes, Plus, SettingTwo, Wallet } from '@icon-park/react';
+import { useCallback, useEffect, useState } from 'react';
+import type { ConversationRow, Page } from '../shared/types';
+import { api } from './api';
+import { ChatPage } from './chat/ChatPage';
+import { ExpensesPage } from './pages/ExpensesPage';
+import { NotesPage } from './pages/NotesPage';
+import { SettingsPage } from './pages/SettingsPage';
+import { TasksPage } from './pages/TasksPage';
+
+type Route = { page: 'chat'; id: number } | { page: Exclude<Page, 'chat'> };
+
+const NAV = [
+  { page: 'tasks', name: 'Task', icon: <CheckOne /> },
+  { page: 'notes', name: 'Ghi chú', icon: <Notes /> },
+  { page: 'expenses', name: 'Chi tiêu', icon: <Wallet /> },
+] as const;
+
+const VI_LABELS = {
+  cancel: 'Hủy',
+  confirm: 'Xác nhận',
+  clear: 'Xóa',
+  close: 'Đóng',
+  back: 'Quay lại',
+  copy: 'Sao chép',
+  copySuccess: 'Đã sao chép',
+  copyFailed: 'Sao chép thất bại',
+  save: 'Lưu',
+  loading: 'Đang tải...',
+  processing: 'Đang xử lý...',
+};
+
+const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+/** Follows the OS theme and sets the attributes @aionui/ui and Arco key off. */
+function useSystemTheme(): 'light' | 'dark' {
+  const [dark, setDark] = useState(darkQuery.matches);
+  useEffect(() => {
+    const onChange = (e: MediaQueryListEvent) => setDark(e.matches);
+    darkQuery.addEventListener('change', onChange);
+    return () => darkQuery.removeEventListener('change', onChange);
+  }, []);
+  const theme = dark ? 'dark' : 'light';
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.body.setAttribute('arco-theme', theme);
+  }, [theme]);
+  return theme;
+}
+
+export function App() {
+  const theme = useSystemTheme();
+  const [route, setRoute] = useState<Route | null>(null);
+  const [conversations, setConversations] = useState<ConversationRow[]>([]);
+  const [maximized, setMaximized] = useState(false);
+  const [modal, modalHolder] = Modal.useModal();
+
+  const refresh = useCallback(async () => {
+    const list = await api.conversations.list();
+    setConversations(list);
+    return list;
+  }, []);
+
+  const newChat = useCallback(async () => {
+    const id = await api.conversations.create();
+    await refresh();
+    setRoute({ page: 'chat', id });
+  }, [refresh]);
+
+  const openLatest = useCallback(async () => {
+    const list = await refresh();
+    if (list[0]) setRoute({ page: 'chat', id: list[0].id });
+    else await newChat();
+  }, [refresh, newChat]);
+
+  useEffect(() => {
+    void openLatest();
+    void api.win.isMaximized().then(setMaximized);
+    const offs = [
+      api.win.onMaximizedChange(setMaximized),
+      api.onNavigate((page) => {
+        if (page !== 'chat') setRoute({ page });
+      }),
+      api.chat.onEvent((e) => {
+        if (e.type === 'done') void refresh(); // picks up the auto-title
+      }),
+    ];
+    return () => offs.forEach((off) => off());
+  }, [openLatest, refresh]);
+
+  const removeConversation = (c: ConversationRow) =>
+    modal.confirm?.({
+      title: 'Xóa hội thoại?',
+      content: c.title,
+      okButtonProps: { status: 'danger' },
+      onOk: async () => {
+        await api.conversations.remove(c.id);
+        if (route?.page === 'chat' && route.id === c.id) await openLatest();
+        else await refresh();
+      },
+    });
+
+  return (
+    <UiProvider theme={theme} locale='vi-VN' labels={VI_LABELS}>
+      <ConfigProvider locale={viVN}>
+        {modalHolder}
+        <div className='app'>
+          <header className='titlebar'>
+            <span className='titlebar-title'>Trợ lý cá nhân</span>
+            <WindowControls
+              isMaximized={maximized}
+              onMinimize={() => void api.win.minimize()}
+              onToggleMaximize={() => void api.win.toggleMaximize()}
+              onClose={() => void api.win.close()}
+            />
+          </header>
+          <div className='app-body'>
+            <aside className='sider'>
+              <Button type='primary' long icon={<Plus />} onClick={() => void newChat()}>
+                Hội thoại mới
+              </Button>
+              {NAV.map((n) => (
+                <SiderItem key={n.page} icon={n.icon} name={n.name} selected={route?.page === n.page} onClick={() => setRoute({ page: n.page })} />
+              ))}
+              <div className='sider-label'>Hội thoại</div>
+              <AionScrollArea className='sider-list'>
+                {conversations.map((c) => (
+                  <SiderItem
+                    key={c.id}
+                    icon={<Comment />}
+                    name={c.title}
+                    selected={route?.page === 'chat' && route.id === c.id}
+                    menuItems={[{ key: 'delete', icon: <Delete />, label: 'Xóa', danger: true }]}
+                    onMenuAction={() => removeConversation(c)}
+                    onClick={() => setRoute({ page: 'chat', id: c.id })}
+                  />
+                ))}
+              </AionScrollArea>
+              <SiderItem icon={<SettingTwo />} name='Cài đặt' selected={route?.page === 'settings'} onClick={() => setRoute({ page: 'settings' })} />
+            </aside>
+            <main className='content'>
+              {route?.page === 'chat' && <ChatPage key={route.id} conversationId={route.id} />}
+              {route?.page === 'tasks' && <TasksPage />}
+              {route?.page === 'notes' && <NotesPage />}
+              {route?.page === 'expenses' && <ExpensesPage />}
+              {route?.page === 'settings' && <SettingsPage />}
+            </main>
+          </div>
+        </div>
+      </ConfigProvider>
+    </UiProvider>
+  );
+}
+```
+
+**Step 5: Replace `src/renderer/main.tsx`**
+
+```tsx
+import '@arco-design/web-react/dist/css/arco.css';
+import '@aionui/ui/styles.css';
+import '@aionui/ui/arco-theme.css';
+import './styles.css';
+import { createRoot } from 'react-dom/client';
+import { App } from './App';
+
+createRoot(document.getElementById('root')!).render(<App />);
+```
+
+**Step 6: Verify**
+
+Run: `bun run typecheck`, then `bun run dev`.
+Expected:
+- A frameless window with a working drag area and min/max/close buttons (close hides to the tray).
+- The sider has "Hội thoại mới", Task, Ghi chú, Chi tiêu, the conversation list and Cài đặt, and each shows its stub.
+- Switching the Windows theme to dark flips the app to dark.
+
+**Step 7: Commit**
+
+```bash
+git add -A
+git commit -m "feat(ui): app shell with sider, routing, window controls, OS theme"
+```
+
+---
+
+### Task 20: Settings page
+
+**Files:**
+- Replace: `src/renderer/pages/SettingsPage.tsx`
+
+It comes before the chat so you can configure a real endpoint to test the chat with.
+
+**Step 1: Implement**
+
+```tsx
+import { AionSelect, PreferenceRow, SectionCard, SettingsPageHeader } from '@aionui/ui';
+import { Alert, Button, Input, Space, Switch } from '@arco-design/web-react';
+import { useEffect, useState } from 'react';
+import { DEFAULT_LLM, type LlmConfig, type SettingsView } from '../../shared/types';
+import { api, errorText } from '../api';
+
+export function SettingsPage() {
+  const [view, setView] = useState<SettingsView | null>(null);
+  const [llm, setLlm] = useState<LlmConfig>(DEFAULT_LLM);
+  const [apiKey, setApiKey] = useState('');
+  const [openAtLogin, setOpenAtLogin] = useState(false);
+  const [status, setStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void api.settings.get().then((v) => {
+      setView(v);
+      setLlm(v.llm);
+      setOpenAtLogin(v.openAtLogin);
+    });
+  }, []);
+
+  const set = (patch: Partial<LlmConfig>) => setLlm((l) => ({ ...l, ...patch }));
+  const save = async () => {
+    await api.settings.save({ llm, apiKey: apiKey || undefined, openAtLogin });
+    setApiKey('');
+    setView(await api.settings.get());
+  };
+  const run = (fn: () => Promise<string>) => async () => {
+    setBusy(true);
+    setStatus(null);
+    try {
+      setStatus({ type: 'success', text: await fn() });
+    } catch (e) {
+      setStatus({ type: 'error', text: errorText(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!view) return null;
+  const azure = llm.provider === 'azure';
+  return (
+    <div className='page'>
+      <SettingsPageHeader title='Cài đặt' />
+      <SectionCard title='Mô hình AI'>
+        <PreferenceRow label='Nhà cung cấp' description='Cả hai đều dùng API tương thích OpenAI (tool calling + ảnh)'>
+          <AionSelect
+            value={llm.provider}
+            onChange={(v: LlmConfig['provider']) => set({ provider: v })}
+            style={{ width: 240 }}
+            options={[
+              { label: 'Azure AI Foundry', value: 'azure' },
+              { label: 'LLM gateway', value: 'gateway' },
+            ]}
+          />
+        </PreferenceRow>
+        <PreferenceRow label='Endpoint' description={azure ? 'vd https://<resource>.openai.azure.com/' : 'Base URL, vd https://gateway.example.com/v1'}>
+          <Input value={llm.endpoint} onChange={(v) => set({ endpoint: v })} style={{ width: 380 }} />
+        </PreferenceRow>
+        <PreferenceRow label={azure ? 'Deployment' : 'Model'} description='Model phải hỗ trợ tool calling và đọc ảnh'>
+          <Input value={llm.model} onChange={(v) => set({ model: v })} style={{ width: 380 }} />
+        </PreferenceRow>
+        {azure && (
+          <PreferenceRow label='API version'>
+            <Input value={llm.apiVersion} onChange={(v) => set({ apiVersion: v })} style={{ width: 380 }} />
+          </PreferenceRow>
+        )}
+        <PreferenceRow
+          label={azure ? 'API key' : 'Access token'}
+          description={view.hasKey[llm.provider] ? 'Đã lưu (mã hóa bằng Windows). Để trống nếu không đổi.' : 'Chưa có'}
+        >
+          <Input.Password value={apiKey} onChange={setApiKey} style={{ width: 380 }} />
+        </PreferenceRow>
+      </SectionCard>
+      <SectionCard title='Hệ thống'>
+        <PreferenceRow label='Khởi động cùng Windows' description='Chạy ẩn ở khay hệ thống để nhắc nhở đúng giờ (chỉ bản đã đóng gói)'>
+          <Switch checked={openAtLogin} onChange={setOpenAtLogin} />
+        </PreferenceRow>
+      </SectionCard>
+      <Space>
+        <Button type='primary' loading={busy} onClick={run(async () => (await save(), 'Đã lưu'))}>
+          Lưu
+        </Button>
+        <Button loading={busy} onClick={run(async () => (await save(), `Kết nối được. Model trả lời: ${await api.settings.test()}`))}>
+          Lưu và kiểm tra kết nối
+        </Button>
+      </Space>
+      {status && <Alert style={{ marginTop: 12 }} type={status.type} content={status.text} />}
+    </div>
+  );
+}
+```
+
+**Step 2: Verify**
+
+Run: `bun run typecheck`, then `bun run dev` → Cài đặt.
+- Enter your Foundry or gateway details, then click "Lưu và kiểm tra kết nối". Expected: a green alert with the model's reply.
+- Enter a wrong key. Expected: a red alert "API key/token sai hoặc hết hạn…".
+- Look in `%APPDATA%/personal-assistant/secrets.bin`. Expected: no readable key.
+
+**Step 3: Commit**
+
+```bash
+git add -A
+git commit -m "feat(ui): settings page for provider, endpoint, model and key"
+```
+
+---
+
+### Task 21: Thumbs and ConfirmCard
+
+**Files:**
+- Create: `src/renderer/components/Thumbs.tsx`, `src/renderer/chat/ConfirmCard.tsx`
+
+**Step 1: `src/renderer/components/Thumbs.tsx`**
+
+```tsx
+import { AionModal } from '@aionui/ui';
+import { useState } from 'react';
+import { attUrl, splitIds } from '../api';
+
+/** Image thumbnails (ids array or comma-separated) with a click-to-zoom modal. */
+export function Thumbs({ ids }: { ids?: string[] | string | null }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const list = Array.isArray(ids) ? ids : splitIds(ids);
+  if (!list.length) return null;
+  return (
+    <>
+      <div className='thumbs'>
+        {list.map((id) => (
+          <img key={id} src={attUrl(id)} alt='' onClick={() => setOpen(id)} />
+        ))}
+      </div>
+      <AionModal visible={open !== null} onCancel={() => setOpen(null)} size='large' header={{ title: 'Ảnh' }} footer={null}>
+        {open && <img src={attUrl(open)} alt='' style={{ display: 'block', maxWidth: '100%', maxHeight: '70vh', margin: '0 auto' }} />}
+      </AionModal>
+    </>
+  );
+}
+```
+
+**Step 2: `src/renderer/chat/ConfirmCard.tsx`**
+
+This is one generic card for all write tools (see the deviation table). Creates get editable fields. Updates and deletes show the current rows, with before → after for each patched field.
+
+```tsx
+import { Alert, Button, Input, InputNumber, Space, Tag } from '@arco-design/web-react';
+import { useState } from 'react';
+import type { PendingAction } from '../../shared/types';
+import { Thumbs } from '../components/Thumbs';
+
+const TITLES: Record<string, string> = {
+  create_task: 'Tạo task',
+  update_tasks: 'Sửa task',
+  delete_tasks: 'Xóa task',
+  create_reminder: 'Tạo nhắc nhở',
+  update_reminders: 'Sửa nhắc nhở',
+  delete_reminders: 'Xóa nhắc nhở',
+  create_note: 'Tạo ghi chú',
+  update_notes: 'Sửa ghi chú',
+  delete_notes: 'Xóa ghi chú',
+  create_expense: 'Ghi khoản chi',
+  update_expenses: 'Sửa khoản chi',
+  delete_expenses: 'Xóa khoản chi',
+};
+
+export const FIELD_LABELS: Record<string, string> = {
+  title: 'Tiêu đề',
+  notes: 'Ghi chú',
+  category: 'Phân loại',
+  priority: 'Ưu tiên (1–3)',
+  due_date: 'Ngày',
+  due_time: 'Giờ',
+  recurrence: 'Lặp lại',
+  status: 'Trạng thái',
+  message: 'Nội dung',
+  remind_at: 'Thời điểm',
+  task_id: 'Task #',
+  kind: 'Loại',
+  body: 'Nội dung',
+  amount: 'Số tiền',
+  currency: 'Tiền tệ',
+  description: 'Mô tả',
+  spent_at: 'Ngày chi',
+};
+
+const STATUS = {
+  pending: { color: 'arcoblue', text: 'Chờ xác nhận' },
+  confirmed: { color: 'green', text: 'Đã thực hiện' },
+  cancelled: { color: 'gray', text: 'Đã hủy' },
+} as const;
+
+type Row = Record<string, unknown> & { id: number };
+
+const fmt = (v: unknown): string => {
+  if (v === null || v === undefined || v === '') return '—';
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T.*Z$/.test(v)) return new Date(v).toLocaleString('vi-VN');
+  return String(v);
+};
+const describe = (r: Row): string =>
+  String(r.title ?? r.message ?? r.description ?? (r.amount != null ? `${r.amount} ${r.currency}` : String(r.body ?? '').slice(0, 60)));
+
+export function ConfirmCard(props: {
+  action: PendingAction;
+  args: Record<string, unknown>;
+  onArgsChange: (args: Record<string, unknown>) => void;
+  onResolve: (decision: 'confirm' | 'cancel') => Promise<void>;
+}) {
+  const { action, args, onArgsChange, onResolve } = props;
+  const [busy, setBusy] = useState(false);
+  const pending = action.status === 'pending';
+  const isCreate = action.tool_name.startsWith('create_');
+  const before = (action.preview as { before?: Row[] } | null)?.before ?? [];
+  const patch = (args.patch ?? {}) as Record<string, unknown>;
+  const error = (action.result as { error?: string } | null)?.error;
+
+  const resolve = async (d: 'confirm' | 'cancel') => {
+    setBusy(true);
+    try {
+      await onResolve(d);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className='confirm-card'>
+      <div className='confirm-title'>
+        {TITLES[action.tool_name] ?? action.tool_name}
+        <Tag color={STATUS[action.status].color}>{STATUS[action.status].text}</Tag>
+      </div>
+
+      {isCreate &&
+        Object.entries(args)
+          .filter(([k]) => k !== 'attachment_ids')
+          .map(([k, v]) => (
+            <div key={k} className='confirm-row'>
+              <span className='muted'>{FIELD_LABELS[k] ?? k}</span>
+              {!pending ? (
+                <span>{fmt(v)}</span>
+              ) : typeof v === 'number' ? (
+                <InputNumber value={v} onChange={(n) => onArgsChange({ ...args, [k]: n })} />
+              ) : (
+                <Input value={String(v ?? '')} onChange={(s) => onArgsChange({ ...args, [k]: s })} />
+              )}
+            </div>
+          ))}
+
+      {!isCreate &&
+        before.map((row) => (
+          <div key={row.id}>
+            <div>
+              #{row.id} {describe(row)}
+            </div>
+            {Object.entries(patch).map(([k, v]) => (
+              <div key={k} className='muted'>
+                {FIELD_LABELS[k] ?? k}: {fmt(row[k])} → {fmt(v)}
+              </div>
+            ))}
+          </div>
+        ))}
+
+      <Thumbs ids={args.attachment_ids as string[] | undefined} />
+      {error && <Alert type='error' content={error} />}
+      {pending && (
+        <Space>
+          <Button type='primary' loading={busy} onClick={() => void resolve('confirm')}>
+            Xác nhận
+          </Button>
+          <Button disabled={busy} onClick={() => void resolve('cancel')}>
+            Hủy
+          </Button>
+        </Space>
+      )}
+    </div>
+  );
+}
+```
+
+**Step 3: Verify**
+
+Run: `bun run typecheck`
+Expected: exit 0. The card gets exercised in Task 22.
+
+**Step 4: Commit**
+
+```bash
+git add -A
+git commit -m "feat(ui): image thumbnails and generic confirm card"
+```
+
+---
+
+### Task 22: Chat (useChat, MessageList, SendBox)
+
+**Files:**
+- Create: `src/renderer/chat/useChat.ts`, `src/renderer/chat/MessageList.tsx`, `src/renderer/chat/SendBox.tsx`
+- Replace: `src/renderer/chat/ChatPage.tsx`
+
+**Step 1: `src/renderer/chat/useChat.ts`**
+
+```ts
+import { useCallback, useEffect, useState } from 'react';
+import type { ChatMessage, ImageInput, PendingAction } from '../../shared/types';
+import { api, errorText } from '../api';
+
+/** Chat state for one conversation; main streams events, and the DB stays the source of truth (reload on each step). */
+export function useChat(conversationId: number) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [actions, setActions] = useState<PendingAction[]>([]);
+  const [streaming, setStreaming] = useState('');
+  const [running, setRunning] = useState(false);
+  const [tool, setTool] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    const [m, a] = await Promise.all([api.chat.messages(conversationId), api.chat.actions(conversationId)]);
+    setMessages(m);
+    setActions(a);
+    return a;
+  }, [conversationId]);
+
+  useEffect(() => {
+    void reload();
+    return api.chat.onEvent((e) => {
+      if (e.conversationId !== conversationId) return;
+      if (e.type === 'text') {
+        setStreaming((s) => s + e.delta);
+        setTool(null);
+        return;
+      }
+      if (e.type === 'tool') {
+        setTool(e.name);
+        return;
+      }
+      setStreaming('');
+      if (e.type !== 'saved') {
+        setRunning(false);
+        setTool(null);
+      }
+      if (e.type === 'error') setError(e.message);
+      void reload();
+    });
+  }, [conversationId, reload]);
+
+  const guard = async (fn: () => Promise<unknown>) => {
+    setError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setRunning(false);
+      setError(errorText(e));
+    }
+  };
+
+  return {
+    messages,
+    actions,
+    streaming,
+    running,
+    tool,
+    error,
+    send: (text: string, images: ImageInput[]) =>
+      guard(async () => {
+        setRunning(true);
+        await api.chat.send(conversationId, text, images);
+        await reload();
+      }),
+    stop: () => void api.chat.stop(conversationId),
+    retry: () =>
+      guard(async () => {
+        setRunning(true);
+        await api.chat.retry(conversationId);
+      }),
+    resolve: (actionId: number, decision: 'confirm' | 'cancel', args?: unknown) =>
+      guard(async () => {
+        await api.chat.resolve(actionId, decision, args);
+        const left = await reload();
+        if (!left.some((a) => a.status === 'pending')) setRunning(true); // main resumed the turn
+      }),
+  };
+}
+
+export type ChatState = ReturnType<typeof useChat>;
+```
+
+**Step 2: `src/renderer/chat/MessageList.tsx`**
+
+```tsx
+import { ThoughtDisplay, useAutoScroll } from '@aionui/ui';
+import { Markdown } from '@aionui/ui/markdown';
+import { Alert, Button } from '@arco-design/web-react';
+import { useRef, useState } from 'react';
+import type { PendingAction } from '../../shared/types';
+import { Thumbs } from '../components/Thumbs';
+import { ConfirmCard } from './ConfirmCard';
+import type { ChatState } from './useChat';
+
+const TOOL_LABELS: Record<string, string> = {
+  get_today_overview: 'xem tổng quan hôm nay',
+  list_tasks: 'tra task',
+  list_reminders: 'tra nhắc nhở',
+  search_notes: 'tìm ghi chú',
+  get_notes: 'đọc ghi chú',
+  list_expenses: 'tra chi tiêu',
+  query_readonly_sql: 'thống kê dữ liệu',
+};
+
+export function MessageList({ chat }: { chat: ChatState }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [edits, setEdits] = useState<Record<number, Record<string, unknown>>>({});
+  useAutoScroll({ containerRef: ref, content: `${chat.messages.length}:${chat.streaming.length}:${chat.actions.length}:${chat.running}` });
+  const byCall = new Map(chat.actions.map((a) => [a.tool_call_id, a]));
+  const resolve = (a: PendingAction, d: 'confirm' | 'cancel') => chat.resolve(a.id, d, d === 'confirm' ? edits[a.id] : undefined);
+
+  return (
+    <div ref={ref} className='messages'>
+      <div className='msg-list'>
+        {!chat.messages.length && !chat.running && (
+          <div className='empty-hint'>
+            Hỏi “Hôm nay tôi có việc gì?”, nhờ ghi task, ghi chú, khoản chi (kèm ảnh cũng được),
+            <br />
+            hoặc gõ <b>/</b> để xem lệnh nhanh.
+          </div>
+        )}
+        {chat.messages.map((m) => {
+          if (m.role === 'tool') return null;
+          if (m.role === 'user')
+            return (
+              <div key={m.id} className='msg-user'>
+                {m.content}
+                <Thumbs ids={m.attachment_ids} />
+              </div>
+            );
+          const cards = (m.tool_calls ?? []).flatMap((c) => byCall.get(c.id) ?? []);
+          const open = cards.filter((a) => a.status === 'pending');
+          return (
+            <div key={m.id} className='msg-assistant'>
+              {m.content && <Markdown>{m.content}</Markdown>}
+              {cards.map((a) => (
+                <ConfirmCard
+                  key={a.id}
+                  action={a}
+                  args={edits[a.id] ?? a.args}
+                  onArgsChange={(args) => setEdits((e) => ({ ...e, [a.id]: args }))}
+                  onResolve={(d) => resolve(a, d)}
+                />
+              ))}
+              {open.length > 1 && (
+                <Button
+                  type='primary'
+                  onClick={async () => {
+                    for (const a of open) await resolve(a, 'confirm'); // oxlint-disable-line no-await-in-loop -- sequential by design
+                  }}
+                >
+                  Xác nhận tất cả ({open.length})
+                </Button>
+              )}
+            </div>
+          );
+        })}
+        {chat.streaming && (
+          <div className='msg-assistant'>
+            <Markdown>{chat.streaming}</Markdown>
+          </div>
+        )}
+        {chat.running && !chat.streaming && (
+          <ThoughtDisplay running statusText={chat.tool ? `Đang ${TOOL_LABELS[chat.tool] ?? chat.tool}…` : 'Đang suy nghĩ…'} />
+        )}
+        {chat.error && (
+          <Alert
+            type='error'
+            content={chat.error}
+            action={
+              <Button size='mini' onClick={() => void chat.retry()}>
+                Thử lại
+              </Button>
+            }
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+```
+
+**Step 3: `src/renderer/chat/SendBox.tsx`**
+
+```tsx
+import { FilePreview, SlashCommandMenu } from '@aionui/ui';
+import { Button, Input, Message } from '@arco-design/web-react';
+import { PauseOne, Pic, Send } from '@icon-park/react';
+import { useEffect, useRef, useState } from 'react';
+import type { ImageInput } from '../../shared/types';
+
+const ACCEPT = ['image/png', 'image/jpeg'];
+const MAX_BYTES = 20 * 1024 * 1024;
+const MAX_IMAGES = 10;
+
+/** Slash commands are just canned prompts. */
+const COMMANDS = [
+  { key: 'homnay', label: '/homnay', description: 'Tóm tắt hôm nay', prompt: 'Hôm nay tôi có những việc gì? Tóm tắt task hôm nay, task quá hạn, nhắc nhở và chi tiêu hôm nay.' },
+  { key: 'tuannay', label: '/tuannay', description: 'Task tuần này', prompt: 'Tuần này (thứ 2 đến chủ nhật) tôi có những task nào? Nhóm theo ngày.' },
+  { key: 'chitieu', label: '/chitieu', description: 'Chi tiêu tháng này', prompt: 'Tổng hợp chi tiêu tháng này theo từng danh mục và so với tháng trước.' },
+];
+
+type Picked = { file: File; url: string };
+
+export function SendBox({ running, onSend, onStop }: { running: boolean; onSend: (text: string, images: ImageInput[]) => Promise<void>; onStop: () => void }) {
+  const [text, setText] = useState('');
+  const [images, setImages] = useState<Picked[]>([]);
+  const [active, setActive] = useState(0);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [message, messageHolder] = Message.useMessage();
+
+  const slash = /^\/\S*$/.test(text) ? COMMANDS.filter((c) => c.label.startsWith(text)) : [];
+  useEffect(() => setActive(0), [text]);
+
+  const addFiles = (files: File[]) => {
+    const ok = files.filter((f) => ACCEPT.includes(f.type) && f.size <= MAX_BYTES);
+    if (ok.length < files.length) message.warning?.('Chỉ nhận ảnh PNG/JPEG, tối đa 20MB');
+    setImages((prev) => [...prev, ...ok.map((file) => ({ file, url: URL.createObjectURL(file) }))].slice(0, MAX_IMAGES));
+  };
+  const removeImage = (i: number) =>
+    setImages((prev) => {
+      URL.revokeObjectURL(prev[i].url);
+      return prev.filter((_, j) => j !== i);
+    });
+
+  const submit = async (value = text) => {
+    if (running || (!value.trim() && !images.length)) return;
+    const payload = await Promise.all(images.map(async ({ file }) => ({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) })));
+    images.forEach((i) => URL.revokeObjectURL(i.url));
+    setText('');
+    setImages([]);
+    await onSend(value.trim(), payload);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing) return; // IME (Telex/VNI) is still composing
+    if (slash.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      e.preventDefault();
+      setActive((i) => (i + (e.key === 'ArrowDown' ? 1 : slash.length - 1)) % slash.length);
+      return;
+    }
+    if (slash.length && (e.key === 'Enter' || e.key === 'Tab')) {
+      e.preventDefault();
+      void submit(slash[Math.min(active, slash.length - 1)].prompt);
+      return;
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      void submit();
+    }
+  };
+
+  return (
+    <div
+      className='sendbox'
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        addFiles(Array.from(e.dataTransfer.files));
+      }}
+    >
+      {messageHolder}
+      {slash.length > 0 && (
+        <div className='slash-menu'>
+          <SlashCommandMenu
+            title='Lệnh nhanh'
+            hint='↑↓ chọn · Enter gửi'
+            items={slash}
+            activeIndex={Math.min(active, slash.length - 1)}
+            onHoverItem={setActive}
+            onSelectItem={(item) => void submit(COMMANDS.find((c) => c.key === item.key)!.prompt)}
+            emptyText='Không có lệnh'
+          />
+        </div>
+      )}
+      <div className='sendbox-inner'>
+        {images.length > 0 && (
+          <div className='thumbs'>
+            {images.map((img, i) => (
+              <FilePreview key={img.url} path={img.file.name || 'image.png'} size={img.file.size} imageSrc={img.url} onRemove={() => removeImage(i)} />
+            ))}
+          </div>
+        )}
+        <Input.TextArea
+          value={text}
+          onChange={setText}
+          onKeyDown={onKeyDown}
+          onPaste={(e) => {
+            const files = Array.from(e.clipboardData.files);
+            if (files.length) {
+              e.preventDefault();
+              addFiles(files);
+            }
+          }}
+          autoSize={{ minRows: 2, maxRows: 8 }}
+          placeholder='Nhắn cho trợ lý… (Enter gửi, Shift+Enter xuống dòng, / xem lệnh nhanh, dán hoặc kéo ảnh vào đây)'
+        />
+        <div className='sendbox-actions'>
+          <Button icon={<Pic />} onClick={() => fileInput.current?.click()}>
+            Ảnh
+          </Button>
+          <input
+            ref={fileInput}
+            type='file'
+            accept={ACCEPT.join(',')}
+            multiple
+            hidden
+            onChange={(e) => {
+              addFiles(Array.from(e.target.files ?? []));
+              e.target.value = '';
+            }}
+          />
+          {running ? (
+            <Button status='warning' icon={<PauseOne />} onClick={onStop}>
+              Dừng
+            </Button>
+          ) : (
+            <Button type='primary' icon={<Send />} onClick={() => void submit()}>
+              Gửi
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+**Step 4: Replace `src/renderer/chat/ChatPage.tsx`**
+
+```tsx
+import { MessageList } from './MessageList';
+import { SendBox } from './SendBox';
+import { useChat } from './useChat';
+
+export function ChatPage({ conversationId }: { conversationId: number }) {
+  const chat = useChat(conversationId);
+  return (
+    <div className='chat'>
+      <MessageList chat={chat} />
+      <SendBox running={chat.running} onSend={chat.send} onStop={chat.stop} />
+    </div>
+  );
+}
+```
+
+**Step 5: Verify end-to-end** with a real endpoint (configured in Task 20). Run `bun run dev`:
+
+1. Send "Hôm nay tôi có việc gì?". Expected: "Đang xem tổng quan hôm nay…", then a streamed Markdown answer.
+2. Send "Thêm task mai 9h họp team, ưu tiên cao, công việc". Expected: a "Tạo task" card with an absolute date and editable fields. Edit the title, then click Xác nhận. Expected: the card shows "Đã thực hiện" and the bot confirms.
+3. Send "Thêm 3 task: mua sữa, gọi điện cho mẹ, nộp thuế". Expected: 3 cards plus "Xác nhận tất cả (3)".
+4. Paste a receipt screenshot with the text "ghi khoản chi này". Expected: a "Ghi khoản chi" card with the amount read from the image and the thumbnail. After confirming, the image appears under Chi tiêu (Task 24).
+5. Type `/`. Expected: the slash menu; ↓ + Enter sends the canned prompt.
+6. Press Dừng during a reply. Expected: the partial text stays with "(bị gián đoạn)".
+7. Set a wrong key in Settings, then send. Expected: a red alert with the key hint and a "Thử lại" button.
+
+**Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "feat(ui): streaming chat with confirm cards, images and slash commands"
+```
+
+---
+
+### Task 23: Tasks page
+
+**Files:**
+- Replace: `src/renderer/pages/TasksPage.tsx`
+
+**Step 1: Implement**
+
+```tsx
+import { SettingsPageHeader } from '@aionui/ui';
+import { Button, Checkbox, Empty, Radio, Tag } from '@arco-design/web-react';
+import { Delete } from '@icon-park/react';
+import { useCallback, useEffect, useState } from 'react';
+import { toLocalDate } from '../../shared/dates';
+import type { TaskRow } from '../../shared/types';
+import { api } from '../api';
+import { Thumbs } from '../components/Thumbs';
+
+const CATEGORY_LABELS: Record<string, string> = { work: 'Công việc', personal: 'Cá nhân' };
+const PRIORITY_COLORS = { 1: 'red', 2: 'arcoblue', 3: 'gray' } as const;
+
+export function TasksPage() {
+  const [category, setCategory] = useState('all');
+  const [tasks, setTasks] = useState<TaskRow[]>([]);
+
+  const load = useCallback(() => {
+    void api.data.read<TaskRow[]>('list_tasks', category === 'all' ? {} : { category }).then(setTasks);
+  }, [category]);
+  useEffect(() => {
+    load();
+    return api.data.onChanged(load);
+  }, [load]);
+
+  const today = toLocalDate();
+  const groups: [string, TaskRow[]][] = [
+    ['Quá hạn', tasks.filter((t) => t.due_date && t.due_date < today)],
+    ['Hôm nay', tasks.filter((t) => t.due_date === today)],
+    ['Sắp tới', tasks.filter((t) => t.due_date && t.due_date > today)],
+    ['Chưa có ngày', tasks.filter((t) => !t.due_date)],
+  ];
+  // Direct UI writes need no confirm card (design D7); data:changed triggers the reload.
+  const write = (tool: string, args: object) => void api.data.write(tool, args);
+
+  return (
+    <div className='page'>
+      <SettingsPageHeader
+        title='Task'
+        description='Tick để hoàn thành. Muốn thêm hoặc sửa, hãy nhắn cho trợ lý.'
+        actions={
+          <Radio.Group
+            type='button'
+            value={category}
+            onChange={setCategory}
+            options={[
+              { label: 'Tất cả', value: 'all' },
+              { label: 'Công việc', value: 'work' },
+              { label: 'Cá nhân', value: 'personal' },
+            ]}
+          />
+        }
+      />
+      {!tasks.length && <Empty description='Không có task nào' />}
+      {groups
+        .filter(([, list]) => list.length)
+        .map(([title, list]) => (
+          <section key={title}>
+            <div className='group-title'>
+              {title} ({list.length})
+            </div>
+            {list.map((t) => (
+              <div key={t.id} className='row'>
+                <Checkbox checked={false} onChange={() => write('update_tasks', { ids: [t.id], patch: { status: 'done' } })} />
+                <div className='row-main'>
+                  {t.title}
+                  {t.recurrence && <span className='muted'> · lặp {t.recurrence}</span>}
+                  {t.notes && <div className='muted'>{t.notes}</div>}
+                  <Thumbs ids={t.attachment_ids} />
+                </div>
+                <span className='muted'>{[t.due_date, t.due_time].filter(Boolean).join(' ')}</span>
+                <Tag color={PRIORITY_COLORS[t.priority]}>{CATEGORY_LABELS[t.category] ?? t.category}</Tag>
+                <Button size='mini' type='text' status='danger' icon={<Delete />} onClick={() => write('delete_tasks', { ids: [t.id] })} />
+              </div>
+            ))}
+          </section>
+        ))}
+    </div>
+  );
+}
+```
+
+**Step 2: Verify** (`bun run typecheck`, `bun run dev`)
+
+- Tasks created in chat show up grouped as Quá hạn / Hôm nay / Sắp tới / Chưa có ngày, and the category filter works.
+- Tick a recurring task. Expected: it disappears and its next occurrence appears.
+- Confirm a new task in chat while this page is open in another route. Switch back. Expected: it's listed, since `data:changed` reloads the page.
+
+**Step 3: Commit**
+
+```bash
+git add -A
+git commit -m "feat(ui): task quick view grouped by due date"
+```
+
+---
+
+### Task 24: Notes and Expenses pages
+
+**Files:**
+- Replace: `src/renderer/pages/NotesPage.tsx`, `src/renderer/pages/ExpensesPage.tsx`
+
+**Step 1: `NotesPage.tsx`**
+
+```tsx
+import { AionModal, AionSearchInput, SettingsPageHeader } from '@aionui/ui';
+import { Button, Empty, Tag } from '@arco-design/web-react';
+import { Delete } from '@icon-park/react';
+import { useCallback, useEffect, useState } from 'react';
+import type { NoteRow } from '../../shared/types';
+import { api } from '../api';
+import { Thumbs } from '../components/Thumbs';
+
+/** Renders the **match** markers from FTS snippets. */
+const highlight = (s: string) => s.split('**').map((part, i) => (i % 2 ? <mark key={i}>{part}</mark> : part));
+
+export function NotesPage() {
+  const [query, setQuery] = useState('');
+  const [notes, setNotes] = useState<NoteRow[]>([]);
+  const [open, setOpen] = useState<NoteRow | null>(null);
+
+  const load = useCallback(() => {
+    void api.data.read<NoteRow[]>('search_notes', { query: query.trim() || undefined, limit: 100 }).then(setNotes);
+  }, [query]);
+  useEffect(() => {
+    const t = setTimeout(load, 250); // debounce typing
+    const off = api.data.onChanged(load);
+    return () => {
+      clearTimeout(t);
+      off();
+    };
+  }, [load]);
+
+  const openNote = async (id: number) => setOpen((await api.data.read<NoteRow[]>('get_notes', { ids: [id] }))[0] ?? null);
+
+  return (
+    <div className='page'>
+      <SettingsPageHeader title='Ghi chú & nhật ký' description='Tìm không cần gõ dấu. Muốn thêm hoặc sửa, hãy nhắn cho trợ lý.' />
+      <AionSearchInput value={query} onChange={setQuery} placeholder='Tìm ghi chú…' allowClear />
+      {!notes.length && <Empty description='Không có ghi chú nào' />}
+      {notes.map((n) => (
+        <div key={n.id} className='row'>
+          <div className='row-main' style={{ cursor: 'pointer' }} onClick={() => void openNote(n.id)}>
+            <div>
+              {n.kind === 'journal' && <Tag color='purple'>Nhật ký</Tag>} <b>{n.title}</b>
+            </div>
+            <div className='muted'>{highlight(n.snippet ?? '')}</div>
+            <Thumbs ids={n.attachment_ids} />
+          </div>
+          <span className='muted'>{new Date(n.created_at).toLocaleString('vi-VN')}</span>
+          <Button size='mini' type='text' status='danger' icon={<Delete />} onClick={() => void api.data.write('delete_notes', { ids: [n.id] })} />
+        </div>
+      ))}
+      <AionModal visible={open !== null} onCancel={() => setOpen(null)} size='large' header={{ title: open?.title || 'Ghi chú' }} footer={null}>
+        <div style={{ whiteSpace: 'pre-wrap' }}>{open?.body}</div>
+      </AionModal>
+    </div>
+  );
+}
+```
+
+**Step 2: `ExpensesPage.tsx`**
+
+```tsx
+import { SettingsPageHeader } from '@aionui/ui';
+import { Button, DatePicker, Space, Table, Tag } from '@arco-design/web-react';
+import { Delete } from '@icon-park/react';
+import { useCallback, useEffect, useState } from 'react';
+import { toLocalDate } from '../../shared/dates';
+import { formatMoney } from '../../shared/money';
+import type { ExpenseList, ExpenseRow } from '../../shared/types';
+import { api } from '../api';
+import { Thumbs } from '../components/Thumbs';
+
+const monthRange = (month: string) => {
+  const [y, m] = month.split('-').map(Number);
+  return { from: `${month}-01`, to: `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}` };
+};
+
+export function ExpensesPage() {
+  const [month, setMonth] = useState(() => toLocalDate().slice(0, 7));
+  const [data, setData] = useState<ExpenseList>({ items: [], totals: [] });
+
+  const load = useCallback(() => {
+    void api.data.read<ExpenseList>('list_expenses', monthRange(month)).then(setData);
+  }, [month]);
+  useEffect(() => {
+    load();
+    return api.data.onChanged(load);
+  }, [load]);
+
+  const byCategory = new Map<string, { currency: string; total: number }>();
+  for (const e of data.items) {
+    const key = `${e.category}|${e.currency}`;
+    byCategory.set(key, { currency: e.currency, total: (byCategory.get(key)?.total ?? 0) + e.amount });
+  }
+
+  const columns = [
+    { title: 'Ngày', dataIndex: 'spent_at', width: 110 },
+    { title: 'Danh mục', dataIndex: 'category', width: 140 },
+    { title: 'Mô tả', dataIndex: 'description', render: (v: string | null) => v ?? '—' },
+    { title: 'Số tiền', dataIndex: 'amount', align: 'right' as const, render: (_: number, r: ExpenseRow) => formatMoney(r.amount, r.currency) },
+    { title: 'Ảnh', dataIndex: 'attachment_ids', render: (v: string | null) => <Thumbs ids={v} /> },
+    {
+      title: '',
+      dataIndex: 'id',
+      width: 48,
+      render: (id: number) => (
+        <Button size='mini' type='text' status='danger' icon={<Delete />} onClick={() => void api.data.write('delete_expenses', { ids: [id] })} />
+      ),
+    },
+  ];
+
+  return (
+    <div className='page'>
+      <SettingsPageHeader
+        title='Chi tiêu'
+        description={data.totals.map((t) => `Tổng: ${formatMoney(t.total, t.currency)}`).join(' · ') || 'Chưa có khoản chi'}
+        actions={<DatePicker.MonthPicker value={month} allowClear={false} onChange={(v: string) => v && setMonth(v)} />}
+      />
+      <Space wrap style={{ margin: '8px 0 16px' }}>
+        {[...byCategory]
+          .sort((a, b) => b[1].total - a[1].total)
+          .map(([key, v]) => (
+            <Tag key={key}>
+              {key.split('|')[0]}: {formatMoney(v.total, v.currency)}
+            </Tag>
+          ))}
+      </Space>
+      <Table rowKey='id' columns={columns} data={data.items} pagination={false} />
+    </div>
+  );
+}
+```
+
+**Step 3: Verify** (`bun run typecheck`, `bun run dev`)
+
+- Notes: search "ngan sach" finds "ngân sách" with the match highlighted, and clicking a row opens the full text.
+- Expenses: switching months reloads, per-category tags and the total match, receipt thumbnails zoom on click, and delete works.
+
+**Step 4: Commit**
+
+```bash
+git add -A
+git commit -m "feat(ui): notes search and monthly expenses views"
+```
+
+---
+
+## Phase 5: Verification and packaging
+
+### Task 25: LLM tool-choice eval (opt-in)
+
+**Files:**
+- Test: `tests/eval.llm.test.ts`
+
+It is skipped unless the env vars are set, so `bun run test` stays offline.
+
+**Step 1: Write the eval**
+
+```ts
+import { buildLlmMessages } from '../src/main/agent';
+import { collect, createLlm } from '../src/main/llm';
+import { addMessage, createConversation } from '../src/main/store';
+import { toOpenAITools } from '../src/main/tools';
+import { DEFAULT_LLM } from '../src/shared/types';
+import { testDeps } from './helpers';
+
+const { LLM_PROVIDER, LLM_ENDPOINT, LLM_MODEL, LLM_KEY, LLM_API_VERSION } = process.env;
+
+/** [prompt, acceptable first tool]. An empty list means the model should reply or ask back, with no tool. */
+const CASES: [string, string[]][] = [
+  ['Hôm nay tôi có việc gì?', ['get_today_overview', 'list_tasks']],
+  ['Tuần này có task công việc nào?', ['list_tasks']],
+  ['Task nào đang quá hạn?', ['get_today_overview', 'list_tasks']],
+  ['Thêm task mai 9h họp team dự án Alpha, ưu tiên cao', ['create_task']],
+  ['Mỗi thứ 2 và thứ 4 đi tập gym, bắt đầu từ tuần sau', ['create_task']],
+  ['Nhắc tôi uống thuốc lúc 21h tối nay', ['create_reminder']],
+  ['Có nhắc nhở nào ngày mai không?', ['list_reminders']],
+  ['Xóa nhắc nhở uống thuốc', ['list_reminders']],
+  ['Ghi chú: ý tưởng app học tiếng Nhật bằng flashcard', ['create_note']],
+  ['Viết nhật ký: hôm nay chạy bộ 5km, thấy khỏe', ['create_note']],
+  ['Tôi đã ghi gì về ngân sách?', ['search_notes']],
+  ['Vừa ăn phở hết 55k', ['create_expense']],
+  ['Tháng này tôi tiêu bao nhiêu cho ăn uống?', ['list_expenses', 'query_readonly_sql']],
+  ['So sánh chi tiêu tháng này với tháng trước theo danh mục', ['query_readonly_sql', 'list_expenses']],
+  ['Tháng 9 tôi hoàn thành bao nhiêu task?', ['query_readonly_sql', 'list_tasks']],
+  ['Đánh dấu xong task họp team', ['list_tasks']],
+  ['Dời hết task hôm nay sang mai', ['list_tasks', 'get_today_overview']],
+  ['Tôi vừa chi tiền', []],
+  ['Thêm task', []],
+  ['Chào bạn', []],
+];
+
+describe.skipIf(!LLM_ENDPOINT || !LLM_MODEL || !LLM_KEY)('LLM tool choice (real endpoint)', () => {
+  const llm = () =>
+    createLlm(
+      { provider: LLM_PROVIDER === 'azure' ? 'azure' : 'gateway', endpoint: LLM_ENDPOINT!, model: LLM_MODEL!, apiVersion: LLM_API_VERSION ?? DEFAULT_LLM.apiVersion },
+      LLM_KEY!
+    );
+
+  it.each(CASES)('%s', async (prompt, expected) => {
+    const deps = testDeps([], llm());
+    const conv = createConversation(deps.db);
+    addMessage(deps.db, conv, { role: 'user', content: prompt });
+    const reply = await collect(deps.llm().stream({ messages: buildLlmMessages(deps, conv), tools: toOpenAITools() }), () => {});
+    const first = reply.tool_calls?.[0]?.function.name;
+    if (expected.length) expect(expected).toContain(first);
+    else expect(first).toBeUndefined();
+  }, 60_000);
+});
+```
+
+**Step 2: Run it offline**
+
+Run: `bun run test tests/eval.llm.test.ts`
+Expected: 20 skipped.
+
+**Step 3: Run it against the real endpoint**
+
+Never commit the key.
+
+```bash
+LLM_PROVIDER=gateway LLM_ENDPOINT=https://… LLM_MODEL=… LLM_KEY=… bun run test tests/eval.llm.test.ts
+```
+
+Target: at least 17 of 20 pass. If a category keeps failing, sharpen that tool's `description` or add a rule to `systemPrompt`, then re-run.
+
+**Step 4: Commit**
+
+```bash
+git add -A
+git commit -m "test: opt-in Vietnamese tool-choice eval against a real LLM"
+```
+
+---
+
+### Task 26: Smoke checklist and portable build
+
+**Files:**
+- Create: `electron-builder.yml`, `docs/smoke-test.md`
+
+**Step 1: `electron-builder.yml`**
+
+```yaml
+# Everything is bundled by electron-vite (all deps are devDependencies), so ship only out/.
+appId: com.personal-assistant.app
+productName: Personal Assistant
+directories:
+  output: release
+files:
+  - out/**/*
+  - '!**/*.map'
+  - '!node_modules/**/*'
+# Reuse the installed Electron instead of downloading it (TLS proxy).
+electronDist: node_modules/electron/dist
+win:
+  target: portable
+  signAndEditExecutable: false
+portable:
+  artifactName: PersonalAssistant-portable.exe
+```
+
+**Step 2: `docs/smoke-test.md`**
+
+```markdown
+# Smoke test (run before each release)
+
+Setup: packaged exe (`bun run pack` → release/PersonalAssistant-portable.exe), real LLM configured.
+
+- [ ] Fresh start: window opens, a new conversation exists, `%APPDATA%/personal-assistant/backups/` has today's file.
+- [ ] "Hôm nay tôi có việc gì?" answers from data (empty DB: says there is nothing).
+- [ ] Create a task via chat → confirm card → Task page shows it; "mai"/"thứ 6" resolved to the right date.
+- [ ] Three tasks in one message → "Xác nhận tất cả" creates all three.
+- [ ] Edit a field on a card before confirming → the saved record has the edited value.
+- [ ] Cancel a card → nothing saved, bot acknowledges.
+- [ ] Receipt photo → expense card with amount from the image; thumbnail visible under Chi tiêu.
+- [ ] Two images in one message attached to two different records.
+- [ ] Reminder 2 minutes ahead → Windows toast on time, **with the window hidden in the tray**. Click → opens Task page.
+- [ ] Reminder while the app is quit → on next start one grouped "Bạn có N nhắc nhở" toast.
+- [ ] Sleep the PC past a reminder, wake → toast fires shortly after resume.
+- [ ] Recurring task (weekly) ticked on the Task page → next occurrence appears.
+- [ ] Notes search without diacritics finds accented text.
+- [ ] "So sánh chi tiêu tháng này với tháng trước" → bot uses query_readonly_sql, numbers match the Chi tiêu page.
+- [ ] Wrong API key → clear error + "Thử lại"; network off → connection error; Dừng mid-stream keeps partial text.
+- [ ] Settings: key is never shown back; `secrets.bin` has no readable key.
+- [ ] Tray: close hides, tray click shows, Thoát quits; second launch focuses the running instance.
+- [ ] "Khởi động cùng Windows" on → sign out/in → app runs hidden in the tray.
+- [ ] Dark mode follows Windows.
+
+If toasts don't appear from the portable exe (Windows can require a Start-menu shortcut carrying the
+AppUserModelID), switch `win.target` to `nsis`, which creates that shortcut.
+```
+
+**Step 3: Build and run the checklist**
+
+Run: `bun run pack`
+Expected: `release/PersonalAssistant-portable.exe`. Run it and go through `docs/smoke-test.md`.
+
+**Step 4: Commit**
+
+```bash
+git add -A
+git commit -m "build: portable Windows package and release smoke checklist"
+```
+
+---
+
+## Done criteria
+
+- `bun run test` passes (≈60 tests; eval skipped) and `bun run typecheck` exits 0.
+- `docs/smoke-test.md` is fully checked on the packaged exe.
+- The eval passes at least 17 of 20 against the chosen model.
