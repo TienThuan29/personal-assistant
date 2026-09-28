@@ -67,3 +67,5 @@ Người dùng cho biết LLM gateway là một phương thức kết nối riê
 **Kiểm thử**: `tests/gateway.test.ts` (parse, fence streaming ở nhiều cỡ chunk, chuyển lịch sử, agent loop qua `createLlm` + SSE giả: đọc → trả lời, ghi → thẻ → xác nhận → chạy tiếp, khối lỗi → tự sửa, ảnh), migration trong `tests/settings.test.ts`, `listModels` trong `tests/llm.test.ts`.
 
 **Chạy thật (2026-09-28)** bằng script Electron tạm (bản sao `Local State` + `secrets.bin` trong thư mục tạm, đã xóa; token không in ra): `gpt-5.1-02` trả khối `tool_calls` parse được (`get_today_overview`), rồi trả lời đúng từ kết quả tool; `create_task` → thẻ chờ → xác nhận → model báo đã lưu. Cấu hình đang lưu của người dùng có endpoint **không có `/v1`** (`GET /models` trả 404) và model `gpt-5.1` (gateway chỉ có `gpt-5.1-02`); cần sửa trong Cài đặt.
+
+**Endpoint (4fadf9a):** ô Endpoint của gateway chỉ cần host. `gatewayBaseURL()` luôn gọi `<host>/v1/...`; nếu người dùng nhập kèm `/v1` thì bỏ đi để không thành `/v1/v1`.
