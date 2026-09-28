@@ -47,4 +47,9 @@ describe('settings', () => {
     for (const bad of ['', '   ', 'not a url', 'https://']) expect(ok(bad).success).toBe(false); // no throw either
     expect(ok('https://r.openai.azure.com', { model: '   ' }).success).toBe(false);
   });
+
+  it('explains invalid fields in Vietnamese', () => {
+    const r = llmConfigSchema.safeParse({ provider: 'azure', endpoint: '', model: ' ', apiVersion: '2024-10-21' });
+    expect(r.error?.issues.map((i) => i.message)).toEqual(['Endpoint chưa đúng dạng URL (vd https://…)', 'Chưa nhập model/deployment']);
+  });
 });

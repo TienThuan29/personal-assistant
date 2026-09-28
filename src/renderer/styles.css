@@ -77,7 +77,7 @@ body {
 .row-main { flex: 1; min-width: 0; }
 
 .settings { display: flex; flex-direction: column; gap: 16px; }
-/* Arco fields use the same gray as SectionCard (bg-2) and vanish inside it. */
-.settings .arco-input-inner-wrapper,
-.settings .arco-input,
-.settings .arco-select-view { background-color: var(--bg-1); }
+/* Arco fields use the same gray as SectionCard (bg-2) and vanish inside it. :where() keeps the
+   input rule below Arco's hover/focus and inner-password rules, so those still apply. */
+.settings :where(.arco-input-inner-wrapper, .arco-input),
+.settings .arco-select-view { background-color: var(--bg-1); border: 1px solid var(--border-base); }

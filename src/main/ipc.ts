@@ -1,5 +1,4 @@
 import { ipcMain, nativeImage } from 'electron';
-import { z } from 'zod/v4';
 import { DEFAULT_LLM, type ImageInput, type LlmConfig, type SettingsInput, type SettingsView } from '../shared/types';
 import { type AgentDeps, cancelOpenActions, resolveAction, runTurn } from './agent';
 import { newAttachmentId, saveAttachment } from './attachments';
@@ -155,7 +154,7 @@ export function registerIpc(m: MainCtx): void {
   });
   ipcMain.handle('settings:save', (_e, s: SettingsInput) => {
     const parsed = llmConfigSchema.safeParse(s?.llm);
-    if (!parsed.success) throw new Error(`Cấu hình chưa hợp lệ: ${z.prettifyError(parsed.error)}`);
+    if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join('; '));
     if (s.apiKey !== undefined && typeof s.apiKey !== 'string') throw new Error('API key không hợp lệ');
     setSetting(m.db, 'llm', parsed.data);
     const key = s.apiKey?.trim();

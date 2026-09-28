@@ -7,7 +7,7 @@ import type { Db } from './db';
 const endpoint = z
   .string()
   .trim()
-  .pipe(z.url({ abort: true })) // abort: otherwise the refine below still runs, and new URL() throws
+  .pipe(z.url({ abort: true, error: 'Endpoint chưa đúng dạng URL (vd https://…)' })) // abort: otherwise the refine below still runs, and new URL() throws
   .refine((u) => {
     const { protocol, hostname } = new URL(u);
     return protocol === 'https:' || (protocol === 'http:' && ['localhost', '127.0.0.1'].includes(hostname));
@@ -18,8 +18,8 @@ const endpoint = z
 export const llmConfigSchema = z.object({
   provider: z.enum(['azure', 'gateway']),
   endpoint,
-  model: z.string().trim().min(1),
-  apiVersion: z.string().trim().min(1),
+  model: z.string().trim().min(1, 'Chưa nhập model/deployment'),
+  apiVersion: z.string().trim().min(1, 'Chưa nhập API version'),
 });
 
 export function getSetting<T>(db: Db, key: string, fallback: T): T {
