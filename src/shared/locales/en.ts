@@ -170,6 +170,8 @@ export const en: Resources = {
     endpointGateway: 'Base URL, e.g. https://gateway.example.com/v1',
     modelDesc: 'The model must support tool calling and images',
     modelPlaceholder: 'e.g. gpt-4o',
+    modelDescGateway: 'Optional: leave empty to let the gateway pick the model (it must support tool calling and images)',
+    modelOptional: 'Optional',
     keySaved: 'Saved (encrypted by Windows). Leave empty to keep it.',
     keyMissing: 'Not set',
     keySavedPlaceholder: '••• saved',

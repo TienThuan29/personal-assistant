@@ -8,7 +8,7 @@ export type Llm = { stream: (p: StreamParams) => AsyncIterable<ChatCompletionChu
 
 /** One client for both providers; both speak OpenAI chat completions (design D2). `opts.fetch` is for tests. */
 export function createLlm(cfg: LlmConfig, apiKey: string, opts: { fetch?: typeof fetch } = {}): Llm {
-  if (!cfg.endpoint || !cfg.model || !apiKey || (cfg.provider === 'azure' && !cfg.apiVersion))
+  if (!cfg.endpoint || !apiKey || (cfg.provider === 'azure' && (!cfg.model || !cfg.apiVersion)))
     throw new UserError('llmNotConfigured');
   const common = { apiKey, maxRetries: 2, timeout: 60_000, fetch: opts.fetch };
   const client =
@@ -17,8 +17,10 @@ export function createLlm(cfg: LlmConfig, apiKey: string, opts: { fetch?: typeof
       : new OpenAI({ ...common, baseURL: cfg.endpoint });
   return {
     async *stream({ messages, tools, signal }) {
+      // A gateway without a configured model chooses one itself: omit the field instead of sending "".
+      const params = { model: cfg.model, messages, tools: tools?.length ? tools : undefined, stream: true as const };
       yield* await client.chat.completions.create(
-        { model: cfg.model, messages, tools: tools?.length ? tools : undefined, stream: true },
+        (cfg.model ? params : { ...params, model: undefined }) as typeof params,
         { signal }
       );
       signal?.throwIfAborted(); // the SDK's Stream ends silently on abort; surface it so the turn counts as stopped

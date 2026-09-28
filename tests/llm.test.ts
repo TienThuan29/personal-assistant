@@ -100,9 +100,9 @@ describe('createLlm', () => {
 
   /** Stub fetch that records requests and streams SSE parts; `hang` keeps the body open until the request aborts. */
   function stubFetch(parts: string[], hang = false) {
-    const seen: { url: string; headers: Headers }[] = [];
+    const seen: { url: string; headers: Headers; body: string }[] = [];
     const f = (async (url: string | URL | Request, init?: RequestInit) => {
-      seen.push({ url: String(url), headers: new Headers(init?.headers) });
+      seen.push({ url: String(url), headers: new Headers(init?.headers), body: String(init?.body) });
       const body = new ReadableStream<Uint8Array>({
         start(ctl) {
           for (const p of parts) ctl.enqueue(new TextEncoder().encode(p));
@@ -130,6 +130,13 @@ describe('createLlm', () => {
     expect(msg.content).toBe('ok');
     expect(seen[0].url).toBe('https://gw.example/v1/chat/completions');
     expect(seen[0].headers.get('authorization')).toBe('Bearer tok');
+  });
+
+  it('gateway without a model omits the field so the gateway picks one', async () => {
+    const { f, seen } = stubFetch([sse('ok'), DONE]);
+    const msg = await collect(createLlm({ ...gateway, model: '' }, 'tok', { fetch: f }).stream({ messages: [] }), () => {});
+    expect(msg.content).toBe('ok');
+    expect(JSON.parse(seen[0].body)).not.toHaveProperty('model');
   });
 
   it('rejects when aborted mid-stream instead of ending silently', async () => {

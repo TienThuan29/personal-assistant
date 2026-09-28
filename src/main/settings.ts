@@ -16,12 +16,21 @@ const endpoint = z
   .transform((u) => u.replace(/\/+$/, ''));
 
 /** Not an LLM tool schema, so it never goes through toJSONSchema. */
-export const llmConfigSchema = z.object({
-  provider: z.enum(['azure', 'gateway']),
-  endpoint,
-  model: z.string().trim().min(1, 'errors:modelRequired'),
-  apiVersion: z.string().trim().min(1, 'errors:apiVersionRequired'),
-});
+// Azure needs a deployment and api-version; a gateway may pick the model itself, so both are optional there.
+export const llmConfigSchema = z
+  .object({
+    provider: z.enum(['azure', 'gateway']),
+    endpoint,
+    model: z.string().trim(),
+    apiVersion: z.string().trim(),
+  })
+  // `when`: also check when the endpoint is invalid, so every error shows at once.
+  .refine((c) => c.provider !== 'azure' || !!c.model?.trim(), { path: ['model'], message: 'errors:modelRequired', when: () => true })
+  .refine((c) => c.provider !== 'azure' || !!c.apiVersion?.trim(), {
+    path: ['apiVersion'],
+    message: 'errors:apiVersionRequired',
+    when: () => true,
+  });
 
 export const uiSettingsSchema = z.object({
   language: z.enum(['vi', 'en'], { error: 'errors:invalidValue' }),

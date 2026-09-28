@@ -67,6 +67,12 @@ export function SettingsPage() {
   const [openAtLogin, setOpenAtLogin] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [busy, setBusy] = useState<'save' | 'test' | null>(null);
+  // Toasts too: the page scrolls, and the inline Alert at the bottom is easy to miss.
+  const [message, messageHolder] = Message.useMessage();
+  const report = (type: 'success' | 'error', text: string) => {
+    setStatus({ type, text });
+    message[type]?.(text);
+  };
 
   useEffect(() => {
     api.settings
@@ -89,9 +95,9 @@ export function SettingsPage() {
     setBusy(kind);
     setStatus(null);
     try {
-      setStatus({ type: 'success', text: await fn() });
+      report('success', await fn());
     } catch (e) {
-      setStatus({ type: 'error', text: errorText(e) });
+      report('error', errorText(e));
     } finally {
       setBusy(null);
     }
@@ -107,6 +113,7 @@ export function SettingsPage() {
   const keyLabel = azure ? 'API key' : 'Access token';
   return (
     <div className='page settings'>
+      {messageHolder}
       <SettingsPageHeader title={t('title')} sticky={false} />
       <DisplayCard />
       <SectionCard title={t('model')}>
@@ -128,10 +135,10 @@ export function SettingsPage() {
         <PreferenceRow label='Endpoint' description={azure ? t('endpointAzure') : t('endpointGateway')}>
           <Input aria-label='Endpoint' placeholder='https://…' value={llm.endpoint} onChange={(v) => set({ endpoint: v })} style={{ width: 380 }} />
         </PreferenceRow>
-        <PreferenceRow label={azure ? 'Deployment' : 'Model'} description={t('modelDesc')}>
+        <PreferenceRow label={azure ? 'Deployment' : 'Model'} description={azure ? t('modelDesc') : t('modelDescGateway')}>
           <Input
             aria-label={azure ? 'Deployment' : 'Model'}
-            placeholder={t('modelPlaceholder')}
+            placeholder={azure ? t('modelPlaceholder') : t('modelOptional')}
             value={llm.model}
             onChange={(v) => set({ model: v })}
             style={{ width: 380 }}
@@ -161,7 +168,7 @@ export function SettingsPage() {
             aria-label={t('openAtLogin')}
             checked={openAtLogin}
             onChange={(on: boolean) =>
-              api.settings.setOpenAtLogin(on).then(setOpenAtLogin, (e) => setStatus({ type: 'error', text: errorText(e) }))
+              api.settings.setOpenAtLogin(on).then(setOpenAtLogin, (e) => report('error', errorText(e)))
             }
           />
         </PreferenceRow>

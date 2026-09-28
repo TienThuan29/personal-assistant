@@ -176,6 +176,8 @@ export const vi = {
     endpointGateway: 'Base URL, vd https://gateway.example.com/v1',
     modelDesc: 'Model phải hỗ trợ tool calling và đọc ảnh',
     modelPlaceholder: 'vd gpt-4o',
+    modelDescGateway: 'Không bắt buộc: bỏ trống để gateway tự chọn model (model cần hỗ trợ tool calling và đọc ảnh)',
+    modelOptional: 'Không bắt buộc',
     keySaved: 'Đã lưu (mã hóa bằng Windows). Để trống nếu không đổi.',
     keyMissing: 'Chưa có',
     keySavedPlaceholder: '••• đã lưu',

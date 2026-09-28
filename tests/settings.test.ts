@@ -50,6 +50,13 @@ describe('settings', () => {
     expect(ok('https://r.openai.azure.com', { model: '   ' }).success).toBe(false);
   });
 
+  it('model and apiVersion are optional for a gateway, required for Azure', () => {
+    const gw = { provider: 'gateway', endpoint: 'https://gw.example/v1', model: ' ', apiVersion: '' };
+    expect(llmConfigSchema.safeParse(gw).data).toEqual({ ...gw, model: '' });
+    const r = llmConfigSchema.safeParse({ ...gw, provider: 'azure' });
+    expect(r.error?.issues.map((i) => tr(i.message))).toEqual(['Chưa nhập model/deployment', 'Chưa nhập API version']);
+  });
+
   it('explains invalid fields in Vietnamese', () => {
     const r = llmConfigSchema.safeParse({ provider: 'azure', endpoint: '', model: ' ', apiVersion: '2024-10-21' });
     expect(r.error?.issues.map((i) => tr(i.message))).toEqual(['Endpoint chưa đúng dạng URL (vd https://…)', 'Chưa nhập model/deployment']);
