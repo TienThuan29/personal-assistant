@@ -2,7 +2,7 @@ import '@arco-design/web-react/dist/css/arco.css';
 import '@aionui/ui/styles.css';
 import '@aionui/ui/arco-theme.css';
 import './styles.css';
-import { useEffect, useState } from 'react';
+import { Component, type ReactNode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { I18nextProvider } from 'react-i18next';
 import { createI18n } from '../shared/i18n';
@@ -18,7 +18,37 @@ try {
 } catch (e) {
   console.error('Reading UI settings failed', e);
 }
-const i18n = createI18n(initial.language);
+let i18n: ReturnType<typeof createI18n> | undefined;
+try {
+  i18n = createI18n(initial.language);
+} catch (e) {
+  console.error('i18n init failed', e);
+}
+
+/** Instead of a white window: a render error, a missing preload, or a preload older than this renderer. */
+function Crash({ error }: { error: unknown }) {
+  // i18n may be what failed, so fall back to static bilingual text.
+  const t = (key: 'title' | 'reload', text: string): string => (i18n ? i18n.t(`crash.${key}`) : text);
+  return (
+    <div style={{ padding: 32, fontFamily: 'system-ui, sans-serif' }}>
+      <h2>{t('title', 'Đã xảy ra lỗi / Something went wrong')}</h2>
+      <button type='button' onClick={() => location.reload()}>
+        {t('reload', 'Tải lại / Reload')}
+      </button>
+      <pre style={{ fontSize: 12, opacity: 0.6, whiteSpace: 'pre-wrap' }}>{error instanceof Error ? (error.stack ?? error.message) : String(error)}</pre>
+    </div>
+  );
+}
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { error?: unknown }> {
+  state: { error?: unknown } = {};
+  static getDerivedStateFromError(error: unknown) {
+    return { error };
+  }
+  render() {
+    return 'error' in this.state ? <Crash error={this.state.error} /> : this.props.children;
+  }
+}
 
 function Root() {
   const [ui, setUi] = useState(initial);
@@ -26,13 +56,13 @@ function Root() {
   useEffect(
     () =>
       api.onUiChanged((next: UiSettings) => {
-        void i18n.changeLanguage(next.language);
+        void i18n?.changeLanguage(next.language);
         setUi(next);
       }),
     []
   );
   return (
-    <I18nextProvider i18n={i18n}>
+    <I18nextProvider i18n={i18n!}>
       <UiContext.Provider value={ui}>
         <App />
       </UiContext.Provider>
@@ -40,4 +70,12 @@ function Root() {
   );
 }
 
-createRoot(document.getElementById('root')!).render(<Root />);
+createRoot(document.getElementById('root')!).render(
+  api && i18n ? (
+    <ErrorBoundary>
+      <Root />
+    </ErrorBoundary>
+  ) : (
+    <Crash error={api ? 'i18n init failed' : 'window.api is missing (preload not loaded)'} />
+  )
+);

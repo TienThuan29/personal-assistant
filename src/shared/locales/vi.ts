@@ -8,6 +8,7 @@ export const vi = {
     weekday: { '1': 'T2', '2': 'T3', '3': 'T4', '4': 'T5', '5': 'T6', '6': 'T7', '7': 'CN' }, // 1 = Monday … 7 = Sunday
     weekdayLong: { '1': 'Thứ Hai', '2': 'Thứ Ba', '3': 'Thứ Tư', '4': 'Thứ Năm', '5': 'Thứ Sáu', '6': 'Thứ Bảy', '7': 'Chủ Nhật' },
     appName: 'Trợ lý cá nhân',
+    crash: { title: 'Đã xảy ra lỗi', reload: 'Tải lại' },
     nav: { today: 'Hôm nay', tasks: 'Task', notes: 'Ghi chú', expenses: 'Chi tiêu', settings: 'Cài đặt' },
     category: { work: 'Công việc', personal: 'Cá nhân' },
     delete: 'Xóa',

@@ -202,14 +202,34 @@ async function start(): Promise<void> {
   });
 }
 
-if (!app.requestSingleInstanceLock()) {
-  app.quit();
-} else {
-  app.on('second-instance', showWindow);
+/**
+ * Resolves true once this process holds the single-instance lock.
+ * Dev only: a new launch takes over from the running instance (see 'second-instance' below), so it retries
+ * while the old one quits. Otherwise an old dev main/preload left in the tray gets Vite's new renderer
+ * hot-loaded into it, and preload APIs it lacks white-screen the window. Packaged builds focus the old window.
+ */
+async function acquireLock(): Promise<boolean> {
+  if (app.requestSingleInstanceLock()) return true;
+  if (app.isPackaged) return false;
+  for (let i = 0; i < 40; i++) {
+    await sleep(250); // a failed attempt releases its handle, so asking again is allowed
+    if (app.requestSingleInstanceLock()) return true;
+  }
+  console.error('The running instance did not quit within 10s; quitting instead.');
+  return false;
+}
+
+void acquireLock().then((locked) => {
+  if (!locked) return app.quit();
+  app.on('second-instance', () => {
+    if (app.isPackaged) return showWindow();
+    quitting = true; // dev: step aside for the newer launch
+    app.quit();
+  });
   app.on('before-quit', () => {
     quitting = true;
   });
-  void app
+  return app
     .whenReady()
     .then(start)
     .catch((e) => {
@@ -217,4 +237,4 @@ if (!app.requestSingleInstanceLock()) {
       dialog.showErrorBox(te('startupFailed'), errMsg(e));
       app.exit(1);
     });
-}
+});
