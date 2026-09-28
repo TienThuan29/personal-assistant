@@ -1,7 +1,7 @@
 import { APIConnectionError, APIError } from 'openai';
 import type { ChatCompletionChunk } from 'openai/resources/chat/completions';
-import { collect, createLlm, describeLlmError } from '../src/main/llm';
-import { DEFAULT_LLM, type LlmConfig } from '../src/shared/types';
+import { collect, createLlm, describeLlmError, listModels } from '../src/main/llm';
+import type { LlmConfig } from '../src/shared/types';
 import { call, chunk, fakeLlm } from './helpers';
 
 describe('collect', () => {
@@ -92,7 +92,8 @@ describe('createLlm', () => {
   const gateway: LlmConfig = { provider: 'gateway', endpoint: 'https://gw.example/v1', model: 'm', apiVersion: '' };
 
   it('refuses an unconfigured provider, incl. Azure without apiVersion', () => {
-    expect(() => createLlm(DEFAULT_LLM, '')).toThrow(/Cài đặt/);
+    expect(() => createLlm({ ...gateway, endpoint: '' }, 'k')).toThrow(/Cài đặt/);
+    expect(() => createLlm(gateway, '')).toThrow(/Cài đặt/);
     expect(() => createLlm({ provider: 'azure', endpoint: 'https://x', model: 'm', apiVersion: '' }, 'k')).toThrow(/Cài đặt/);
   });
 
@@ -138,6 +139,18 @@ describe('createLlm', () => {
     const msg = await collect(createLlm({ ...gateway, model: '' }, 'tok', { fetch: f }).stream({ messages: [] }), () => {});
     expect(msg.content).toBe('ok');
     expect(JSON.parse(seen[0].body)).not.toHaveProperty('model');
+  });
+
+  it("lists a gateway's models with the bearer token", async () => {
+    const seen: { url: string; auth: string | null }[] = [];
+    const f = (async (url: string | URL | Request, init?: RequestInit) => {
+      seen.push({ url: String(url), auth: new Headers(init?.headers).get('authorization') });
+      return Response.json({ object: 'list', data: [{ id: 'gpt-5.1-02', object: 'model' }, { id: 'a-model', object: 'model' }] });
+    }) as typeof fetch;
+    expect(await listModels('https://gw.example/v1', 'tok', { fetch: f })).toEqual(['a-model', 'gpt-5.1-02']);
+    expect(seen).toEqual([{ url: 'https://gw.example/v1/models', auth: 'Bearer tok' }]);
+    await expect(listModels('', 'tok', { fetch: f })).rejects.toThrow(/lưu endpoint/);
+    await expect(listModels('https://gw.example/v1', '', { fetch: f })).rejects.toThrow(/lưu endpoint/);
   });
 
   it('rejects when aborted mid-stream instead of ending silently', async () => {

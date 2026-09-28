@@ -35,6 +35,7 @@ const api: Api = {
     get: () => invoke('settings:get'),
     save: (s) => invoke('settings:save', s),
     test: () => invoke('settings:test'),
+    listModels: (provider) => invoke('settings:listModels', provider),
     setOpenAtLogin: (on) => invoke('settings:setOpenAtLogin', on),
     setUi: (patch) => invoke('settings:setUi', patch),
   },

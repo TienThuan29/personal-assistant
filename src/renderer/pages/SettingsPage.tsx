@@ -1,9 +1,10 @@
 import { AionSelect, PreferenceRow, SectionCard, SettingsPageHeader } from '@aionui/ui';
 import { Alert, Button, Input, Message, Select, Space, Switch } from '@arco-design/web-react';
+import { Refresh } from '@icon-park/react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatMoney } from '../../shared/money';
-import { DEFAULT_LLM, type LlmConfig, type SettingsView, type UiSettings } from '../../shared/types';
+import { DEFAULT_LLM, type LlmSettings, type Provider, type SettingsView, type UiSettings } from '../../shared/types';
 import { api, errorText, useUiSettings } from '../api';
 
 const CURRENCIES = ['VND', 'USD', 'EUR', 'JPY'];
@@ -62,7 +63,9 @@ function DisplayCard() {
 export function SettingsPage() {
   const { t } = useTranslation('settings');
   const [view, setView] = useState<SettingsView | null>(null);
-  const [llm, setLlm] = useState<LlmConfig>(DEFAULT_LLM);
+  const [llm, setLlm] = useState<LlmSettings>(DEFAULT_LLM);
+  const [models, setModels] = useState<string[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [openAtLogin, setOpenAtLogin] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -72,6 +75,15 @@ export function SettingsPage() {
   const report = (type: 'success' | 'error', text: string) => {
     setStatus({ type, text });
     message[type]?.(text);
+  };
+
+  /** The saved gateway's model ids. `quiet` (automatic loads) skips the error toast when nothing is set up yet or offline. */
+  const loadModels = (quiet: boolean) => {
+    setLoadingModels(true);
+    api.settings
+      .listModels('gateway')
+      .then(setModels, (e) => !quiet && message.error?.(errorText(e)))
+      .finally(() => setLoadingModels(false));
   };
 
   useEffect(() => {
@@ -85,7 +97,14 @@ export function SettingsPage() {
       .catch((e) => setStatus({ type: 'error', text: errorText(e) }));
   }, []);
 
-  const set = (patch: Partial<LlmConfig>) => setLlm((l) => ({ ...l, ...patch }));
+  // Load the list once the gateway is shown and set up (on open, on switching to it, after saving its key).
+  const gatewayReady = llm.active === 'gateway' && !!view?.hasKey.gateway && !!view.llm.gateway.endpoint;
+  useEffect(() => {
+    if (gatewayReady) loadModels(true);
+  }, [gatewayReady, view]); // not loadModels: a new closure each render
+
+  const active = llm.active;
+  const set = (patch: Partial<LlmSettings[Provider]>) => setLlm((l) => ({ ...l, [l.active]: { ...l[l.active], ...patch } }));
   const save = async () => {
     await api.settings.save({ llm, apiKey: apiKey || undefined });
     setApiKey('');
@@ -109,7 +128,8 @@ export function SettingsPage() {
         <Alert type='error' content={status.text} />
       </div>
     ) : null;
-  const azure = llm.provider === 'azure';
+  const azure = active === 'azure';
+  const cfg = llm[active];
   const keyLabel = azure ? 'API key' : 'Access token';
   return (
     <div className='page settings'>
@@ -120,9 +140,9 @@ export function SettingsPage() {
         <PreferenceRow label={t('provider')} description={t('providerDesc')}>
           <AionSelect
             aria-label={t('provider')}
-            value={llm.provider}
-            onChange={(v: LlmConfig['provider']) => {
-              set({ provider: v });
+            value={active}
+            onChange={(v: Provider) => {
+              setLlm((l) => ({ ...l, active: v }));
               setApiKey('');
             }}
             style={{ width: 380 }}
@@ -133,29 +153,48 @@ export function SettingsPage() {
           />
         </PreferenceRow>
         <PreferenceRow label='Endpoint' description={azure ? t('endpointAzure') : t('endpointGateway')}>
-          <Input aria-label='Endpoint' placeholder='https://…' value={llm.endpoint} onChange={(v) => set({ endpoint: v })} style={{ width: 380 }} />
+          <Input aria-label='Endpoint' placeholder='https://…' value={cfg.endpoint} onChange={(v) => set({ endpoint: v })} style={{ width: 380 }} />
         </PreferenceRow>
         <PreferenceRow label={azure ? 'Deployment' : 'Model'} description={azure ? t('modelDesc') : t('modelDescGateway')}>
-          <Input
-            aria-label={azure ? 'Deployment' : 'Model'}
-            placeholder={azure ? t('modelPlaceholder') : t('modelOptional')}
-            value={llm.model}
-            onChange={(v) => set({ model: v })}
-            style={{ width: 380 }}
-          />
+          {azure ? (
+            <Input
+              aria-label='Deployment'
+              placeholder={t('modelPlaceholder')}
+              value={cfg.model}
+              onChange={(v) => set({ model: v })}
+              style={{ width: 380 }}
+            />
+          ) : (
+            <Space size={4}>
+              {/* allowCreate: a name the list lacks can still be typed; allowClear: empty lets the gateway pick. */}
+              <Select
+                aria-label='Model'
+                placeholder={t('modelOptional')}
+                value={cfg.model || undefined}
+                showSearch
+                allowCreate
+                allowClear
+                loading={loadingModels}
+                onChange={(v?: string) => set({ model: v ?? '' })}
+                style={{ width: 344 }}
+                options={[...new Set([...models, ...(cfg.model ? [cfg.model] : [])])]}
+              />
+              <Button aria-label={t('reloadModels')} title={t('reloadModels')} icon={<Refresh />} loading={loadingModels} onClick={() => loadModels(false)} />
+            </Space>
+          )}
         </PreferenceRow>
         {azure && (
           <PreferenceRow label='API version'>
-            <Input aria-label='API version' value={llm.apiVersion} onChange={(v) => set({ apiVersion: v })} style={{ width: 380 }} />
+            <Input aria-label='API version' value={llm.azure.apiVersion} onChange={(v) => set({ apiVersion: v })} style={{ width: 380 }} />
           </PreferenceRow>
         )}
         <PreferenceRow
           label={keyLabel}
-          description={view.hasKey[llm.provider] ? t('keySaved') : t('keyMissing')}
+          description={view.hasKey[active] ? t('keySaved') : t('keyMissing')}
         >
           <Input.Password
             aria-label={keyLabel}
-            placeholder={view.hasKey[llm.provider] ? t('keySavedPlaceholder') : undefined}
+            placeholder={view.hasKey[active] ? t('keySavedPlaceholder') : undefined}
             value={apiKey}
             onChange={setApiKey}
             style={{ width: 380 }}

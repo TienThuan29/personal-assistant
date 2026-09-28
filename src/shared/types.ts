@@ -82,15 +82,28 @@ export type AgentEvent = { conversationId: number } & (
   | { type: 'error'; message: string }
 );
 
-export type LlmConfig = { provider: 'azure' | 'gateway'; endpoint: string; model: string; apiVersion: string };
-export const DEFAULT_LLM: LlmConfig = { provider: 'gateway', endpoint: '', model: '', apiVersion: '2024-10-21' };
+export type Provider = 'azure' | 'gateway';
+/** One provider's connection, resolved from LlmSettings for createLlm. A gateway's apiVersion is ''. */
+export type LlmConfig = { provider: Provider; endpoint: string; model: string; apiVersion: string };
+/** Stored under the settings key 'llm': one config per provider, so switching never overwrites the other (design G1). */
+export type LlmSettings = {
+  active: Provider;
+  azure: { endpoint: string; model: string; apiVersion: string };
+  gateway: { endpoint: string; model: string };
+};
+export const DEFAULT_LLM: LlmSettings = {
+  active: 'gateway',
+  azure: { endpoint: '', model: '', apiVersion: '2024-10-21' },
+  gateway: { endpoint: '', model: '' },
+};
 
 /** Display preferences, stored under the settings key 'ui'. `moneyStyle` 'vi' is "55.000 ₫", 'intl' is "₫55,000". */
 export type UiSettings = { language: Lang; moneyStyle: 'vi' | 'intl'; defaultCurrency: string };
 export const DEFAULT_UI: UiSettings = { language: 'vi', moneyStyle: 'vi', defaultCurrency: 'VND' };
 
-export type SettingsView = { llm: LlmConfig; hasKey: Record<LlmConfig['provider'], boolean>; openAtLogin: boolean; ui: UiSettings };
-export type SettingsInput = { llm: LlmConfig; apiKey?: string };
+export type SettingsView = { llm: LlmSettings; hasKey: Record<Provider, boolean>; openAtLogin: boolean; ui: UiSettings };
+/** `apiKey` is for the active provider. */
+export type SettingsInput = { llm: LlmSettings; apiKey?: string };
 
 export type ImageInput = { name: string; bytes: Uint8Array };
 export type Page = 'chat' | 'today' | 'tasks' | 'notes' | 'expenses' | 'settings';
@@ -121,6 +134,8 @@ export type Api = {
     get(): Promise<SettingsView>;
     save(s: SettingsInput): Promise<void>;
     test(): Promise<string>;
+    /** The model ids the saved gateway endpoint lists (GET <endpoint>/models with the saved key). */
+    listModels(provider: Provider): Promise<string[]>;
     /** Applies at once (independent of the LLM config); resolves to the state now in effect. */
     setOpenAtLogin(on: boolean): Promise<boolean>;
     /** Validates, saves and broadcasts `ui:changed`; resolves to the settings now in effect. */

@@ -34,7 +34,7 @@ const CASES: [string, string[]][] = [
 describe.skipIf(!LLM_ENDPOINT || !LLM_MODEL || !LLM_KEY)('LLM tool choice (real endpoint)', () => {
   const llm = () =>
     createLlm(
-      { provider: LLM_PROVIDER === 'azure' ? 'azure' : 'gateway', endpoint: LLM_ENDPOINT!, model: LLM_MODEL!, apiVersion: LLM_API_VERSION ?? DEFAULT_LLM.apiVersion },
+      { provider: LLM_PROVIDER === 'azure' ? 'azure' : 'gateway', endpoint: LLM_ENDPOINT!, model: LLM_MODEL!, apiVersion: LLM_API_VERSION ?? DEFAULT_LLM.azure.apiVersion },
       LLM_KEY!
     );
 

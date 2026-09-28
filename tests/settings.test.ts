@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { type Cipher, getSetting, getUi, llmConfigSchema, readSecrets, saveUi, setSetting, writeSecret } from '../src/main/settings';
-import { DEFAULT_UI } from '../src/shared/types';
+import { activeLlm, type Cipher, getLlm, getSetting, getUi, llmSettingsSchema, readSecrets, saveUi, setSetting, writeSecret } from '../src/main/settings';
+import { DEFAULT_LLM, DEFAULT_UI } from '../src/shared/types';
 import { tr } from '../src/main/tools/common';
 import { tempDir, testDb } from './helpers';
 
@@ -39,35 +39,59 @@ describe('settings', () => {
     expect(readSecrets(file, cipher)).toEqual({ azure: 'sk-new' });
   });
 
-  it('validates the LLM config: https (or local http), trimmed, no trailing slash', () => {
-    const base = { provider: 'azure', model: 'gpt-4o', apiVersion: '2024-10-21' };
-    const ok = (endpoint: string, extra = {}) => llmConfigSchema.safeParse({ ...base, endpoint, ...extra });
-    expect(ok(' https://r.openai.azure.com/ ', { extra: 1 }).data).toEqual({ ...base, endpoint: 'https://r.openai.azure.com' });
-    expect(ok('http://localhost:4000/v1').data?.endpoint).toBe('http://localhost:4000/v1');
+  const settings = (active: 'azure' | 'gateway', azure = {}, gateway = {}) => ({
+    active,
+    azure: { endpoint: '', model: '', apiVersion: '2024-10-21', ...azure },
+    gateway: { endpoint: '', model: '', ...gateway },
+  });
+  const errors = (v: unknown) => llmSettingsSchema.safeParse(v).error?.issues.map((i) => tr(i.message));
+
+  it('validates endpoints: https (or local http), trimmed, no trailing slash', () => {
+    const base = { model: 'gpt-4o', apiVersion: '2024-10-21' };
+    const ok = (endpoint: string, extra = {}) => llmSettingsSchema.safeParse(settings('azure', { ...base, endpoint, ...extra }));
+    expect(ok(' https://r.openai.azure.com/ ', { extra: 1 }).data?.azure).toEqual({ ...base, endpoint: 'https://r.openai.azure.com' });
+    expect(ok('http://localhost:4000/v1').data?.azure.endpoint).toBe('http://localhost:4000/v1');
     expect(ok('http://example.com').success).toBe(false);
     expect(ok('javascript:alert(1)').success).toBe(false);
     for (const bad of ['', '   ', 'not a url', 'https://']) expect(ok(bad).success).toBe(false); // no throw either
     expect(ok('https://r.openai.azure.com', { model: '   ' }).success).toBe(false);
   });
 
-  it('model and apiVersion are optional for a gateway, required for Azure', () => {
-    const gw = { provider: 'gateway', endpoint: 'https://gw.example/v1', model: ' ', apiVersion: '' };
-    expect(llmConfigSchema.safeParse(gw).data).toEqual({ ...gw, model: '' });
-    const r = llmConfigSchema.safeParse({ ...gw, provider: 'azure' });
-    expect(r.error?.issues.map((i) => tr(i.message))).toEqual(['Chưa nhập model/deployment', 'Chưa nhập API version']);
+  it('only the active provider must be complete; the other may be empty but not invalid', () => {
+    const gw = settings('gateway', {}, { endpoint: 'https://gw.example/v1', model: ' ' });
+    expect(llmSettingsSchema.safeParse(gw).data).toEqual({ ...gw, gateway: { endpoint: 'https://gw.example/v1', model: '' } });
+    expect(errors({ ...gw, active: 'azure' })).toEqual(['Endpoint chưa đúng dạng URL (vd https://…)', 'Chưa nhập model/deployment']);
+    expect(errors({ ...gw, azure: { endpoint: 'http://example.com', model: '', apiVersion: '' } })).toEqual(['Endpoint phải dùng https']);
+    expect(errors(settings('azure', { endpoint: 'https://r', model: 'm', apiVersion: ' ' }))).toEqual(['Chưa nhập API version']);
+    expect(errors({ ...gw, active: 'other' })).toEqual(['Giá trị không hợp lệ']);
+    expect(errors(null)?.length).toBeGreaterThan(0);
   });
 
-  it('refuses a key/token pasted into the plain-text Model field', () => {
-    const gw = { provider: 'gateway', endpoint: 'https://gw.example/v1', apiVersion: '' };
-    for (const m of ['sk-gw-0740c47e9f5a', 'sk_live_abc', 'Bearer abc'])
-      expect(llmConfigSchema.safeParse({ ...gw, model: m }).error?.issues.map((i) => tr(i.message))[0]).toMatch(/Access token/);
-    for (const m of ['gpt-4o', 'anthropic.claude-3-5-sonnet-20240620-v1:0', 'gemini-1.5-pro', ''])
-      expect(llmConfigSchema.safeParse({ ...gw, model: m }).success).toBe(true);
+  it('refuses a key/token pasted into the plain-text Model field of either provider', () => {
+    const gw = (model: string) => settings('gateway', {}, { endpoint: 'https://gw.example/v1', model });
+    for (const m of ['sk-gw-0740c47e9f5a', 'sk_live_abc', 'Bearer abc']) {
+      expect(errors(gw(m))?.[0]).toMatch(/Access token/);
+      expect(errors({ ...gw(''), azure: { endpoint: '', model: m, apiVersion: '' } })?.[0]).toMatch(/Access token/);
+    }
+    for (const m of ['gpt-4o', 'anthropic.claude-3-5-sonnet-20240620-v1:0', 'gemini-1.5-pro', '']) expect(errors(gw(m))).toBeUndefined();
   });
 
-  it('explains invalid fields in Vietnamese', () => {
-    const r = llmConfigSchema.safeParse({ provider: 'azure', endpoint: '', model: ' ', apiVersion: '2024-10-21' });
-    expect(r.error?.issues.map((i) => tr(i.message))).toEqual(['Endpoint chưa đúng dạng URL (vd https://…)', 'Chưa nhập model/deployment']);
+  it('migrates the old flat llm row to per-provider settings on read (G3)', () => {
+    const { db } = testDb();
+    expect(getLlm(db)).toEqual(DEFAULT_LLM);
+    setSetting(db, 'llm', { provider: 'gateway', endpoint: 'https://gw.example/v1', model: 'gpt-5.1-02', apiVersion: '2024-10-21' });
+    expect(getLlm(db)).toEqual({ ...DEFAULT_LLM, active: 'gateway', gateway: { endpoint: 'https://gw.example/v1', model: 'gpt-5.1-02' } });
+    expect(activeLlm(getLlm(db))).toEqual({ provider: 'gateway', endpoint: 'https://gw.example/v1', model: 'gpt-5.1-02', apiVersion: '' });
+    setSetting(db, 'llm', { provider: 'azure', endpoint: 'https://r', model: 'gpt-4o', apiVersion: '2025-01-01' });
+    expect(getLlm(db)).toEqual({ ...DEFAULT_LLM, active: 'azure', azure: { endpoint: 'https://r', model: 'gpt-4o', apiVersion: '2025-01-01' } });
+    // The new shape round-trips; a partial row fills in the defaults and a junk row reads as them.
+    const saved = { active: 'azure', azure: { endpoint: 'https://r', model: 'd', apiVersion: 'v' }, gateway: { endpoint: 'https://g', model: '' } };
+    setSetting(db, 'llm', saved);
+    expect(getLlm(db)).toEqual(saved);
+    setSetting(db, 'llm', { gateway: { endpoint: 'https://g' } });
+    expect(getLlm(db)).toEqual({ ...DEFAULT_LLM, gateway: { endpoint: 'https://g', model: '' } });
+    setSetting(db, 'llm', 'junk');
+    expect(getLlm(db)).toEqual(DEFAULT_LLM);
   });
 
   it('merges UI settings over the defaults, normalizing the currency', () => {

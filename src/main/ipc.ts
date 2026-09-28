@@ -1,11 +1,11 @@
 import { ipcMain, nativeImage, net } from 'electron';
-import { DEFAULT_LLM, type ImageInput, type LlmConfig, type SettingsInput, type SettingsView } from '../shared/types';
+import type { ImageInput, SettingsInput, SettingsView } from '../shared/types';
 import { type AgentDeps, cancelOpenActions, resolveAction, runTurn } from './agent';
 import { newAttachmentId, saveAttachment } from './attachments';
 import { type Db, tx } from './db';
 import { i18n, setLanguage } from './i18n';
-import { collect, createLlm, describeLlmError } from './llm';
-import { type Cipher, getSetting, getUi, llmConfigSchema, readSecrets, saveUi, setSetting, writeSecret } from './settings';
+import { collect, createLlm, describeLlmError, listModels } from './llm';
+import { activeLlm, type Cipher, getLlm, getUi, llmSettingsSchema, readSecrets, saveUi, setSetting, writeSecret } from './settings';
 import {
   addMessage,
   createConversation,
@@ -17,7 +17,7 @@ import {
   setTitleIfNew,
 } from './store';
 import { findTool, parseArgs } from './tools';
-import { tr, UserError } from './errors';
+import { te, tr, UserError } from './errors';
 
 export type MainCtx = {
   db: Db;
@@ -37,6 +37,9 @@ const MAX_TEXT = 20_000;
 const MAX_IMAGES = 10;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_SIDE = 1568;
+// Chromium's network stack: trusts the Windows certificate store and uses the system proxy, so corporate TLS inspection
+// works. Node's own fetch fails there with UNABLE_TO_GET_ISSUER_CERT_LOCALLY.
+const netFetch = net.fetch as unknown as typeof fetch;
 
 /** Ids come from the renderer: reject anything but a positive integer (node:sqlite would throw on undefined anyway). */
 function id(v: unknown): number {
@@ -58,16 +61,13 @@ function toJpeg(bytes: unknown): Buffer {
 export function registerIpc(m: MainCtx): void {
   const now = (): Date => new Date();
   const ctx = { db: m.db, ro: m.ro, now, settings: () => getUi(m.db) };
-  const llmConfig = (): LlmConfig => getSetting(m.db, 'llm', DEFAULT_LLM);
   const deps: AgentDeps = {
     ...ctx,
     attachmentsDir: m.attachmentsDir,
     emit: (e) => m.send('chat:event', e),
     llm: () => {
-      const cfg = llmConfig();
-      // Chromium's network stack (net.fetch): trusts the Windows certificate store and uses the system proxy,
-      // so corporate TLS inspection works. Node's own fetch fails there with UNABLE_TO_GET_ISSUER_CERT_LOCALLY.
-      return createLlm(cfg, readSecrets(m.secretsFile, m.cipher)[cfg.provider] ?? '', { fetch: net.fetch as unknown as typeof fetch });
+      const cfg = activeLlm(getLlm(m.db));
+      return createLlm(cfg, readSecrets(m.secretsFile, m.cipher)[cfg.provider] ?? '', { fetch: netFetch });
     },
   };
   const running = new Map<number, { ctl: AbortController; done: Promise<void> }>();
@@ -162,19 +162,26 @@ export function registerIpc(m: MainCtx): void {
       console.error('Reading secrets failed', e); // show "no key" rather than failing the whole settings view
     }
     return {
-      llm: llmConfig(),
+      llm: getLlm(m.db),
       hasKey: { azure: !!secrets.azure, gateway: !!secrets.gateway },
       openAtLogin: m.loginItem.get(),
       ui,
     };
   });
   ipcMain.handle('settings:save', (_e, s: SettingsInput) => {
-    const parsed = llmConfigSchema.safeParse(s?.llm);
-    if (!parsed.success) throw new Error(parsed.error.issues.map((i) => tr(i.message)).join('; '));
+    const parsed = llmSettingsSchema.safeParse(s?.llm);
+    if (!parsed.success) throw new Error([...new Set(parsed.error.issues.map((i) => tr(i.message)))].join('; '));
     if (s.apiKey !== undefined && typeof s.apiKey !== 'string') throw new UserError('invalidApiKey');
     setSetting(m.db, 'llm', parsed.data);
     const key = s.apiKey?.trim();
-    if (key) writeSecret(m.secretsFile, m.cipher, parsed.data.provider, key);
+    if (key) writeSecret(m.secretsFile, m.cipher, parsed.data.active, key);
+  });
+  ipcMain.handle('settings:listModels', async (_e, provider: unknown) => {
+    if (provider !== 'gateway') throw new UserError('invalidValue'); // only a gateway lists its models (design G2)
+    const key = readSecrets(m.secretsFile, m.cipher).gateway ?? '';
+    return listModels(getLlm(m.db).gateway.endpoint, key, { fetch: netFetch }).catch((e: unknown) => {
+      throw e instanceof UserError ? e : new Error(te('modelsFailed', { error: describeLlmError(e) }));
+    });
   });
   ipcMain.handle('settings:setOpenAtLogin', (_e, on: unknown) => {
     if (typeof on !== 'boolean') throw new UserError('invalidValue');

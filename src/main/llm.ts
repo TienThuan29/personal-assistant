@@ -28,6 +28,15 @@ export function createLlm(cfg: LlmConfig, apiKey: string, opts: { fetch?: typeof
   };
 }
 
+/** A gateway's model ids: GET <endpoint>/models with the key as a bearer token (design G2). */
+export async function listModels(endpoint: string, apiKey: string, opts: { fetch?: typeof fetch } = {}): Promise<string[]> {
+  if (!endpoint || !apiKey) throw new UserError('modelsNeedConfig');
+  const client = new OpenAI({ apiKey, baseURL: endpoint, maxRetries: 1, timeout: 20_000, fetch: opts.fetch });
+  const ids: string[] = [];
+  for await (const m of client.models.list()) if (typeof m?.id === 'string') ids.push(m.id);
+  return ids.sort();
+}
+
 /** Accumulates a streamed reply. `partial` keeps the text so far if the stream breaks or is cut off. */
 export async function collect(
   stream: AsyncIterable<ChatCompletionChunk>,

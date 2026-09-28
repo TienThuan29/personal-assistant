@@ -1,40 +1,74 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { z } from 'zod/v4';
-import { DEFAULT_UI, type LlmConfig, type UiSettings } from '../shared/types';
+import { DEFAULT_LLM, DEFAULT_UI, type LlmConfig, type LlmSettings, type Provider, type UiSettings } from '../shared/types';
 import type { Db } from './db';
 import { tr, UserError } from './errors';
 
-/** The key is sent to this endpoint, so only https (or http to a local gateway). Trailing '/' dropped: the SDK appends '/openai'. */
+/**
+ * The key is sent to this endpoint, so only https (or http to a local gateway). Trailing '/' dropped: the SDK appends '/openai'.
+ * Empty is allowed here (a provider not set up yet); the active provider's endpoint is required below.
+ */
 const endpoint = z
   .string()
   .trim()
-  .pipe(z.url({ abort: true, error: 'errors:endpointUrl' })) // abort: otherwise the refine below still runs, and new URL() throws
+  .refine((u) => !u || (URL.canParse(u) && !!new URL(u).hostname), { message: 'errors:endpointUrl', abort: true })
   .refine((u) => {
+    if (!u) return true;
     const { protocol, hostname } = new URL(u);
     return protocol === 'https:' || (protocol === 'http:' && ['localhost', '127.0.0.1'].includes(hostname));
   }, 'errors:endpointHttps')
   .transform((u) => u.replace(/\/+$/, ''));
 
-/** Not an LLM tool schema, so it never goes through toJSONSchema. */
-// Azure needs a deployment and api-version; a gateway may pick the model itself, so both are optional there.
-export const llmConfigSchema = z
+// Model is stored in plain text; refuse something that looks like a pasted key/token (it belongs in the key field).
+const model = z
+  .string()
+  .trim()
+  .refine((m) => !/^(sk|pk|gw|key)[-_]|^bearer\s/i.test(m), 'errors:modelLooksLikeKey');
+
+/**
+ * Not an LLM tool schema, so it never goes through toJSONSchema. Both providers are validated (a key-looking model is refused
+ * anywhere), but only the active one must be complete: Azure needs a deployment and api-version; a gateway may pick the model itself.
+ */
+export const llmSettingsSchema = z
   .object({
-    provider: z.enum(['azure', 'gateway']),
-    endpoint,
-    // Model is stored in plain text; refuse something that looks like a pasted key/token (it belongs in the key field).
-    model: z
-      .string()
-      .trim()
-      .refine((m) => !/^(sk|pk|gw|key)[-_]|^bearer\s/i.test(m), 'errors:modelLooksLikeKey'),
-    apiVersion: z.string().trim(),
+    active: z.enum(['azure', 'gateway'], { error: 'errors:invalidValue' }),
+    azure: z.object({ endpoint, model, apiVersion: z.string().trim() }),
+    gateway: z.object({ endpoint, model }),
   })
-  // `when`: also check when the endpoint is invalid, so every error shows at once.
-  .refine((c) => c.provider !== 'azure' || !!c.model?.trim(), { path: ['model'], message: 'errors:modelRequired', when: () => true })
-  .refine((c) => c.provider !== 'azure' || !!c.apiVersion?.trim(), {
-    path: ['apiVersion'],
+  // `when`: also check when another field is invalid, so every error shows at once.
+  .refine((s) => typeof s?.[s?.active]?.endpoint !== 'string' || !!s[s.active].endpoint.trim(), {
+    path: [],
+    message: 'errors:endpointUrl',
+    when: () => true,
+  })
+  .refine((s) => s?.active !== 'azure' || !!s.azure?.model?.trim(), { path: ['azure', 'model'], message: 'errors:modelRequired', when: () => true })
+  .refine((s) => s?.active !== 'azure' || !!s.azure?.apiVersion?.trim(), {
+    path: ['azure', 'apiVersion'],
     message: 'errors:apiVersionRequired',
     when: () => true,
   });
+
+/**
+ * The stored LLM settings over the defaults. A row in the old flat shape `{provider, endpoint, model, apiVersion}` reads as
+ * that provider's config and the active one (design G3); the next save writes the new shape.
+ */
+export function getLlm(db: Db): LlmSettings {
+  const raw = getSetting<unknown>(db, 'llm', null);
+  const s = (typeof raw === 'object' && raw ? raw : {}) as Record<string, unknown> & Partial<LlmSettings>;
+  if (typeof s.provider === 'string') {
+    const active = s.provider === 'azure' ? 'azure' : 'gateway';
+    const { endpoint = '', model = '', apiVersion = DEFAULT_LLM.azure.apiVersion } = s as Record<string, string>;
+    return { ...DEFAULT_LLM, active, [active]: active === 'azure' ? { endpoint, model, apiVersion } : { endpoint, model } };
+  }
+  return {
+    active: s.active === 'azure' ? 'azure' : 'gateway',
+    azure: { ...DEFAULT_LLM.azure, ...s.azure },
+    gateway: { ...DEFAULT_LLM.gateway, ...s.gateway },
+  };
+}
+
+/** The active provider's connection, for createLlm. */
+export const activeLlm = (s: LlmSettings): LlmConfig => ({ apiVersion: '', ...s[s.active], provider: s.active });
 
 export const uiSettingsSchema = z.object({
   language: z.enum(['vi', 'en'], { error: 'errors:invalidValue' }),
@@ -76,7 +110,7 @@ export function setSetting(db: Db, key: string, value: unknown): void {
 
 /** Electron safeStorage in the app; a fake in tests. */
 export type Cipher = { encrypt: (plain: string) => Buffer; decrypt: (data: Buffer) => string };
-type Secrets = Partial<Record<LlmConfig['provider'], string>>;
+type Secrets = Partial<Record<Provider, string>>;
 
 /**
  * Secrets live in their own file, never in the DB, so query_readonly_sql can't leak them (design D14).
@@ -94,7 +128,7 @@ export function readSecrets(file: string, cipher: Cipher): Secrets {
 }
 
 /** Writes a .tmp then renames it, so a crash mid-write never leaves a half-written file. */
-export function writeSecret(file: string, cipher: Cipher, provider: LlmConfig['provider'], value: string): void {
+export function writeSecret(file: string, cipher: Cipher, provider: Provider, value: string): void {
   const tmp = `${file}.tmp`;
   writeFileSync(tmp, cipher.encrypt(JSON.stringify({ ...readSecrets(file, cipher), [provider]: value })));
   renameSync(tmp, file);
