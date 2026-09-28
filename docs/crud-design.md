@@ -133,3 +133,45 @@ Ngày: 2026-09-28 · Trạng thái: đã duyệt
 - **Hàm thuần**: `diffPatch`, `minorDigits` / quy đổi tiền, ánh xạ lặp lại ↔ chuỗi `recurrence`.
 - **Locale**: test vi/en đủ key.
 - **Chụp màn hình** bằng hook dev (`PA_PAGE=tasks|notes|expenses|reminders`) với thư mục userData tạm.
+
+## As built
+
+Commit `d444710` → `07b1b14`. Mỗi task có review spec và review chất lượng, sau đó một review toàn bộ thay đổi.
+
+- **Main** (`src/main/save.ts`, IPC `data:save`):
+  - Kiểm tra tên tool **trước khi** giải mã ảnh.
+  - Với `create_*`, `attachment_ids` từ renderer bị bỏ, nên form không lấy được ảnh của tin nhắn chat.
+  - Giới hạn **10 ảnh mỗi bản ghi**, tính cả ảnh giữ lại. Vượt quá thì cả lần lưu bị rollback (`errors:tooManyImages`, chữ trung tính, dùng chung với chat).
+  - Kết quả trả về có `attachment_ids`.
+- **Hàm dùng chung**:
+  - `diffPatch` (`shared/patch.ts`).
+  - `minorDigits`, `toMinor`, `fromMinor` (`shared/money.ts`). `toMinor` làm tròn bằng chuỗi số mũ, nên 1.005 USD thành 101.
+  - `parseRecurrence` / `formatRecurrence` và `toLocalMinute` (`shared/dates.ts`).
+- **UI dùng chung**: `useImagePicker` (SendBox cũng dùng), `ImageField` (tự tính chỗ trống, khóa nút thêm và nút hoàn tác khi đã đủ 10 ảnh), `RecordModal`:
+  - `unmountOnExit`.
+  - Không đóng được khi đang lưu.
+  - Hỏi "Bỏ thay đổi?".
+  - Ctrl+Enter để lưu (bỏ qua khi đang gõ IME).
+- **Form**: `pages/{Task,Note,Expense,Reminder}Form.tsx`. Bấm tiêu đề (task), ghi chú, mô tả (chi tiêu) hoặc nội dung (nhắc nhở) để mở form sửa; link bị khóa khi dòng đang bận.
+- **Khác thiết kế**:
+  - **Task**:
+    - Phân loại là trường bắt buộc.
+    - Gõ nhãn có sẵn ("Công việc", "Personal") thì lưu thành key `work` / `personal`.
+    - Hàng tuần mà không chọn ngày nào thì bị chặn.
+    - Recurrence chỉ gửi khi đổi thật, so ở dạng chuẩn hóa.
+  - **Ghi chú**: modal chỉ xem đã bỏ, bấm vào ghi chú mở thẳng form sửa. Nội dung giãn tới 20 dòng.
+  - **Chi tiêu**:
+    - Ngày chi là trường bắt buộc.
+    - Có thêm hai kiểm tra số tiền: phải > 0 sau khi quy đổi, và không vượt 1e12.
+    - Danh mục chỉ có khoảng trắng thì bị chặn.
+  - **Nhắc nhở**:
+    - **Không hiện task liên quan**: cần đổi tool của bot nên đã bỏ.
+    - Sắp tới: cũ trước, không giới hạn thời gian.
+    - Đã nhắc / Đã bỏ qua / Tất cả: 90 ngày gần nhất, mới trước (`LIMIT 200` của `list_reminders` sẽ cắt mất bản mới nhất).
+    - Không chọn được giờ đã qua trong hôm nay.
+- **Kiểm thử**:
+  - `tests/save.test.ts`: allowlist, một bản ghi, thêm/gỡ ảnh, ảnh của bản ghi khác, rollback sau khi đã ghi ảnh, giới hạn ảnh mỗi bản ghi, ảnh chat không bị lấy, nhắc nhở đã qua giờ.
+  - `tests/patch.test.ts`: diffPatch, tiền, recurrence.
+  - `tests/dates.test.ts`: `toLocalMinute`.
+  - 195 test pass. Chụp màn hình từng trang và form bằng thư mục userData tạm.
+  - Chưa chạy: bấm lưu thật trong app (xem `docs/smoke-test.md`, mục Manual CRUD).

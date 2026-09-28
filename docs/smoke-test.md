@@ -31,6 +31,13 @@ The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-
 - [ ] Chi tiêu page shows this month grouped by category.
 - [ ] Data pages refresh after a chat change and when the window regains focus.
 
+**Manual CRUD** (docs/crud-design.md)
+- [ ] Task: "+ Thêm" with a date, time, weekly T2/T4 repeat and 2 pasted images → saved, images show. Edit it: change the title, remove one image, add one → only those change. Typing "Công việc" as the category files it under the Công việc filter. Status filter Đã xong shows a ticked task; setting it back to Chưa xong reopens it.
+- [ ] Note: "+ Thêm" a journal entry; clicking a note opens the edit form with its full body; search still works while the form is closed.
+- [ ] Expense: "+ Thêm" 12.50 USD → the table shows $12.50 / 12,50 US$; editing and saving without changes sends nothing; 55000 VND round-trips.
+- [ ] Reminder page: "+ Thêm" 2 minutes ahead → toast on time; edit the text of a fired reminder (Đã nhắc) → saved without a "past time" error; moving its time to the future → back under Sắp tới and fires again.
+- [ ] Any form: closing with changes asks "Bỏ thay đổi?"; Ctrl+Enter saves; a server error (e.g. a past reminder time typed by hand) shows inside the modal and keeps the input; 11th image is refused.
+
 **Reminders and tray**
 - [ ] Reminder 2 minutes ahead → Windows toast on time, **with the window hidden in the tray**. Click → opens the Hôm nay page.
 - [ ] Reminder while the app is quit → on next start one grouped "Bạn có N nhắc nhở" toast.
