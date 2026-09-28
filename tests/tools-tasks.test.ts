@@ -11,6 +11,20 @@ describe('task tools', () => {
     expect(t).toMatchObject({ title: 'Nộp báo cáo', category: 'personal', priority: 2, status: 'todo', due_date: '2026-09-28' });
   });
 
+  it('snaps a category to its existing spelling and filters ignoring case and accents', () => {
+    const ctx = testCtx();
+    callTool(ctx, 'create_task', { title: 'A', category: 'Gia đình' });
+    const b = callTool<TaskRow>(ctx, 'create_task', { title: 'B', category: ' gia dinh ' });
+    expect(b.category).toBe('Gia đình');
+    const c = callTool<TaskRow>(ctx, 'create_task', { title: 'C', category: 'work' });
+    callTool(ctx, 'update_tasks', { ids: [c.id], patch: { category: 'GIA DINH' } });
+    expect(ctx.db.prepare('SELECT DISTINCT category FROM tasks').all()).toEqual([{ category: 'Gia đình' }]);
+    expect(callTool<TaskRow[]>(ctx, 'list_tasks', { category: 'gia dinh' }).map((t) => t.title)).toEqual(['A', 'B', 'C']);
+    // Updating every row of a category renames it.
+    callTool(ctx, 'update_tasks', { ids: [1, 2, 3], patch: { category: 'Nhà' } });
+    expect(ctx.db.prepare('SELECT DISTINCT category FROM tasks').all()).toEqual([{ category: 'Nhà' }]);
+  });
+
   it('lists by date range and category', () => {
     const ctx = testCtx();
     callTool(ctx, 'create_task', { title: 'A', due_date: '2026-09-28', category: 'work' });

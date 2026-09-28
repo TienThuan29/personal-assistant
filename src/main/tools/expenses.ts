@@ -1,9 +1,9 @@
 import { z } from 'zod/v4';
 import { toLocalDate } from '../../shared/dates';
 import type { ExpenseRow } from '../../shared/types';
-import type { Db } from '../db';
 import {
   attachmentIds,
+  canonCategory,
   attachmentsCol,
   attachTo,
   date,
@@ -34,17 +34,6 @@ const category = z
   .trim()
   .min(1)
   .describe('vd: ăn uống, đi lại, nhà cửa, mua sắm, giải trí, sức khỏe, khác (ưu tiên category đã có)');
-
-/**
- * Reuses an existing spelling ('an uong' → 'Ăn uống') so one category never splits by case or accents.
- * `exclude` skips the rows being updated, so renaming all of a category's rows still takes effect.
- */
-const canonCategory = (db: Db, c: string, exclude: number[] = []): string =>
-  (
-    db
-      .prepare(`SELECT category FROM expenses WHERE fold(category) = fold(?) AND id NOT IN (${exclude.map(() => '?').join(', ')}) LIMIT 1`)
-      .get(c, ...exclude) as { category: string } | undefined
-  )?.category ?? c;
 
 export const expenseTools = [
   readTool({
@@ -85,7 +74,7 @@ export const expenseTools = [
     apply: (a, { db, now }) => {
       const r = db
         .prepare('INSERT INTO expenses (amount, currency, category, description, spent_at) VALUES (?, ?, ?, ?, ?)')
-        .run(a.amount, a.currency, canonCategory(db, a.category), a.description ?? null, a.spent_at ?? toLocalDate(now()));
+        .run(a.amount, a.currency, canonCategory(db, 'expenses', a.category), a.description ?? null, a.spent_at ?? toLocalDate(now()));
       const id = Number(r.lastInsertRowid);
       attachTo(db, 'expense', id, a.attachment_ids);
       return getRows<ExpenseRow>(db, 'expenses', [id])[0];
@@ -110,7 +99,7 @@ export const expenseTools = [
     preview: (a, { db }) => ({ before: requireRows<ExpenseRow>(db, 'expenses', a.ids) }),
     apply: (a, { db }) => {
       requireRows(db, 'expenses', a.ids);
-      const patch = a.patch.category ? { ...a.patch, category: canonCategory(db, a.patch.category, a.ids) } : a.patch;
+      const patch = a.patch.category ? { ...a.patch, category: canonCategory(db, 'expenses', a.patch.category, a.ids) } : a.patch;
       updateRows(db, 'expenses', a.ids, patch);
       return { updated: getRows<ExpenseRow>(db, 'expenses', a.ids) };
     },

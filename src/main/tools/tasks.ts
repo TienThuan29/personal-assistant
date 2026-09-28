@@ -4,6 +4,7 @@ import type { TaskRow } from '../../shared/types';
 import type { Db } from '../db';
 import {
   attachmentIds,
+  canonCategory,
   attachmentsCol,
   attachTo,
   date,
@@ -20,7 +21,7 @@ import {
 
 const recurrence = z.string().regex(RECURRENCE_RE).describe("'daily' | 'weekly:1,3,5' (1 = T2 … 7 = CN) | 'monthly:15'");
 const priority = z.union([z.literal(1), z.literal(2), z.literal(3)]).describe('1 cao, 2 thường, 3 thấp');
-const category = z.string().min(1).describe("'work' (công việc) | 'personal' (cá nhân) | category đã có");
+const category = z.string().trim().min(1).describe("'work' (công việc) | 'personal' (cá nhân) | category đã có");
 
 const getTask = (db: Db, id: number): TaskRow => getRows<TaskRow>(db, 'tasks', [id])[0];
 
@@ -52,7 +53,7 @@ export const taskTools = [
         ['t.status = :status', 'status', a.status === 'all' ? undefined : a.status],
         ['t.due_date >= :from', 'from', a.from],
         ['t.due_date <= :to', 'to', a.to],
-        ['t.category = :category', 'category', a.category],
+        ['fold(t.category) = fold(:category)', 'category', a.category],
         [
           "(fold(t.title) LIKE fold(:q) ESCAPE '\\' OR fold(t.notes) LIKE fold(:q) ESCAPE '\\')",
           'q',
@@ -90,7 +91,7 @@ export const taskTools = [
         .run({
           title: a.title,
           notes: a.notes ?? null,
-          category: a.category ?? 'personal',
+          category: canonCategory(db, 'tasks', a.category ?? 'personal'),
           priority: a.priority ?? 2,
           due_date: a.due_date ?? null,
           due_time: a.due_time ?? null,
@@ -127,7 +128,8 @@ export const taskTools = [
     apply: (a, { db, now }) => {
       const before = requireRows<TaskRow>(db, 'tasks', a.ids);
       const { status } = a.patch;
-      updateRows(db, 'tasks', a.ids, a.patch, status && status !== 'done' ? { completed_at: null } : {});
+      const patch = a.patch.category ? { ...a.patch, category: canonCategory(db, 'tasks', a.patch.category, a.ids) } : a.patch;
+      updateRows(db, 'tasks', a.ids, patch, status && status !== 'done' ? { completed_at: null } : {});
       if (status === 'done') {
         const stmt = db.prepare('UPDATE tasks SET completed_at = COALESCE(completed_at, ?) WHERE id = ?');
         for (const id of a.ids) stmt.run(now().toISOString(), id);

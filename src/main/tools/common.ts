@@ -89,6 +89,17 @@ export function updateRows(db: Db, table: string, idList: number[], patch: Recor
   for (const id of idList) stmt.run({ ...values, id });
 }
 
+/**
+ * Reuses an existing spelling of a category in `table` ('an uong' → 'Ăn uống') so one category never splits by case or accents.
+ * `exclude` skips the rows being updated, so renaming all of a category's rows still takes effect.
+ */
+export const canonCategory = (db: Db, table: 'tasks' | 'expenses', c: string, exclude: number[] = []): string =>
+  (
+    db
+      .prepare(`SELECT category FROM ${table} WHERE fold(category) = fold(?) AND id NOT IN (${placeholders(exclude.length)}) LIMIT 1`)
+      .get(c, ...exclude) as { category: string } | undefined
+  )?.category ?? c;
+
 /** Deletes rows and (for owners of images) their attachment rows; files are swept at startup. */
 export function deleteRows(db: Db, table: string, owner: OwnerType | null, idList: number[]): void {
   if (owner) {
