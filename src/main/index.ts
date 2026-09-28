@@ -26,12 +26,12 @@ function send(channel: string, payload?: unknown): void {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 }
 
-// Login items only make sense for the packaged app; the portable exe exposes its real path in this env var.
-const loginItemOpts = () => ({ path: process.env.PORTABLE_EXECUTABLE_FILE ?? process.execPath, args: ['--hidden'] });
+// Login items only make sense for the packaged app; the NSIS install path (process.execPath, the default) is stable.
+const loginArgs = ['--hidden'];
 const loginItem = {
-  get: (): boolean => app.isPackaged && app.getLoginItemSettings(loginItemOpts()).openAtLogin,
+  get: (): boolean => app.isPackaged && app.getLoginItemSettings({ args: loginArgs }).openAtLogin,
   set: (openAtLogin: boolean): void => {
-    if (app.isPackaged) app.setLoginItemSettings({ openAtLogin, ...loginItemOpts() });
+    if (app.isPackaged) app.setLoginItemSettings({ openAtLogin, args: loginArgs });
   },
 };
 

@@ -4229,12 +4229,12 @@ function send(channel: string, payload?: unknown): void {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 }
 
-// Login items only make sense for the packaged app; the portable exe exposes its real path in this env var.
-const loginItemOpts = () => ({ path: process.env.PORTABLE_EXECUTABLE_FILE ?? process.execPath, args: ['--hidden'] });
+// Login items only make sense for the packaged app; the NSIS install path (process.execPath, the default) is stable.
+const loginArgs = ['--hidden'];
 const loginItem = {
-  get: (): boolean => app.isPackaged && app.getLoginItemSettings(loginItemOpts()).openAtLogin,
+  get: (): boolean => app.isPackaged && app.getLoginItemSettings({ args: loginArgs }).openAtLogin,
   set: (openAtLogin: boolean): void => {
-    if (app.isPackaged) app.setLoginItemSettings({ openAtLogin, ...loginItemOpts() });
+    if (app.isPackaged) app.setLoginItemSettings({ openAtLogin, args: loginArgs });
   },
 };
 
@@ -6258,7 +6258,7 @@ git commit -m "test: opt-in Vietnamese tool-choice eval against a real LLM"
 
 ---
 
-### Task 26: Smoke checklist and portable build
+### Task 26: Smoke checklist and Windows installer
 
 **Files:**
 - Create: `electron-builder.yml`, `docs/smoke-test.md`
@@ -6267,6 +6267,8 @@ git commit -m "test: opt-in Vietnamese tool-choice eval against a real LLM"
 
 ```yaml
 # Everything is bundled by electron-vite (all deps are devDependencies), so ship only out/.
+# appId is also the AppUserModelID (app.setAppUserModelId in main); the NSIS installer puts it on the
+# Start-menu shortcut, which Windows needs before it shows the app's toasts.
 appId: com.personal-assistant.app
 productName: Personal Assistant
 directories:
@@ -6278,10 +6280,13 @@ files:
 # Reuse the installed Electron instead of downloading it (TLS proxy).
 electronDist: node_modules/electron/dist
 win:
-  target: portable
+  target: nsis
   signAndEditExecutable: false
-portable:
-  artifactName: PersonalAssistant-portable.exe
+nsis:
+  oneClick: true
+  perMachine: false # per-user: %LOCALAPPDATA%\Programs, no admin prompt
+  createStartMenuShortcut: true
+  artifactName: PersonalAssistant-Setup-${version}.${ext}
 ```
 
 **Step 2: `docs/smoke-test.md`**
@@ -6289,11 +6294,13 @@ portable:
 ```markdown
 # Smoke test (run before each release)
 
-Setup: packaged exe (`bun run pack` → `release/PersonalAssistant-portable.exe`), real LLM configured.
+Setup: install the packaged app (`bun run pack` → run `release/PersonalAssistant-Setup-0.1.0.exe`; per-user, no admin prompt,
+adds a Start-menu shortcut), real LLM configured. Uninstall from Windows Settings → Apps (keeps the data folder).
 The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-assistant/`
 (`assistant.db`, `attachments/`, `backups/`, `secrets.bin`). Rename it first for a truly fresh start.
 
 **Start and settings**
+- [ ] Installer: no admin prompt, the app starts when it finishes, the Start menu has "Personal Assistant".
 - [ ] Fresh start: window "Trợ lý cá nhân" opens, `backups/` has `assistant-<today>.db`.
 - [ ] No LLM configured → sending a message says to open Cài đặt.
 - [ ] Settings: `http://…` endpoint → "Endpoint phải dùng https"; a non-URL → "Endpoint chưa đúng dạng URL". Saving a valid config works.
@@ -6322,28 +6329,30 @@ The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-
 - [ ] Reminder while the app is quit → on next start one grouped "Bạn có N nhắc nhở" toast.
 - [ ] Sleep the PC past a reminder, wake → toast fires shortly after resume.
 - [ ] Tray: close hides the window, tray click shows it, right-click menu "Mở Trợ lý" / "Thoát" work; a second launch focuses the running instance.
-- [ ] "Khởi động cùng Windows" (Settings or tray menu) on → sign out/in → app runs hidden in the tray. Note: the portable exe registers its own path, so moving the exe breaks this.
+- [ ] "Khởi động cùng Windows" (Settings or tray menu) on → sign out/in → app runs hidden in the tray.
 - [ ] Dark mode follows Windows.
 
-If toasts don't appear from the portable exe (Windows can require a Start-menu shortcut carrying the
-AppUserModelID `com.personal-assistant.app`), switch `win.target` to `nsis`, which creates that shortcut.
+Toasts need the Start-menu shortcut carrying the AppUserModelID `com.personal-assistant.app`, which the installer
+creates. `release/win-unpacked/Personal Assistant.exe` run directly may show no toasts.
 ```
 
 **Step 3: Build and run the checklist**
 
 Run: `bun run pack`
-Expected: `release/PersonalAssistant-portable.exe` (~86 MB; NSIS comes from the local electron-builder cache, so no download). Run it and go through `docs/smoke-test.md`.
+Expected: `release/PersonalAssistant-Setup-0.1.0.exe` (~90 MB; NSIS comes from the local electron-builder cache, so no download). Install it and go through `docs/smoke-test.md`.
+
+The first build used `win.target: portable`. It was switched to a per-user one-click NSIS installer because Windows shows an app's toasts reliably only when a Start-menu shortcut carries its AppUserModelID; the portable exe has none.
 
 Checks done when this task was implemented:
 - `app.asar` holds only `out/**` and `package.json` (no `node_modules`). `resources/default_app.asar` is copied along with `electronDist`; it is unused and harmless.
 - The packaged `package.json` has no `productName`, so `userData` is `%APPDATA%/personal-assistant`, the same folder as `bun run dev`. `productName` in `electron-builder.yml` only names the exe (`Personal Assistant.exe`). Dev and packaged builds share one DB.
-- The exe unpacks to `%TEMP%` and starts; the window "Trợ lý cá nhân" opens and writes to that DB.
+- `release/win-unpacked/Personal Assistant.exe` starts; the window "Trợ lý cá nhân" opens and writes to that DB.
 
 **Step 4: Commit**
 
 ```bash
 git add -A
-git commit -m "build: portable Windows package and release smoke checklist"
+git commit -m "build: Windows installer and release smoke checklist"
 ```
 
 ---
@@ -6351,7 +6360,7 @@ git commit -m "build: portable Windows package and release smoke checklist"
 ## Done criteria
 
 - `bun run test` passes (135 tests; the 20 eval cases skipped) and `bun run typecheck` exits 0.
-- `docs/smoke-test.md` is fully checked on the packaged exe.
+- `docs/smoke-test.md` is fully checked on the installed app.
 - The eval passes at least 17 of 20 against the chosen model.
 
 ### Known gaps

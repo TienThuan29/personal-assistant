@@ -1,10 +1,12 @@
 # Smoke test (run before each release)
 
-Setup: packaged exe (`bun run pack` → `release/PersonalAssistant-portable.exe`), real LLM configured.
+Setup: install the packaged app (`bun run pack` → run `release/PersonalAssistant-Setup-0.1.0.exe`; per-user, no admin prompt,
+adds a Start-menu shortcut), real LLM configured. Uninstall from Windows Settings → Apps (keeps the data folder).
 The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-assistant/`
 (`assistant.db`, `attachments/`, `backups/`, `secrets.bin`). Rename it first for a truly fresh start.
 
 **Start and settings**
+- [ ] Installer: no admin prompt, the app starts when it finishes, the Start menu has "Personal Assistant".
 - [ ] Fresh start: window "Trợ lý cá nhân" opens, `backups/` has `assistant-<today>.db`.
 - [ ] No LLM configured → sending a message says to open Cài đặt.
 - [ ] Settings: `http://…` endpoint → "Endpoint phải dùng https"; a non-URL → "Endpoint chưa đúng dạng URL". Saving a valid config works.
@@ -33,8 +35,8 @@ The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-
 - [ ] Reminder while the app is quit → on next start one grouped "Bạn có N nhắc nhở" toast.
 - [ ] Sleep the PC past a reminder, wake → toast fires shortly after resume.
 - [ ] Tray: close hides the window, tray click shows it, right-click menu "Mở Trợ lý" / "Thoát" work; a second launch focuses the running instance.
-- [ ] "Khởi động cùng Windows" (Settings or tray menu) on → sign out/in → app runs hidden in the tray. Note: the portable exe registers its own path, so moving the exe breaks this.
+- [ ] "Khởi động cùng Windows" (Settings or tray menu) on → sign out/in → app runs hidden in the tray.
 - [ ] Dark mode follows Windows.
 
-If toasts don't appear from the portable exe (Windows can require a Start-menu shortcut carrying the
-AppUserModelID `com.personal-assistant.app`), switch `win.target` to `nsis`, which creates that shortcut.
+Toasts need the Start-menu shortcut carrying the AppUserModelID `com.personal-assistant.app`, which the installer
+creates. `release/win-unpacked/Personal Assistant.exe` run directly may show no toasts.

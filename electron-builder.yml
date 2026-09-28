@@ -1,4 +1,6 @@
 # Everything is bundled by electron-vite (all deps are devDependencies), so ship only out/.
+# appId is also the AppUserModelID (app.setAppUserModelId in main); the NSIS installer puts it on the
+# Start-menu shortcut, which Windows needs before it shows the app's toasts.
 appId: com.personal-assistant.app
 productName: Personal Assistant
 directories:
@@ -10,7 +12,10 @@ files:
 # Reuse the installed Electron instead of downloading it (TLS proxy).
 electronDist: node_modules/electron/dist
 win:
-  target: portable
+  target: nsis
   signAndEditExecutable: false
-portable:
-  artifactName: PersonalAssistant-portable.exe
+nsis:
+  oneClick: true
+  perMachine: false # per-user: %LOCALAPPDATA%\Programs, no admin prompt
+  createStartMenuShortcut: true
+  artifactName: PersonalAssistant-Setup-${version}.${ext}
