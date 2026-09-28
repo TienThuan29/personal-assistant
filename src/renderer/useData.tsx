@@ -25,12 +25,12 @@ export function useData<T>(read: () => Promise<T>, initial: T, delay = 0) {
         (d) => live && setData(d),
         (e) => live && failRef.current(e)
       );
-    const t = setTimeout(load, delay);
+    const timer = setTimeout(load, delay);
     const off = api.data.onChanged(load);
     window.addEventListener('focus', load); // also re-renders date-relative views (Today) after midnight
     return () => {
       live = false;
-      clearTimeout(t);
+      clearTimeout(timer);
       off();
       window.removeEventListener('focus', load);
     };

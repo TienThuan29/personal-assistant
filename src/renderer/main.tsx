@@ -11,7 +11,13 @@ import { api, UiContext } from './api';
 import { App } from './App';
 
 // The language is read before the first render, so the UI never flashes in the other language.
-const initial = await api.settings.get().then((v) => v.ui, () => DEFAULT_UI);
+// A missing preload or a failed call still renders, with the defaults, instead of a blank window.
+let initial = DEFAULT_UI;
+try {
+  initial = (await api.settings.get()).ui;
+} catch (e) {
+  console.error('Reading UI settings failed', e);
+}
 const i18n = createI18n(initial.language);
 
 function Root() {

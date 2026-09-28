@@ -152,12 +152,18 @@ export function registerIpc(m: MainCtx): void {
   });
 
   ipcMain.handle('settings:get', (): SettingsView => {
-    const secrets = readSecrets(m.secretsFile, m.cipher);
+    const ui = getUi(m.db); // first, so the renderer's language always matches main's
+    let secrets: ReturnType<typeof readSecrets> = {};
+    try {
+      secrets = readSecrets(m.secretsFile, m.cipher);
+    } catch (e) {
+      console.error('Reading secrets failed', e); // show "no key" rather than failing the whole settings view
+    }
     return {
       llm: llmConfig(),
       hasKey: { azure: !!secrets.azure, gateway: !!secrets.gateway },
       openAtLogin: m.loginItem.get(),
-      ui: getUi(m.db),
+      ui,
     };
   });
   ipcMain.handle('settings:save', (_e, s: SettingsInput) => {

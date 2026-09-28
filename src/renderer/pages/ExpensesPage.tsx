@@ -31,7 +31,7 @@ export function ExpensesPage() {
 
   const columns = [
     { title: t('date'), dataIndex: 'spent_at', width: 110, render: (v: string) => parseLocalDate(v).toLocaleDateString('vi-VN') },
-    { title: t('category'), dataIndex: 'category', width: 140 },
+    { title: t('categoryColumn'), dataIndex: 'category', width: 140 },
     { title: t('description'), dataIndex: 'description', render: (v: string | null) => v || '—' },
     { title: t('amount'), dataIndex: 'amount', align: 'right' as const, render: (_: number, r: ExpenseRow) => money(r.amount, r.currency) },
     { title: t('image'), dataIndex: 'attachment_ids', render: (v: string | null) => <Thumbs ids={v} /> },

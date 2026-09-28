@@ -44,13 +44,13 @@ function DisplayCard() {
         />
       </PreferenceRow>
       <PreferenceRow label={t('defaultCurrency')} description={t('defaultCurrencyDesc')}>
-        {/* allowCreate: type any other ISO code; main validates it and a bad one shows as a message. */}
+        {/* allowCreate: type any other 3-letter ISO code (anything else is ignored); main validates it and a bad one shows as a message. */}
         <Select
           aria-label={t('defaultCurrency')}
           value={ui.defaultCurrency}
           showSearch
           allowCreate
-          onChange={(defaultCurrency: string) => defaultCurrency && setUi({ defaultCurrency })}
+          onChange={(defaultCurrency: string) => /^[A-Za-z]{3}$/.test(defaultCurrency) && setUi({ defaultCurrency })}
           style={{ width: 380 }}
           options={[...new Set([...CURRENCIES, ui.defaultCurrency])]}
         />
