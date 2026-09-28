@@ -1,7 +1,7 @@
 import type { ChatMessage, ConversationRow, PendingAction, StoredMessage } from '../shared/types';
 import { type Db, tx } from './db';
 
-const DEFAULT_TITLE = 'Hội thoại mới';
+const DEFAULT_TITLE = 'Hội thoại mới'; // must match the conversations.title default in migrations.ts
 const NOW_ISO = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
 
 export const createConversation = (db: Db): number =>
@@ -24,7 +24,7 @@ export function pruneEmptyConversations(db: Db): void {
 }
 
 export function setTitleIfNew(db: Db, id: number, text: string): void {
-  const title = text.replace(/\s+/g, ' ').trim().slice(0, 40) || 'Ảnh';
+  const title = [...text.normalize('NFC').replace(/\s+/g, ' ').trim()].slice(0, 40).join('') || 'Ảnh'; // code points: never splits an emoji
   db.prepare('UPDATE conversations SET title = ? WHERE id = ? AND title = ?').run(title, id, DEFAULT_TITLE);
 }
 
@@ -36,6 +36,7 @@ export function addMessage(db: Db, conversationId: number, m: StoredMessage): nu
   return Number(r.lastInsertRowid);
 }
 
+// ponytail: loads the full history each LLM round; add a tail query (ORDER BY id DESC LIMIT n) if long chats get slow
 export function getMessages(db: Db, conversationId: number): ChatMessage[] {
   const rows = db.prepare('SELECT id, content, created_at FROM messages WHERE conversation_id = ? ORDER BY id').all(conversationId) as {
     id: number;
@@ -79,7 +80,7 @@ export function listActions(db: Db, conversationId: number, status?: PendingActi
 }
 
 export function finishAction(db: Db, id: number, status: 'confirmed' | 'cancelled', args: unknown, result: unknown): void {
-  db.prepare('UPDATE pending_actions SET status = ?, args = ?, result = ? WHERE id = ?').run(
+  db.prepare("UPDATE pending_actions SET status = ?, args = ?, result = ? WHERE id = ? AND status = 'pending'").run(
     status,
     JSON.stringify(args),
     JSON.stringify(result ?? null),

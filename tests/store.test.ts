@@ -24,25 +24,51 @@ describe('store', () => {
     expect(listConversations(db)[0].title).toBe('Hôm nay có gì?');
   });
 
+  it('titles whitespace-only text as an image and cuts at 40 code points', () => {
+    const { db } = testDb();
+    const title = (text: string) => {
+      const c = createConversation(db);
+      setTitleIfNew(db, c, text);
+      return listConversations(db).find((r) => r.id === c)?.title;
+    };
+    expect(title(' \n\t ')).toBe('Ảnh');
+    expect(title('a'.repeat(50))).toBe('a'.repeat(40));
+    expect(title(`${'a'.repeat(39)}😀b`)).toBe(`${'a'.repeat(39)}😀`);
+  });
+
+  it('lists the most recently updated conversation first', () => {
+    const { db } = testDb();
+    const older = createConversation(db);
+    const newer = createConversation(db);
+    db.exec("UPDATE conversations SET updated_at = '2020-01-01T00:00:00.000Z'");
+    expect(listConversations(db).map((r) => r.id)).toEqual([newer, older]);
+    addMessage(db, older, { role: 'user', content: 'x' });
+    expect(listConversations(db).map((r) => r.id)).toEqual([older, newer]);
+  });
+
   it('tracks pending actions', () => {
     const { db } = testDb();
     const c = createConversation(db);
     const id = createAction(db, { conversation_id: c, tool_call_id: 't1', tool_name: 'create_task', args: { title: 'A' }, preview: null });
     expect(listActions(db, c, 'pending')).toMatchObject([{ id, args: { title: 'A' }, preview: null, result: null }]);
     finishAction(db, id, 'confirmed', { title: 'B' }, { ok: 1 });
+    finishAction(db, id, 'cancelled', {}, null); // already resolved: ignored
     expect(listActions(db, c)[0]).toMatchObject({ status: 'confirmed', args: { title: 'B' }, result: { ok: 1 } });
   });
 
-  it('deleting a conversation removes its messages, actions and message images', () => {
+  it('deleting a conversation removes its messages, actions and message images, and nothing else', () => {
     const { db, dir } = testDb();
+    const img = (ownerId: number) =>
+      saveAttachment(db, dir, { id: newAttachmentId(), bytes: new Uint8Array([1]), mime: 'image/jpeg', ownerType: 'message', ownerId });
+    const other = createConversation(db);
+    img(addMessage(db, other, { role: 'user', content: 'keep' }));
     const c = createConversation(db);
-    const m = addMessage(db, c, { role: 'user', content: 'x' });
-    saveAttachment(db, dir, { id: newAttachmentId(), bytes: new Uint8Array([1]), mime: 'image/jpeg', ownerType: 'message', ownerId: m });
+    img(addMessage(db, c, { role: 'user', content: 'x' }));
     createAction(db, { conversation_id: c, tool_call_id: 't', tool_name: 'x', args: {}, preview: null });
     deleteConversation(db, c);
-    for (const t of ['messages', 'pending_actions', 'attachments']) {
-      expect(db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get()).toEqual({ n: 0 });
-    }
+    const count = (t: string) => db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get();
+    expect([count('messages'), count('pending_actions'), count('attachments')]).toEqual([{ n: 1 }, { n: 0 }, { n: 1 }]);
+    expect(listConversations(db).map((r) => r.id)).toEqual([other]);
   });
 
   it('prunes conversations without messages', () => {
