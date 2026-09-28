@@ -2339,7 +2339,7 @@ describe('get_today_overview', () => {
     expect(o.spent_today).toEqual([{ currency: 'VND', total: 30_000 }]);
   });
 
-  it('skips done tasks, other days, and spending on other days; keeps local-day edges', () => {
+  it('skips done tasks, other days and non-pending reminders; keeps local-day edges; sums per currency', () => {
     let now = new Date(2026, 8, 27, 0, 0); // reminders must be created in the future
     const ctx = testCtx(() => now);
     const { id } = callTool<{ id: number }>(ctx, 'create_task', { title: 'xong', due_date: '2026-09-28' });
@@ -2347,13 +2347,23 @@ describe('get_today_overview', () => {
     callTool(ctx, 'create_reminder', { message: 'đầu ngày', remind_at: '2026-09-28T00:00' });
     callTool(ctx, 'create_reminder', { message: 'cuối ngày', remind_at: '2026-09-28T23:59' });
     callTool(ctx, 'create_reminder', { message: 'hôm qua', remind_at: '2026-09-27T23:59' });
+    callTool(ctx, 'create_reminder', { message: 'đã hiện', remind_at: '2026-09-28T10:00' });
+    callTool(ctx, 'create_reminder', { message: 'bỏ qua', remind_at: '2026-09-28T11:00' });
+    ctx.db.prepare("UPDATE reminders SET status = 'fired' WHERE message = 'đã hiện'").run();
+    ctx.db.prepare("UPDATE reminders SET status = 'dismissed' WHERE message = 'bỏ qua'").run();
     callTool(ctx, 'create_expense', { amount: 10_000, category: 'ăn uống', spent_at: '2026-09-27' });
+    callTool(ctx, 'create_expense', { amount: 20_000, category: 'ăn uống', spent_at: '2026-09-28' });
+    callTool(ctx, 'create_expense', { amount: 5_000, category: 'đi lại', spent_at: '2026-09-28' });
+    callTool(ctx, 'create_expense', { amount: 350, currency: 'USD', category: 'ăn uống', spent_at: '2026-09-28' });
     now = NOW;
     const o = callTool<Overview>(ctx, 'get_today_overview', {});
     expect(o.tasks_today).toEqual([]);
     expect(o.overdue).toEqual([]);
     expect(o.reminders_today).toMatchObject([{ message: 'đầu ngày' }, { message: 'cuối ngày' }]);
-    expect(o.spent_today).toEqual([]);
+    expect(o.spent_today).toEqual([
+      { currency: 'USD', total: 350 },
+      { currency: 'VND', total: 25_000 },
+    ]);
   });
 });
 
@@ -2388,6 +2398,21 @@ describe('query_readonly_sql', () => {
     expect(r.rows).toHaveLength(200);
     expect(r.truncated).toBe(true);
   });
+
+  it('caps rows even when a trailing statement drops the LIMIT', () => {
+    const ctx = testCtx();
+    const sql = 'WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n) SELECT i FROM n); SELECT (1';
+    const r = callTool<SqlResult>(ctx, 'query_readonly_sql', { sql });
+    expect(r.rows).toHaveLength(200);
+    expect(r.truncated).toBe(true);
+    expect(callTool<SqlResult>(ctx, 'query_readonly_sql', { sql: 'SELECT 1 AS n' }).rows).toEqual([{ n: 1 }]);
+  });
+
+  it('cuts long strings and hides blobs', () => {
+    const ctx = testCtx();
+    const r = callTool<SqlResult>(ctx, 'query_readonly_sql', { sql: "SELECT printf('%.*c', 2000, 'x') AS s, zeroblob(10) AS b, 'ngắn' AS t" });
+    expect(r.rows).toEqual([{ s: `${'x'.repeat(500)}…`, b: '[blob 10 bytes]', t: 'ngắn' }]);
+  });
 });
 ```
 
@@ -2406,7 +2431,7 @@ import { readTool } from './common';
 export const overviewTools = [
   readTool({
     name: 'get_today_overview',
-    description: 'Tổng quan hôm nay: task đến hạn hôm nay, task quá hạn, nhắc nhở hôm nay và tổng chi hôm nay.',
+    description: 'Tổng quan hôm nay: task đến hạn hôm nay, task quá hạn (tối đa 50, trễ lâu nhất trước), nhắc nhở hôm nay và tổng chi hôm nay.',
     schema: z.object({}),
     run: (_a, { db, now }) => {
       const today = toLocalDate(now());
@@ -2416,11 +2441,11 @@ export const overviewTools = [
         tasks_today: db
           .prepare("SELECT * FROM tasks WHERE status = 'todo' AND due_date = ? ORDER BY due_time IS NULL, due_time, priority")
           .all(today),
-        overdue: db.prepare("SELECT * FROM tasks WHERE status = 'todo' AND due_date < ? ORDER BY due_date").all(today),
+        overdue: db.prepare("SELECT * FROM tasks WHERE status = 'todo' AND due_date < ? ORDER BY due_date LIMIT 50").all(today),
         reminders_today: db
           .prepare("SELECT * FROM reminders WHERE status = 'pending' AND remind_at >= ? AND remind_at < ? ORDER BY remind_at")
           .all(start, end),
-        spent_today: db.prepare('SELECT currency, SUM(amount) AS total FROM expenses WHERE spent_at = ? GROUP BY currency').all(today),
+        spent_today: db.prepare('SELECT currency, SUM(amount) AS total FROM expenses WHERE spent_at = ? GROUP BY currency ORDER BY currency').all(today),
       };
     },
   }),
@@ -2434,11 +2459,15 @@ import { z } from 'zod/v4';
 import { readTool } from './common';
 
 const MAX_ROWS = 200;
+const MAX_CELL = 500;
 const SCHEMA = `tasks(id, title, notes, category, priority 1 cao|2 thường|3 thấp, due_date 'YYYY-MM-DD', due_time 'HH:MM', status todo|done|cancelled, recurrence, created_at, completed_at)
 reminders(id, task_id, message, remind_at, status pending|fired|dismissed)
 notes(id, kind note|journal, title, body, created_at, updated_at)
 expenses(id, amount INTEGER minor unit, currency, category, description, spent_at 'YYYY-MM-DD', created_at)
 attachments(id, owner_type task|note|expense|message, owner_id, file_name, mime, created_at)`;
+
+const cell = (v: unknown): unknown =>
+  v instanceof Uint8Array ? `[blob ${v.byteLength} bytes]` : typeof v === 'string' && v.length > MAX_CELL ? `${v.slice(0, MAX_CELL)}…` : v;
 
 export const sqlTools = [
   readTool({
@@ -2446,15 +2475,21 @@ export const sqlTools = [
     description:
       'Chạy MỘT câu SELECT/WITH chỉ-đọc trên SQLite cho thống kê mà tool khác không làm được. ' +
       "Cột *_at (trừ spent_at) là ISO UTC: dùng date(x, 'localtime') để lấy ngày địa phương; due_date/spent_at đã là ngày địa phương. " +
-      `Tối đa ${MAX_ROWS} dòng. Schema:\n${SCHEMA}`,
+      `Tối đa ${MAX_ROWS} dòng; chuỗi dài bị cắt còn ${MAX_CELL} ký tự (đọc toàn văn ghi chú bằng get_notes). Schema:\n${SCHEMA}`,
     schema: z.object({ sql: z.string().min(1).describe('Một câu SELECT hoặc WITH ... SELECT') }),
     run: (a, { ro }) => {
       const sql = a.sql.trim().replace(/;\s*$/, '');
       if (!/^(select|with)\b/i.test(sql)) throw new Error('Chỉ chấp nhận SELECT hoặc WITH');
       // The connection is opened readOnly; the wrapper also rejects WITH … DELETE and caps the row count.
       // The newline keeps a trailing `-- comment` from swallowing the closing parenthesis.
-      const rows = ro.prepare(`SELECT * FROM (${sql}\n) LIMIT ${MAX_ROWS + 1}`).all();
-      return rows.length > MAX_ROWS ? { rows: rows.slice(0, MAX_ROWS), truncated: true } : { rows };
+      // prepare() ignores everything after the first ';', so `...); SELECT (1` drops the LIMIT: iterate() still stops at the cap.
+      // ponytail: no query timeout (sync main thread); move to a worker + terminate if hangs are seen
+      const rows: Record<string, unknown>[] = [];
+      for (const row of ro.prepare(`SELECT * FROM (${sql}\n) LIMIT ${MAX_ROWS + 1}`).iterate()) {
+        if (rows.length === MAX_ROWS) return { rows, truncated: true };
+        rows.push(Object.fromEntries(Object.entries(row).map(([k, v]) => [k, cell(v)])));
+      }
+      return { rows };
     },
   }),
 ];
