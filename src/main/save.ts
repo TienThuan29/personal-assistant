@@ -2,7 +2,7 @@ import { newAttachmentId, saveAttachment } from './attachments';
 import { tx } from './db';
 import { UserError } from './errors';
 import { findTool, parseArgs, type ToolCtx } from './tools';
-import { getRows, type OwnerType, requireRows } from './tools/common';
+import { attachmentsCol, getRows, ids as idsSchema, type OwnerType, requireRows } from './tools/common';
 
 /** Tools the manual forms save through (design C6): the record's image owner (null: takes no images) and table. */
 const SAVE_TOOLS: Record<string, { owner: OwnerType | null; table: string }> = {
@@ -40,16 +40,16 @@ export function saveRecord(
 
   let run: () => number; // writes the record, returns its id
   if (tool.name.startsWith('update_')) {
-    const { ids, patch } = args;
-    if (!Array.isArray(ids) || ids.length !== 1) throw new UserError('saveOneRecord');
+    if (!Array.isArray(args.ids) || args.ids.length !== 1) throw new UserError('saveOneRecord');
+    const ids = idsSchema.safeParse(args.ids);
+    if (!ids.success) throw new UserError('invalidId');
+    const [id] = ids.data;
+    const { patch } = args;
     if (isObject(patch) && !Object.keys(patch).length) {
-      // Only the images changed: the tool would reject an empty patch.
-      const [id] = ids;
-      if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) throw new UserError('invalidId');
-      run = () => (requireRows(ctx.db, table, [id]), id);
+      run = () => (requireRows(ctx.db, table, [id]), id); // only the images changed: the tool would reject an empty patch
     } else {
-      const parsed = parseArgs(tool, { ids, patch }) as { ids: number[] };
-      run = () => (tool.apply(parsed, ctx), parsed.ids[0]);
+      const parsed = parseArgs(tool, { ids: [id], patch });
+      run = () => (tool.apply(parsed, ctx), id);
     }
   } else {
     // attachment_ids moves chat images; the form sends its images as bytes instead.
@@ -64,6 +64,9 @@ export function saveRecord(
       const del = ctx.db.prepare('DELETE FROM attachments WHERE id = ? AND owner_type = ? AND owner_id = ?');
       for (const id of remove) del.run(id, owner, ownerId); // another record's id matches nothing
     }
-    return getRows(ctx.db, table, [ownerId])[0];
+    // With attachment_ids, like the list tools.
+    return owner
+      ? ctx.db.prepare(`SELECT r.*, ${attachmentsCol(owner, 'r.id')} FROM ${table} r WHERE r.id = ?`).get(ownerId)
+      : getRows(ctx.db, table, [ownerId])[0];
   });
 }
