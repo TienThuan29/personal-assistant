@@ -2317,7 +2317,7 @@ git commit -m "feat(tools): expense tools with per-currency totals"
 **Step 1: Write the failing tests**
 
 ```ts
-import { callTool, testCtx } from './helpers';
+import { callTool, NOW, testCtx } from './helpers';
 
 type Overview = { today: string; tasks_today: unknown[]; overdue: unknown[]; reminders_today: unknown[]; spent_today: unknown[] };
 type SqlResult = { rows: Record<string, unknown>[]; truncated?: boolean };
@@ -2338,6 +2338,23 @@ describe('get_today_overview', () => {
     expect(o.reminders_today).toMatchObject([{ message: 'r1' }]);
     expect(o.spent_today).toEqual([{ currency: 'VND', total: 30_000 }]);
   });
+
+  it('skips done tasks, other days, and spending on other days; keeps local-day edges', () => {
+    let now = new Date(2026, 8, 27, 0, 0); // reminders must be created in the future
+    const ctx = testCtx(() => now);
+    const { id } = callTool<{ id: number }>(ctx, 'create_task', { title: 'xong', due_date: '2026-09-28' });
+    callTool(ctx, 'update_tasks', { ids: [id], patch: { status: 'done' } });
+    callTool(ctx, 'create_reminder', { message: 'đầu ngày', remind_at: '2026-09-28T00:00' });
+    callTool(ctx, 'create_reminder', { message: 'cuối ngày', remind_at: '2026-09-28T23:59' });
+    callTool(ctx, 'create_reminder', { message: 'hôm qua', remind_at: '2026-09-27T23:59' });
+    callTool(ctx, 'create_expense', { amount: 10_000, category: 'ăn uống', spent_at: '2026-09-27' });
+    now = NOW;
+    const o = callTool<Overview>(ctx, 'get_today_overview', {});
+    expect(o.tasks_today).toEqual([]);
+    expect(o.overdue).toEqual([]);
+    expect(o.reminders_today).toMatchObject([{ message: 'đầu ngày' }, { message: 'cuối ngày' }]);
+    expect(o.spent_today).toEqual([]);
+  });
 });
 
 describe('query_readonly_sql', () => {
@@ -2345,12 +2362,23 @@ describe('query_readonly_sql', () => {
     const ctx = testCtx();
     callTool(ctx, 'create_task', { title: 'A' });
     expect(callTool<SqlResult>(ctx, 'query_readonly_sql', { sql: 'SELECT COUNT(*) AS n FROM tasks;' }).rows).toEqual([{ n: 1 }]);
+    expect(callTool<SqlResult>(ctx, 'query_readonly_sql', { sql: '  with t AS (SELECT title FROM tasks) select * from t' }).rows).toEqual([
+      { title: 'A' },
+    ]);
+  });
+
+  it('accepts a trailing line comment', () => {
+    const ctx = testCtx();
+    expect(callTool<SqlResult>(ctx, 'query_readonly_sql', { sql: 'SELECT 1 AS n -- one' }).rows).toEqual([{ n: 1 }]);
   });
 
   it('refuses anything that writes', () => {
     const ctx = testCtx();
+    callTool(ctx, 'create_task', { title: 'A' });
     expect(() => callTool(ctx, 'query_readonly_sql', { sql: 'DELETE FROM tasks' })).toThrow(/SELECT/);
     expect(() => callTool(ctx, 'query_readonly_sql', { sql: 'WITH x AS (SELECT 1) DELETE FROM tasks' })).toThrow();
+    callTool(ctx, 'query_readonly_sql', { sql: 'SELECT 1); DELETE FROM tasks; SELECT (1' }); // only the first statement is prepared
+    expect(ctx.db.prepare('SELECT COUNT(*) AS n FROM tasks').get()).toEqual({ n: 1 });
   });
 
   it('caps rows at 200', () => {
@@ -2406,7 +2434,7 @@ import { z } from 'zod/v4';
 import { readTool } from './common';
 
 const MAX_ROWS = 200;
-const SCHEMA = `tasks(id, title, notes, category, priority 1-3, due_date 'YYYY-MM-DD', due_time 'HH:MM', status todo|done|cancelled, recurrence, created_at, completed_at)
+const SCHEMA = `tasks(id, title, notes, category, priority 1 cao|2 thường|3 thấp, due_date 'YYYY-MM-DD', due_time 'HH:MM', status todo|done|cancelled, recurrence, created_at, completed_at)
 reminders(id, task_id, message, remind_at, status pending|fired|dismissed)
 notes(id, kind note|journal, title, body, created_at, updated_at)
 expenses(id, amount INTEGER minor unit, currency, category, description, spent_at 'YYYY-MM-DD', created_at)
@@ -2417,14 +2445,15 @@ export const sqlTools = [
     name: 'query_readonly_sql',
     description:
       'Chạy MỘT câu SELECT/WITH chỉ-đọc trên SQLite cho thống kê mà tool khác không làm được. ' +
-      "Cột *_at là ISO UTC: dùng date(x, 'localtime') để lấy ngày địa phương; due_date/spent_at đã là ngày địa phương. " +
+      "Cột *_at (trừ spent_at) là ISO UTC: dùng date(x, 'localtime') để lấy ngày địa phương; due_date/spent_at đã là ngày địa phương. " +
       `Tối đa ${MAX_ROWS} dòng. Schema:\n${SCHEMA}`,
-    schema: z.object({ sql: z.string().min(1) }),
+    schema: z.object({ sql: z.string().min(1).describe('Một câu SELECT hoặc WITH ... SELECT') }),
     run: (a, { ro }) => {
       const sql = a.sql.trim().replace(/;\s*$/, '');
       if (!/^(select|with)\b/i.test(sql)) throw new Error('Chỉ chấp nhận SELECT hoặc WITH');
       // The connection is opened readOnly; the wrapper also rejects WITH … DELETE and caps the row count.
-      const rows = ro.prepare(`SELECT * FROM (${sql}) LIMIT ${MAX_ROWS + 1}`).all();
+      // The newline keeps a trailing `-- comment` from swallowing the closing parenthesis.
+      const rows = ro.prepare(`SELECT * FROM (${sql}\n) LIMIT ${MAX_ROWS + 1}`).all();
       return rows.length > MAX_ROWS ? { rows: rows.slice(0, MAX_ROWS), truncated: true } : { rows };
     },
   }),

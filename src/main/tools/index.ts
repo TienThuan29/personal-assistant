@@ -3,12 +3,14 @@ import { z } from 'zod/v4';
 import type { Tool } from './common';
 import { expenseTools } from './expenses';
 import { noteTools } from './notes';
+import { overviewTools } from './overview';
 import { reminderTools } from './reminders';
+import { sqlTools } from './sql';
 import { taskTools } from './tasks';
 
 export type { Tool, ToolCtx } from './common';
 
-export const TOOLS: Tool[] = [...taskTools, ...reminderTools, ...noteTools, ...expenseTools];
+export const TOOLS: Tool[] = [...overviewTools, ...taskTools, ...reminderTools, ...noteTools, ...expenseTools, ...sqlTools];
 
 export const findTool = (name: string): Tool | undefined => TOOLS.find((t) => t.name === name);
 
