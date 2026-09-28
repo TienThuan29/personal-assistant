@@ -95,6 +95,8 @@ export type Api = {
     messages(id: number): Promise<ChatMessage[]>;
     actions(id: number): Promise<PendingAction[]>;
     send(id: number, text: string, images: ImageInput[]): Promise<void>;
+    /** Whether a turn is running, for a chat opened mid-turn. */
+    running(id: number): Promise<boolean>;
     stop(id: number): Promise<void>;
     retry(id: number): Promise<void>;
     resolve(actionId: number, decision: 'confirm' | 'cancel', args?: unknown): Promise<void>;

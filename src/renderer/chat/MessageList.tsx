@@ -84,7 +84,8 @@ export function MessageList({ chat }: { chat: ChatState }) {
     const ro = new ResizeObserver(() => {
       if (stick) el.scrollTop = el.scrollHeight;
     });
-    ro.observe(el.firstElementChild!);
+    ro.observe(el.firstElementChild!); // content growth
+    ro.observe(el); // the list itself shrinking: the send box grew, or the window resized
     el.addEventListener('scroll', onScroll);
     return () => {
       ro.disconnect();
@@ -104,7 +105,7 @@ export function MessageList({ chat }: { chat: ChatState }) {
         )}
         {chat.messages.map((m) => <MessageRow key={m.id} m={m} actions={chat.actions} resolve={chat.resolve} />)}
         {chat.streaming && (
-          <div className='msg-assistant'>
+          <div className='msg-assistant' aria-live='polite'>
             <Markdown>{chat.streaming}</Markdown>
           </div>
         )}
@@ -114,11 +115,13 @@ export function MessageList({ chat }: { chat: ChatState }) {
         {chat.error && (
           <Alert
             type='error'
-            content={chat.error}
+            content={chat.error.message}
             action={
-              <Button size='mini' onClick={() => void chat.retry()}>
-                Thử lại
-              </Button>
+              chat.error.turn && (
+                <Button size='mini' onClick={() => void chat.retry()}>
+                  Thử lại
+                </Button>
+              )
             }
           />
         )}

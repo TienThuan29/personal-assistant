@@ -20,6 +20,7 @@ const api: Api = {
     messages: (id) => invoke('chat:messages', id),
     actions: (id) => invoke('chat:actions', id),
     send: (id, text, images) => invoke('chat:send', id, text, images),
+    running: (id) => invoke('chat:running', id),
     stop: (id) => invoke('chat:stop', id),
     retry: (id) => invoke('chat:retry', id),
     resolve: (actionId, decision, args) => invoke('chat:resolve', actionId, decision, args),

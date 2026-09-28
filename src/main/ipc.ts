@@ -117,6 +117,7 @@ export function registerIpc(m: MainCtx): void {
     });
     startTurn(cid);
   });
+  ipcMain.handle('chat:running', (_e, convId: unknown) => running.has(id(convId)));
   ipcMain.handle('chat:stop', (_e, convId: unknown) => stopTurn(id(convId)));
   ipcMain.handle('chat:retry', async (_e, convId: unknown) => {
     const cid = id(convId);

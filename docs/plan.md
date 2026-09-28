@@ -403,6 +403,8 @@ export type Api = {
     messages(id: number): Promise<ChatMessage[]>;
     actions(id: number): Promise<PendingAction[]>;
     send(id: number, text: string, images: ImageInput[]): Promise<void>;
+    /** Whether a turn is running, for a chat opened mid-turn. */
+    running(id: number): Promise<boolean>;
     stop(id: number): Promise<void>;
     retry(id: number): Promise<void>;
     resolve(actionId: number, decision: 'confirm' | 'cancel', args?: unknown): Promise<void>;
@@ -4141,6 +4143,7 @@ export function registerIpc(m: MainCtx): void {
     });
     startTurn(cid);
   });
+  ipcMain.handle('chat:running', (_e, convId: unknown) => running.has(id(convId)));
   ipcMain.handle('chat:stop', (_e, convId: unknown) => stopTurn(id(convId)));
   ipcMain.handle('chat:retry', async (_e, convId: unknown) => {
     const cid = id(convId);
@@ -4419,6 +4422,7 @@ const api: Api = {
     messages: (id) => invoke('chat:messages', id),
     actions: (id) => invoke('chat:actions', id),
     send: (id, text, images) => invoke('chat:send', id, text, images),
+    running: (id) => invoke('chat:running', id),
     stop: (id) => invoke('chat:stop', id),
     retry: (id) => invoke('chat:retry', id),
     resolve: (actionId, decision, args) => invoke('chat:resolve', actionId, decision, args),
@@ -5280,6 +5284,10 @@ git commit -m "feat(ui): image thumbnails and generic confirm card"
 
 Notes on the less obvious parts:
 - **Running state after send/retry/resolve.** Main stops a running turn and awaits it before starting the next, so the stopped turn's `done` arrives *before* the IPC call returns. The hook marks the new turn running again afterwards, unless the last event was `error` or `pending`: a missing config makes the new turn fail synchronously, also before the call returns, and the spinner must not stick.
+- **Running state elsewhere.** On mount the hook asks main (`chat.running`), so a chat reopened mid-turn shows Dừng; `text` and `tool` events also mark it running. After `resolve`, the hook marks the resumed turn running only if no event arrived during its reload, so a fast `done` can't leave the spinner stuck.
+- **Two kinds of error.** A turn error (the `error` event) shows with "Thử lại". A failed IPC call (send/resolve/retry) shows without it, since retrying the turn wouldn't redo the call. Both clear on the next action.
+- **A failed send keeps the input.** `chat.send` returns `true` once main accepted the message; only then does the send box clear its text and images. Submit is disabled while it reads the images and waits.
+- **No flash when a reply is saved.** The streamed text is dropped only after the reload that shows the saved message resolves (only the part streamed before that event, in case the next step already streams).
 - **Confirm all** shows a loading state and stops at the first card that fails (IPC error or a failed write), so its error stays visible. `chat.resolve` returns `true` on success for this.
 - **Message rows are memoized** (`React.memo`, stable `chat.resolve`), and each row keeps its own card edits, so stream deltas and typing in a card don't re-render every Markdown block.
 - **Scrolling follows the list's size** (a `ResizeObserver`), not `useAutoScroll`: `Markdown` fills its shadow root one render after it mounts, so a content-change check scrolls too early, ends short of the bottom, and then stops following (opening a long chat showed its top; a long answer ended cut off).
@@ -5291,6 +5299,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AgentEvent, ChatMessage, ImageInput, PendingAction } from '../../shared/types';
 import { api, errorText } from '../api';
 
+/** `turn`: the agent's turn failed (Thử lại helps). Otherwise an IPC call failed. */
+export type ChatError = { message: string; turn: boolean };
+
 /** Chat state for one conversation; main streams events, and the DB stays the source of truth (reload on each step). */
 export function useChat(conversationId: number) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -5298,8 +5309,10 @@ export function useChat(conversationId: number) {
   const [streaming, setStreaming] = useState('');
   const [running, setRunning] = useState(false);
   const [tool, setTool] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ChatError | null>(null);
   const last = useRef<AgentEvent['type'] | null>(null);
+  const seq = useRef(0); // events received so far, so a slow reply can tell whether an event already set the state
+  const streamed = useRef(0); // length of `streaming`, kept in step with it
 
   const reload = useCallback(async () => {
     const [m, a] = await Promise.all([api.chat.messages(conversationId), api.chat.actions(conversationId)]);
@@ -5310,35 +5323,46 @@ export function useChat(conversationId: number) {
 
   useEffect(() => {
     void reload();
+    const s = seq.current;
+    void api.chat.running(conversationId).then((r) => seq.current === s && setRunning(r)); // a turn left running elsewhere
     return api.chat.onEvent((e) => {
       if (e.conversationId !== conversationId) return;
       last.current = e.type;
+      seq.current++;
       if (e.type === 'text') {
+        streamed.current += e.delta.length;
         setStreaming((s) => s + e.delta);
+        setRunning(true);
         setTool(null);
         return;
       }
       if (e.type === 'tool') {
+        setRunning(true);
         setTool(e.name);
         return;
       }
-      setStreaming('');
       if (e.type !== 'saved') {
         setRunning(false);
         setTool(null);
       }
-      if (e.type === 'error') setError(e.message);
-      void reload();
+      if (e.type === 'error') setError({ message: e.message, turn: true });
+      // Drop the streamed text only once the saved message is on screen, so it doesn't flash away and back.
+      const n = streamed.current;
+      streamed.current = 0;
+      void reload().finally(() => setStreaming((s) => s.slice(n)));
     });
   }, [conversationId, reload]);
 
-  const guard = useCallback(async (fn: () => Promise<unknown>) => {
+  /** Runs an IPC call; false (with a call error shown) if it threw. */
+  const guard = useCallback(async (fn: () => Promise<unknown>): Promise<boolean> => {
     setError(null);
     try {
       await fn();
+      return true;
     } catch (e) {
       setRunning(false);
-      setError(errorText(e));
+      setError({ message: errorText(e), turn: false });
+      return false;
     }
   }, []);
 
@@ -5347,13 +5371,14 @@ export function useChat(conversationId: number) {
   // it before the call returns.
   const ended = () => last.current === 'error' || last.current === 'pending';
 
+  /** True once main has accepted the message; the send box keeps its input otherwise. */
   const send = (text: string, images: ImageInput[]) =>
     guard(async () => {
       setRunning(true);
       last.current = null;
       await api.chat.send(conversationId, text, images);
       if (!ended()) setRunning(true);
-      await reload();
+      void reload(); // shows the user's message before the first event
     });
   const stop = () => void api.chat.stop(conversationId);
   const retry = () =>
@@ -5371,9 +5396,11 @@ export function useChat(conversationId: number) {
       await guard(async () => {
         last.current = null;
         await api.chat.resolve(actionId, decision, args);
+        const s = seq.current;
         const left = await reload();
         ok = !(left.find((a) => a.id === actionId)?.result as { error?: string } | null)?.error;
-        if (!left.some((a) => a.status === 'pending') && !ended()) setRunning(true); // main resumed the turn
+        // Main resumed the turn when no card is left. An event during the reload already set the state (a fast 'done').
+        if (seq.current === s && !ended() && !left.some((a) => a.status === 'pending')) setRunning(true);
       });
       return ok;
     },
@@ -5475,7 +5502,8 @@ export function MessageList({ chat }: { chat: ChatState }) {
     const ro = new ResizeObserver(() => {
       if (stick) el.scrollTop = el.scrollHeight;
     });
-    ro.observe(el.firstElementChild!);
+    ro.observe(el.firstElementChild!); // content growth
+    ro.observe(el); // the list itself shrinking: the send box grew, or the window resized
     el.addEventListener('scroll', onScroll);
     return () => {
       ro.disconnect();
@@ -5495,7 +5523,7 @@ export function MessageList({ chat }: { chat: ChatState }) {
         )}
         {chat.messages.map((m) => <MessageRow key={m.id} m={m} actions={chat.actions} resolve={chat.resolve} />)}
         {chat.streaming && (
-          <div className='msg-assistant'>
+          <div className='msg-assistant' aria-live='polite'>
             <Markdown>{chat.streaming}</Markdown>
           </div>
         )}
@@ -5505,11 +5533,13 @@ export function MessageList({ chat }: { chat: ChatState }) {
         {chat.error && (
           <Alert
             type='error'
-            content={chat.error}
+            content={chat.error.message}
             action={
-              <Button size='mini' onClick={() => void chat.retry()}>
-                Thử lại
-              </Button>
+              chat.error.turn && (
+                <Button size='mini' onClick={() => void chat.retry()}>
+                  Thử lại
+                </Button>
+              )
             }
           />
         )}
@@ -5541,20 +5571,34 @@ const COMMANDS = [
 
 type Picked = { file: File; url: string };
 
-export function SendBox({ running, onSend, onStop }: { running: boolean; onSend: (text: string, images: ImageInput[]) => Promise<void>; onStop: () => void }) {
+type Props = { running: boolean; onSend: (text: string, images: ImageInput[]) => Promise<boolean>; onStop: () => void };
+
+export function SendBox({ running, onSend, onStop }: Props) {
   const [text, setText] = useState('');
   const [images, setImages] = useState<Picked[]>([]);
   const [active, setActive] = useState(0);
+  const [sending, setSending] = useState(false);
+  const [dismissed, setDismissed] = useState<string | null>(null); // the text the slash menu was closed on (Escape)
   const fileInput = useRef<HTMLInputElement>(null);
   const [message, messageHolder] = Message.useMessage();
 
-  const slash = /^\/\S*$/.test(text) ? COMMANDS.filter((c) => c.label.startsWith(text)) : [];
+  const slash = /^\/\S*$/.test(text) && text !== dismissed ? COMMANDS.filter((c) => c.label.startsWith(text)) : [];
   useEffect(() => setActive(0), [text]);
+
+  // Revoke the previews still picked when the chat closes.
+  const picked = useRef(images);
+  useEffect(() => {
+    picked.current = images;
+  }, [images]);
+  useEffect(() => () => picked.current.forEach((i) => URL.revokeObjectURL(i.url)), []);
 
   const addFiles = (files: File[]) => {
     const ok = files.filter((f) => ACCEPT.includes(f.type) && f.size <= MAX_BYTES);
     if (ok.length < files.length) message.warning?.('Chỉ nhận ảnh PNG/JPEG, tối đa 20MB');
-    setImages((prev) => [...prev, ...ok.map((file) => ({ file, url: URL.createObjectURL(file) }))].slice(0, MAX_IMAGES));
+    const room = Math.max(MAX_IMAGES - images.length, 0);
+    if (ok.length > room) message.warning?.(`Tối đa ${MAX_IMAGES} ảnh mỗi tin nhắn`);
+    const added = ok.slice(0, room).map((file) => ({ file, url: URL.createObjectURL(file) }));
+    if (added.length) setImages((prev) => [...prev, ...added]);
   };
   const removeImage = (i: number) =>
     setImages((prev) => {
@@ -5562,13 +5606,22 @@ export function SendBox({ running, onSend, onStop }: { running: boolean; onSend:
       return prev.filter((_, j) => j !== i);
     });
 
+  /** Clears the input only once main has accepted the message, so a failed send loses nothing. */
   const submit = async (value = text) => {
-    if (running || (!value.trim() && !images.length)) return;
-    const payload = await Promise.all(images.map(async ({ file }) => ({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) })));
-    images.forEach((i) => URL.revokeObjectURL(i.url));
-    setText('');
-    setImages([]);
-    await onSend(value.trim(), payload);
+    if (running || sending || (!value.trim() && !images.length)) return;
+    setSending(true);
+    try {
+      const sent = images;
+      const payload = await Promise.all(sent.map(async ({ file }) => ({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) })));
+      if (!(await onSend(value.trim(), payload))) return;
+      sent.forEach((i) => URL.revokeObjectURL(i.url));
+      setText('');
+      setImages((prev) => prev.filter((i) => !sent.includes(i))); // keep any picked while sending
+    } catch {
+      message.error?.('Không đọc được ảnh, hãy chọn lại');
+    } finally {
+      setSending(false);
+    }
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -5578,7 +5631,17 @@ export function SendBox({ running, onSend, onStop }: { running: boolean; onSend:
       setActive((i) => (i + (e.key === 'ArrowDown' ? 1 : slash.length - 1)) % slash.length);
       return;
     }
-    if (slash.length && (e.key === 'Enter' || e.key === 'Tab')) {
+    if (slash.length && e.key === 'Escape') {
+      e.preventDefault();
+      setDismissed(text);
+      return;
+    }
+    if (slash.length && e.key === 'Tab') {
+      e.preventDefault();
+      setText(slash[Math.min(active, slash.length - 1)].label);
+      return;
+    }
+    if (slash.length && e.key === 'Enter') {
       e.preventDefault();
       void submit(slash[Math.min(active, slash.length - 1)].prompt);
       return;
@@ -5603,7 +5666,7 @@ export function SendBox({ running, onSend, onStop }: { running: boolean; onSend:
         <div className='slash-menu'>
           <SlashCommandMenu
             title='Lệnh nhanh'
-            hint='↑↓ chọn · Enter gửi'
+            hint='↑↓ chọn · Tab điền · Enter gửi · Esc đóng'
             items={slash}
             activeIndex={Math.min(active, slash.length - 1)}
             onHoverItem={setActive}
@@ -5623,10 +5686,11 @@ export function SendBox({ running, onSend, onStop }: { running: boolean; onSend:
         <Input.TextArea
           value={text}
           onChange={setText}
+          aria-label='Tin nhắn cho trợ lý'
           onKeyDown={onKeyDown}
           onPaste={(e) => {
             const files = Array.from(e.clipboardData.files);
-            if (files.length) {
+            if (files.length && !e.clipboardData.getData('text/plain')) {
               e.preventDefault();
               addFiles(files);
             }
@@ -5654,7 +5718,7 @@ export function SendBox({ running, onSend, onStop }: { running: boolean; onSend:
               Dừng
             </Button>
           ) : (
-            <Button type='primary' icon={<Send />} onClick={() => void submit()}>
+            <Button type='primary' icon={<Send />} loading={sending} onClick={() => void submit()}>
               Gửi
             </Button>
           )}
@@ -5689,11 +5753,12 @@ export function ChatPage({ conversationId }: { conversationId: number }) {
 2. Send "Thêm task mai 9h họp team, ưu tiên cao, công việc". Expected: a "Tạo task" card with an absolute date and editable fields. Edit the title, then click Xác nhận. Expected: the card shows "Đã thực hiện" and the bot confirms.
 3. Send "Thêm 3 task: mua sữa, gọi điện cho mẹ, nộp thuế". Expected: 3 cards plus "Xác nhận tất cả (3)".
 4. Paste a receipt screenshot with the text "ghi khoản chi này". Expected: a "Ghi khoản chi" card with the amount read from the image and the thumbnail. After confirming, the image appears under Chi tiêu (Task 24).
-5. Type `/`. Expected: the slash menu; ↓ + Enter sends the canned prompt.
+5. Type `/`. Expected: the slash menu; ↓ + Enter sends the canned prompt, Tab fills in the command, Escape closes the menu until the text changes.
 6. Press Dừng during a reply. Expected: the partial text stays with "(bị gián đoạn)".
 7. Set a wrong key in Settings, then send. Expected: a red alert with the key hint and a "Thử lại" button.
 8. With no endpoint/key configured, send. Expected: the alert "Chưa cấu hình LLM. Mở Cài đặt…" with "Thử lại", the Gửi button (not Dừng) and no spinner. Thử lại gives the same alert.
 9. Open a long conversation. Expected: it opens scrolled to the latest message.
+10. Switch to Task during a reply, then back. Expected: Dừng and the spinner are still there.
 
 **Step 6: Commit**
 

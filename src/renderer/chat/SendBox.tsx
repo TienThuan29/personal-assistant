@@ -17,20 +17,34 @@ const COMMANDS = [
 
 type Picked = { file: File; url: string };
 
-export function SendBox({ running, onSend, onStop }: { running: boolean; onSend: (text: string, images: ImageInput[]) => Promise<void>; onStop: () => void }) {
+type Props = { running: boolean; onSend: (text: string, images: ImageInput[]) => Promise<boolean>; onStop: () => void };
+
+export function SendBox({ running, onSend, onStop }: Props) {
   const [text, setText] = useState('');
   const [images, setImages] = useState<Picked[]>([]);
   const [active, setActive] = useState(0);
+  const [sending, setSending] = useState(false);
+  const [dismissed, setDismissed] = useState<string | null>(null); // the text the slash menu was closed on (Escape)
   const fileInput = useRef<HTMLInputElement>(null);
   const [message, messageHolder] = Message.useMessage();
 
-  const slash = /^\/\S*$/.test(text) ? COMMANDS.filter((c) => c.label.startsWith(text)) : [];
+  const slash = /^\/\S*$/.test(text) && text !== dismissed ? COMMANDS.filter((c) => c.label.startsWith(text)) : [];
   useEffect(() => setActive(0), [text]);
+
+  // Revoke the previews still picked when the chat closes.
+  const picked = useRef(images);
+  useEffect(() => {
+    picked.current = images;
+  }, [images]);
+  useEffect(() => () => picked.current.forEach((i) => URL.revokeObjectURL(i.url)), []);
 
   const addFiles = (files: File[]) => {
     const ok = files.filter((f) => ACCEPT.includes(f.type) && f.size <= MAX_BYTES);
     if (ok.length < files.length) message.warning?.('Chỉ nhận ảnh PNG/JPEG, tối đa 20MB');
-    setImages((prev) => [...prev, ...ok.map((file) => ({ file, url: URL.createObjectURL(file) }))].slice(0, MAX_IMAGES));
+    const room = Math.max(MAX_IMAGES - images.length, 0);
+    if (ok.length > room) message.warning?.(`Tối đa ${MAX_IMAGES} ảnh mỗi tin nhắn`);
+    const added = ok.slice(0, room).map((file) => ({ file, url: URL.createObjectURL(file) }));
+    if (added.length) setImages((prev) => [...prev, ...added]);
   };
   const removeImage = (i: number) =>
     setImages((prev) => {
@@ -38,13 +52,22 @@ export function SendBox({ running, onSend, onStop }: { running: boolean; onSend:
       return prev.filter((_, j) => j !== i);
     });
 
+  /** Clears the input only once main has accepted the message, so a failed send loses nothing. */
   const submit = async (value = text) => {
-    if (running || (!value.trim() && !images.length)) return;
-    const payload = await Promise.all(images.map(async ({ file }) => ({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) })));
-    images.forEach((i) => URL.revokeObjectURL(i.url));
-    setText('');
-    setImages([]);
-    await onSend(value.trim(), payload);
+    if (running || sending || (!value.trim() && !images.length)) return;
+    setSending(true);
+    try {
+      const sent = images;
+      const payload = await Promise.all(sent.map(async ({ file }) => ({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) })));
+      if (!(await onSend(value.trim(), payload))) return;
+      sent.forEach((i) => URL.revokeObjectURL(i.url));
+      setText('');
+      setImages((prev) => prev.filter((i) => !sent.includes(i))); // keep any picked while sending
+    } catch {
+      message.error?.('Không đọc được ảnh, hãy chọn lại');
+    } finally {
+      setSending(false);
+    }
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -54,7 +77,17 @@ export function SendBox({ running, onSend, onStop }: { running: boolean; onSend:
       setActive((i) => (i + (e.key === 'ArrowDown' ? 1 : slash.length - 1)) % slash.length);
       return;
     }
-    if (slash.length && (e.key === 'Enter' || e.key === 'Tab')) {
+    if (slash.length && e.key === 'Escape') {
+      e.preventDefault();
+      setDismissed(text);
+      return;
+    }
+    if (slash.length && e.key === 'Tab') {
+      e.preventDefault();
+      setText(slash[Math.min(active, slash.length - 1)].label);
+      return;
+    }
+    if (slash.length && e.key === 'Enter') {
       e.preventDefault();
       void submit(slash[Math.min(active, slash.length - 1)].prompt);
       return;
@@ -79,7 +112,7 @@ export function SendBox({ running, onSend, onStop }: { running: boolean; onSend:
         <div className='slash-menu'>
           <SlashCommandMenu
             title='Lệnh nhanh'
-            hint='↑↓ chọn · Enter gửi'
+            hint='↑↓ chọn · Tab điền · Enter gửi · Esc đóng'
             items={slash}
             activeIndex={Math.min(active, slash.length - 1)}
             onHoverItem={setActive}
@@ -99,10 +132,11 @@ export function SendBox({ running, onSend, onStop }: { running: boolean; onSend:
         <Input.TextArea
           value={text}
           onChange={setText}
+          aria-label='Tin nhắn cho trợ lý'
           onKeyDown={onKeyDown}
           onPaste={(e) => {
             const files = Array.from(e.clipboardData.files);
-            if (files.length) {
+            if (files.length && !e.clipboardData.getData('text/plain')) {
               e.preventDefault();
               addFiles(files);
             }
@@ -130,7 +164,7 @@ export function SendBox({ running, onSend, onStop }: { running: boolean; onSend:
               Dừng
             </Button>
           ) : (
-            <Button type='primary' icon={<Send />} onClick={() => void submit()}>
+            <Button type='primary' icon={<Send />} loading={sending} onClick={() => void submit()}>
               Gửi
             </Button>
           )}
