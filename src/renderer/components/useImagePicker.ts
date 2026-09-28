@@ -9,9 +9,9 @@ export const MAX_IMAGES = 10;
 
 export type Picked = { file: File; url: string };
 
-/** Picked images with their object-URL previews; `max` caps how many can be picked (a form passes the room its kept images leave). */
-export function useImagePicker(max = MAX_IMAGES) {
-  const { t } = useTranslation('chat');
+/** Picked images with their object-URL previews; `tooManyNs` picks the over-the-cap wording (SendBox's says "per message"). */
+export function useImagePicker(tooManyNs: 'common' | 'chat' = 'common') {
+  const { t } = useTranslation();
   const [images, setImages] = useState<Picked[]>([]);
   const [message, holder] = Message.useMessage();
 
@@ -22,19 +22,19 @@ export function useImagePicker(max = MAX_IMAGES) {
   }, [images]);
   useEffect(() => () => picked.current.forEach((i) => URL.revokeObjectURL(i.url)), []);
 
-  const addFiles = (files: File[]) => {
+  /** `kept` = the record's existing images still attached; they count toward MAX_IMAGES too. */
+  const addFiles = (files: File[], kept = 0) => {
     const ok = files.filter((f) => ACCEPT.includes(f.type) && f.size <= MAX_BYTES);
     if (ok.length < files.length) message.warning?.(t('imageRejected'));
-    const room = Math.max(max - images.length, 0);
-    if (ok.length > room) message.warning?.(t('tooManyImages', { max: MAX_IMAGES }));
+    const room = Math.max(MAX_IMAGES - kept - images.length, 0);
+    if (ok.length > room) message.warning?.(t('tooManyImages', { ns: tooManyNs, max: MAX_IMAGES }));
     const added = ok.slice(0, room).map((file) => ({ file, url: URL.createObjectURL(file) }));
     if (added.length) setImages((prev) => [...prev, ...added]);
   };
-  const removeImage = (i: number) =>
-    setImages((prev) => {
-      URL.revokeObjectURL(prev[i].url);
-      return prev.filter((_, j) => j !== i);
-    });
+  const removeImage = (url: string) => {
+    URL.revokeObjectURL(url);
+    setImages((prev) => prev.filter((i) => i.url !== url));
+  };
   /** Drops `only` (default: all), keeping any picked since. */
   const clear = (only = images) => {
     only.forEach((i) => URL.revokeObjectURL(i.url));

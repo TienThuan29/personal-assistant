@@ -67,10 +67,11 @@ body {
   padding: 3px;
   border: 0;
   border-radius: 50%;
-  background: rgba(var(--gray-10), 0.6);
+  background: rgba(0, 0, 0, 0.55); /* fixed: --gray-10 turns light in dark mode */
   color: #fff;
   cursor: pointer;
 }
+.field-thumb button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .confirm-card {
   display: flex;

@@ -19,7 +19,9 @@ export function RecordModal({ title, visible, dirty, saving, error, onSave, onCl
   const { t } = useTranslation();
   const [modal, holder] = Modal.useModal();
   const close = () =>
-    dirty
+    saving
+      ? undefined // the save may still land; closing now would hide its result
+      : dirty
       ? modal.confirm?.({ title: t('discardChanges'), okText: t('discard'), okButtonProps: { status: 'danger' }, onOk: onClose })
       : onClose();
   const save = () => {
@@ -31,6 +33,9 @@ export function RecordModal({ title, visible, dirty, saving, error, onSave, onCl
       <AionModal
         visible={visible}
         onCancel={close}
+        maskClosable={!saving}
+        escToExit={!saving}
+        unmountOnExit // a fresh form and picker on every open
         variant='standard'
         size='medium'
         style={{ height: 'auto' }}
@@ -41,7 +46,7 @@ export function RecordModal({ title, visible, dirty, saving, error, onSave, onCl
       >
         <div
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing && !e.repeat) {
               e.preventDefault();
               save();
             }

@@ -19,7 +19,7 @@ export function SendBox({ running, onSend, onStop }: Props) {
   const [sending, setSending] = useState(false);
   const [dismissed, setDismissed] = useState<string | null>(null); // the text the slash menu was closed on (Escape)
   const fileInput = useRef<HTMLInputElement>(null);
-  const { images, addFiles, removeImage, clear, toInputs, message, holder: messageHolder } = useImagePicker();
+  const { images, addFiles, removeImage, clear, toInputs, message, holder: messageHolder } = useImagePicker('chat');
 
   const slash = /^\/\S*$/.test(text) && text !== dismissed ? commands.filter((c) => c.label.startsWith(text)) : [];
   useEffect(() => setActive(0), [text]);
@@ -96,8 +96,8 @@ export function SendBox({ running, onSend, onStop }: Props) {
       <div className='sendbox-inner'>
         {images.length > 0 && (
           <div className='thumbs'>
-            {images.map((img, i) => (
-              <FilePreview key={img.url} path={img.file.name || 'image.png'} size={img.file.size} imageSrc={img.url} onRemove={() => removeImage(i)} />
+            {images.map((img) => (
+              <FilePreview key={img.url} path={img.file.name || 'image.png'} size={img.file.size} imageSrc={img.url} onRemove={() => removeImage(img.url)} />
             ))}
           </div>
         )}

@@ -24,6 +24,8 @@ export const en: Resources = {
     addImage: 'Add image',
     removeImage: 'Remove image',
     undoRemove: 'Keep image',
+    imageRejected: 'Only PNG/JPEG images up to 20MB are accepted',
+    tooManyImages: 'At most {{max}} images',
     ui: {
       cancel: 'Cancel',
       confirm: 'Confirm',
@@ -62,7 +64,6 @@ export const en: Resources = {
     attachImage: 'Image',
     send: 'Send',
     stop: 'Stop',
-    imageRejected: 'Only PNG/JPEG images up to 20MB are accepted',
     tooManyImages: 'At most {{max}} images per message',
     imageReadFailed: 'Could not read the image, please pick it again',
     gatewayNoImages: 'The LLM gateway can’t see images: they are still saved, but the assistant only sees an [ảnh #id] label.',

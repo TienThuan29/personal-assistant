@@ -23,6 +23,8 @@ export const vi = {
     addImage: 'Thêm ảnh',
     removeImage: 'Gỡ ảnh',
     undoRemove: 'Giữ lại ảnh',
+    imageRejected: 'Chỉ nhận ảnh PNG/JPEG, tối đa 20MB',
+    tooManyImages: 'Tối đa {{max}} ảnh',
     // @aionui/ui UiProvider labels
     ui: {
       cancel: 'Hủy',
@@ -63,7 +65,6 @@ export const vi = {
     attachImage: 'Ảnh',
     send: 'Gửi',
     stop: 'Dừng',
-    imageRejected: 'Chỉ nhận ảnh PNG/JPEG, tối đa 20MB',
     tooManyImages: 'Tối đa {{max}} ảnh mỗi tin nhắn',
     imageReadFailed: 'Không đọc được ảnh, hãy chọn lại',
     gatewayNoImages: 'LLM gateway không xem được ảnh: ảnh vẫn được lưu, nhưng trợ lý chỉ thấy nhãn [ảnh #id].',
