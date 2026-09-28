@@ -166,6 +166,7 @@ export const en: Resources = {
     deleteExpense: 'Delete expense: {{what}}',
     addTask: 'Add task',
     editTask: 'Edit task',
+    editTaskLabel: 'Edit task: {{what}}',
     addNote: 'Add note',
     editNote: 'Edit note',
     addExpense: 'Add expense',

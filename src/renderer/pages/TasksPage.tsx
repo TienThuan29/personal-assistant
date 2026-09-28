@@ -95,14 +95,15 @@ export function TasksPage() {
                     {task.notes && <div className='muted'>{task.notes}</div>}
                     <Thumbs ids={task.attachment_ids} />
                   </div>
-                  <span className={group === 'overdue' ? 'overdue' : 'muted'}>{dueText(task)}</span>
+                  <span className={!closed && task.due_date && task.due_date < today ? 'overdue' : 'muted'}>{dueText(task)}</span>
                   {priorityTags[task.priority]}
                   <Tag>{categories[task.category] ?? task.category}</Tag>
                   <Button
                     size='mini'
                     type='text'
                     icon={<Edit />}
-                    aria-label={`${t('editTask')}: ${task.title}`}
+                    aria-label={t('editTaskLabel', { what: task.title })}
+                    disabled={busy.includes(task.id)}
                     onClick={() => setEditing(task)}
                   />
                   <Button

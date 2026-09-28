@@ -172,6 +172,7 @@ export const vi = {
     deleteExpense: 'Xóa khoản chi: {{what}}',
     addTask: 'Thêm task',
     editTask: 'Sửa task',
+    editTaskLabel: 'Sửa task: {{what}}',
     addNote: 'Thêm ghi chú',
     editNote: 'Sửa ghi chú',
     addExpense: 'Thêm khoản chi',

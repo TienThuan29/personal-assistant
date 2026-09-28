@@ -2,12 +2,21 @@ import { Checkbox, DatePicker, Form, Input, InputNumber, Select, TimePicker } fr
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatRecurrence, parseRecurrence, type RecurrenceForm } from '../../shared/dates';
+import { en } from '../../shared/locales/en';
+import { vi } from '../../shared/locales/vi';
 import { diffPatch } from '../../shared/patch';
 import type { TaskRow } from '../../shared/types';
 import { api, errorText, splitIds } from '../api';
 import { ImageField } from '../components/ImageField';
 import { RecordModal } from '../components/RecordModal';
 import { useImagePicker } from '../components/useImagePicker';
+
+/** A typed built-in label (either language, any case) becomes its key, so 'Công việc' never turns into a new category. */
+const categoryKey = (c: string): string => {
+  const s = c.trim().toLocaleLowerCase();
+  const key = (['work', 'personal'] as const).find((k) => [k, vi.common.category[k], en.common.category[k]].some((l) => l.toLocaleLowerCase() === s));
+  return key ?? c.trim();
+};
 
 type Fields = Pick<TaskRow, 'title' | 'notes' | 'category' | 'priority' | 'due_date' | 'due_time' | 'status'> & {
   rec_kind: RecurrenceForm['kind'];
@@ -30,7 +39,7 @@ export function TaskForm({ task, categories, onClose }: { task: TaskRow | null; 
 
   const rec = parseRecurrence(task?.recurrence ?? null);
   const initial: Partial<Fields> = task
-    ? { ...task, rec_kind: rec.kind, rec_days: rec.weekdays, rec_day: rec.day }
+    ? { ...task, notes: task.notes ?? '', rec_kind: rec.kind, rec_days: rec.weekdays, rec_day: rec.day }
     : { category: 'personal', priority: 2, rec_kind: 'none', rec_day: 1 };
 
   const save = async () => {
@@ -43,7 +52,7 @@ export function TaskForm({ task, categories, onClose }: { task: TaskRow | null; 
     const values: Record<string, unknown> = {
       title: v.title,
       notes: v.notes,
-      category: v.category,
+      category: categoryKey(v.category),
       priority: v.priority,
       due_date: v.due_date,
       due_time: v.due_time,
@@ -57,7 +66,8 @@ export function TaskForm({ task, categories, onClose }: { task: TaskRow | null; 
       if (!task) {
         await api.data.save('create_task', Object.fromEntries(Object.entries(values).filter(([, x]) => x !== '' && x != null)), images);
       } else {
-        const patch = diffPatch(task, values);
+        // Compared in canonical form, so an untouched 'weekly:5,1' stays out of the patch.
+        const patch = diffPatch({ ...task, recurrence: formatRecurrence(rec) }, values);
         if (Object.keys(patch).length || images.length || removed.length)
           await api.data.save('update_tasks', { ids: [task.id], patch }, images, removed);
       }
@@ -129,7 +139,7 @@ export function TaskForm({ task, categories, onClose }: { task: TaskRow | null; 
           </Form.Item>
           {recKind === 'weekly' && (
             <Form.Item field='rec_days' label=' ' rules={required} requiredSymbol={false}>
-              <Checkbox.Group options={[1, 2, 3, 4, 5, 6, 7].map((d) => ({ label: t(`common:weekday.${d as 1}`), value: d }))} />
+              <Checkbox.Group aria-label={t('recurWeekly')} options={[1, 2, 3, 4, 5, 6, 7].map((d) => ({ label: t(`common:weekday.${d as 1}`), value: d }))} />
             </Form.Item>
           )}
           {recKind === 'monthly' && (
