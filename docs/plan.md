@@ -4024,6 +4024,12 @@ const MAX_IMAGES = 10;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_SIDE = 1568;
 
+/** Ids come from the renderer: reject anything but a positive integer (node:sqlite would throw on undefined anyway). */
+function id(v: unknown): number {
+  if (typeof v !== 'number' || !Number.isSafeInteger(v) || v <= 0) throw new Error('ID không hợp lệ');
+  return v;
+}
+
 /** PNG/JPEG → JPEG with the longest side ≤ 1568px (vision models downscale to about that anyway). */
 function toJpeg(bytes: unknown): Buffer {
   if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_IMAGE_BYTES) throw new Error('Ảnh không hợp lệ hoặc lớn hơn 20MB');
@@ -4063,48 +4069,50 @@ export function registerIpc(m: MainCtx): void {
 
   ipcMain.handle('conv:list', () => listConversations(m.db));
   ipcMain.handle('conv:create', () => createConversation(m.db));
-  ipcMain.handle('conv:remove', (_e, id: number) => {
-    running.get(id)?.abort();
-    deleteConversation(m.db, id);
+  ipcMain.handle('conv:remove', (_e, convId: unknown) => {
+    running.get(id(convId))?.abort();
+    deleteConversation(m.db, id(convId));
   });
 
-  ipcMain.handle('chat:messages', (_e, id: number) => getMessages(m.db, id));
-  ipcMain.handle('chat:actions', (_e, id: number) => listActions(m.db, id));
-  ipcMain.handle('chat:send', (_e, id: number, text: unknown, images: ImageInput[]) => {
+  ipcMain.handle('chat:messages', (_e, convId: unknown) => getMessages(m.db, id(convId)));
+  ipcMain.handle('chat:actions', (_e, convId: unknown) => listActions(m.db, id(convId)));
+  ipcMain.handle('chat:send', (_e, convId: unknown, text: unknown, images: ImageInput[]) => {
+    const cid = id(convId);
     if (typeof text !== 'string' || text.length > MAX_TEXT) throw new Error('Tin nhắn không hợp lệ');
     if (!Array.isArray(images) || images.length > MAX_IMAGES) throw new Error(`Tối đa ${MAX_IMAGES} ảnh mỗi tin nhắn`);
     if (!text.trim() && !images.length) throw new Error('Tin nhắn trống');
-    const jpegs = images.map((img) => toJpeg(img.bytes)); // validate everything before saving anything
+    const jpegs = images.map((img) => toJpeg(img?.bytes)); // validate everything before saving anything
     const attachmentIds = jpegs.map(() => newAttachmentId());
     // One transaction: a failed image save leaves no message pointing at missing attachments
     // (files already written become orphans, swept at startup).
     tx(m.db, () => {
-      cancelOpenActions(deps, id);
-      const messageId = addMessage(m.db, id, { role: 'user', content: text, attachment_ids: attachmentIds });
+      cancelOpenActions(deps, cid);
+      const messageId = addMessage(m.db, cid, { role: 'user', content: text, attachment_ids: attachmentIds });
       jpegs.forEach((bytes, i) =>
         saveAttachment(m.db, m.attachmentsDir, { id: attachmentIds[i], bytes, mime: 'image/jpeg', ownerType: 'message', ownerId: messageId })
       );
-      setTitleIfNew(m.db, id, text);
+      setTitleIfNew(m.db, cid, text);
     });
-    startTurn(id);
+    startTurn(cid);
   });
-  ipcMain.handle('chat:stop', (_e, id: number) => running.get(id)?.abort());
-  ipcMain.handle('chat:retry', (_e, id: number) => startTurn(id));
-  ipcMain.handle('chat:resolve', (_e, actionId: number, decision: 'confirm' | 'cancel', args?: unknown) => {
-    const action = getAction(m.db, actionId);
-    const last = resolveAction(deps, actionId, decision, args);
+  ipcMain.handle('chat:stop', (_e, convId: unknown) => running.get(id(convId))?.abort());
+  ipcMain.handle('chat:retry', (_e, convId: unknown) => startTurn(id(convId)));
+  ipcMain.handle('chat:resolve', (_e, actionId: unknown, decision: unknown, args?: unknown) => {
+    if (decision !== 'confirm' && decision !== 'cancel') throw new Error('Quyết định không hợp lệ');
+    const action = getAction(m.db, id(actionId));
+    const last = resolveAction(deps, id(actionId), decision, args);
     if (decision === 'confirm') m.onDataChanged();
     if (last && action) startTurn(action.conversation_id);
   });
 
-  ipcMain.handle('data:read', (_e, name: string, args: unknown) => {
-    const tool = findTool(name);
-    if (tool?.kind !== 'read') throw new Error(`Không cho phép: ${name}`);
+  ipcMain.handle('data:read', (_e, name: unknown, args: unknown) => {
+    const tool = typeof name === 'string' ? findTool(name) : undefined;
+    if (tool?.kind !== 'read') throw new Error(`Không cho phép: ${String(name)}`);
     return tool.run(parseArgs(tool, args), ctx);
   });
-  ipcMain.handle('data:write', (_e, name: string, args: unknown) => {
-    const tool = findTool(name);
-    if (tool?.kind !== 'write' || !UI_WRITES.has(name)) throw new Error(`Không cho phép: ${name}`);
+  ipcMain.handle('data:write', (_e, name: unknown, args: unknown) => {
+    const tool = typeof name === 'string' ? findTool(name) : undefined;
+    if (tool?.kind !== 'write' || !UI_WRITES.has(tool.name)) throw new Error(`Không cho phép: ${String(name)}`);
     const parsed = parseArgs(tool, args);
     const result = tx(m.db, () => tool.apply(parsed, ctx));
     m.onDataChanged();
@@ -4116,8 +4124,9 @@ export function registerIpc(m: MainCtx): void {
     return { llm: llmConfig(), hasKey: { azure: !!secrets.azure, gateway: !!secrets.gateway }, openAtLogin: m.loginItem.get() };
   });
   ipcMain.handle('settings:save', (_e, s: SettingsInput) => {
-    const parsed = llmConfigSchema.safeParse(s.llm);
+    const parsed = llmConfigSchema.safeParse(s?.llm);
     if (!parsed.success) throw new Error(`Cấu hình chưa hợp lệ: ${z.prettifyError(parsed.error)}`);
+    if (s.apiKey !== undefined && typeof s.apiKey !== 'string') throw new Error('API key không hợp lệ');
     setSetting(m.db, 'llm', parsed.data);
     const key = s.apiKey?.trim();
     if (key) writeSecret(m.secretsFile, m.cipher, parsed.data.provider, key);
@@ -4137,7 +4146,7 @@ export function registerIpc(m: MainCtx): void {
 **Step 2: Replace `src/main/index.ts`**
 
 ```ts
-import { app, BrowserWindow, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, shell, Tray } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, shell, Tray } from 'electron';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -4149,6 +4158,7 @@ import { registerIpc } from './ipc';
 import { createScheduler } from './reminders';
 import type { Cipher } from './settings';
 import { pruneEmptyConversations } from './store';
+import { errMsg } from './tools/common';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'att', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
@@ -4202,12 +4212,14 @@ function createWindow(): BrowserWindow {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
-  const appUrl = process.env.ELECTRON_RENDERER_URL;
+  const devUrl = process.env.ELECTRON_RENDERER_URL;
+  const indexHtml = join(__dirname, '../renderer/index.html');
+  const appUrl = devUrl ?? pathToFileURL(indexHtml).href; // only the app itself, not any file:// page (it would get window.api)
   w.webContents.on('will-navigate', (e, url) => {
-    if (!url.startsWith(appUrl ?? 'file://')) e.preventDefault();
+    if (!url.startsWith(appUrl)) e.preventDefault();
   });
-  if (appUrl) void w.loadURL(appUrl);
-  else void w.loadFile(join(__dirname, '../renderer/index.html'));
+  if (devUrl) void w.loadURL(devUrl);
+  else void w.loadFile(indexHtml);
   return w;
 }
 
@@ -4296,7 +4308,14 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', () => {
     quitting = true;
   });
-  void app.whenReady().then(start);
+  void app
+    .whenReady()
+    .then(start)
+    .catch((e) => {
+      // e.g. a DB from a newer app version: say why instead of lingering as an invisible process
+      dialog.showErrorBox('Không khởi động được Trợ lý', errMsg(e));
+      app.exit(1);
+    });
 }
 ```
 

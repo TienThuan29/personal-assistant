@@ -1,1 +1,48 @@
-export {};
+import { contextBridge, ipcRenderer } from 'electron';
+import type { Api } from '../shared/types';
+
+const invoke = (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args);
+const listen =
+  <T>(channel: string) =>
+  (cb: (value: T) => void) => {
+    const listener = (_: unknown, value: T) => cb(value);
+    ipcRenderer.on(channel, listener);
+    return () => void ipcRenderer.removeListener(channel, listener);
+  };
+
+const api: Api = {
+  conversations: {
+    list: () => invoke('conv:list'),
+    create: () => invoke('conv:create'),
+    remove: (id) => invoke('conv:remove', id),
+  },
+  chat: {
+    messages: (id) => invoke('chat:messages', id),
+    actions: (id) => invoke('chat:actions', id),
+    send: (id, text, images) => invoke('chat:send', id, text, images),
+    stop: (id) => invoke('chat:stop', id),
+    retry: (id) => invoke('chat:retry', id),
+    resolve: (actionId, decision, args) => invoke('chat:resolve', actionId, decision, args),
+    onEvent: listen('chat:event'),
+  },
+  data: {
+    read: (tool, args) => invoke('data:read', tool, args),
+    write: (tool, args) => invoke('data:write', tool, args),
+    onChanged: listen<void>('data:changed'),
+  },
+  settings: {
+    get: () => invoke('settings:get'),
+    save: (s) => invoke('settings:save', s),
+    test: () => invoke('settings:test'),
+  },
+  win: {
+    minimize: () => invoke('win:minimize'),
+    toggleMaximize: () => invoke('win:toggleMaximize'),
+    close: () => invoke('win:close'),
+    isMaximized: () => invoke('win:isMaximized'),
+    onMaximizedChange: listen<boolean>('win:maximized'),
+  },
+  onNavigate: listen('nav'),
+};
+
+contextBridge.exposeInMainWorld('api', api);
