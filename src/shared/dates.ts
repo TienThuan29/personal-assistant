@@ -29,6 +29,7 @@ export const RECURRENCE_RE = /^(daily|weekly:[1-7](,[1-7])*|monthly:([1-9]|[12]\
 
 /** Next due date after `from`. weekly days: 1 = Monday … 7 = Sunday. */
 export function nextOccurrence(recurrence: string, from: string): string {
+  if (!RECURRENCE_RE.test(recurrence)) throw new Error(`Recurrence không hợp lệ: ${recurrence}`);
   if (recurrence === 'daily') return addDays(from, 1);
   if (recurrence.startsWith('weekly:')) {
     const days = recurrence.slice(7).split(',').map(Number);
@@ -40,8 +41,11 @@ export function nextOccurrence(recurrence: string, from: string): string {
   if (recurrence.startsWith('monthly:')) {
     const day = Number(recurrence.slice(8));
     const d = parseLocalDate(from);
-    const lastDay = new Date(d.getFullYear(), d.getMonth() + 2, 0).getDate();
-    return toLocalDate(new Date(d.getFullYear(), d.getMonth() + 1, Math.min(day, lastDay)));
+    const [y, m] = [d.getFullYear(), d.getMonth()];
+    // The rule's day, clamped to the length of month m (m may be 12: next January).
+    const clamped = (month: number): number => Math.min(day, new Date(y, month + 1, 0).getDate());
+    if (clamped(m) > d.getDate()) return toLocalDate(new Date(y, m, clamped(m)));
+    return toLocalDate(new Date(y, m + 1, clamped(m + 1)));
   }
   throw new Error(`Recurrence không hợp lệ: ${recurrence}`);
 }
