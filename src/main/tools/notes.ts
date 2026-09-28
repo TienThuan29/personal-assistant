@@ -10,6 +10,7 @@ import {
   ids,
   readTool,
   requireRows,
+  toInstant,
   updateRows,
   where,
   writeTool,
@@ -20,13 +21,13 @@ const kind = z.enum(['note', 'journal']).describe("'note' ghi chú, 'journal' nh
 const phrase = (w: string): string => `"${w.replace(/"/g, '""')}"*`;
 
 /**
- * FTS5 query from free text: each word quoted (so no syntax errors) and prefix-matched.
+ * FTS5 query from free text: split on anything but letters/digits/marks, each word quoted and prefix-matched.
  * unicode61 does not fold đ to d, so a word starting with d/đ matches both (đ only starts a Vietnamese syllable).
  */
 export const ftsQuery = (text: string): string =>
   text
-    .split(/\s+/)
-    .filter((w) => /[\p{L}\p{N}]/u.test(w))
+    .split(/[^\p{L}\p{N}\p{M}]+/u)
+    .filter(Boolean)
     .map((w) => (/^[dđ]/iu.test(w) ? `(${phrase(`d${w.slice(1)}`)} OR ${phrase(`đ${w.slice(1)}`)})` : phrase(w)))
     .join(' AND ');
 
@@ -34,7 +35,7 @@ export const noteTools = [
   readTool({
     name: 'search_notes',
     description:
-      'Tìm ghi chú/nhật ký theo từ khóa và khoảng ngày tạo. Bỏ trống query để lấy mới nhất. Trả về đoạn trích; đọc toàn văn bằng get_notes.',
+      'Tìm ghi chú/nhật ký theo từ khóa và khoảng ngày tạo. Bỏ trống query để lấy mới nhất. Trả về đoạn trích, chỗ khớp được bọc trong ⟦ ⟧; đọc toàn văn bằng get_notes.',
     schema: z.object({
       query: z
         .string()
@@ -47,14 +48,15 @@ export const noteTools = [
     }),
     run: (a, { db }) => {
       const q = a.query ? ftsQuery(a.query) || undefined : undefined;
+      if (a.query?.trim() && !q) return []; // punctuation only: nothing can match
       const w = where([
         ['notes_fts MATCH :q', 'q', q],
         ['n.kind = :kind', 'kind', a.kind],
-        ["date(n.created_at, 'localtime') >= :from", 'from', a.from],
-        ["date(n.created_at, 'localtime') <= :to", 'to', a.to],
+        ['n.created_at >= :from', 'from', a.from ? toInstant(a.from, 'start') : undefined],
+        ['n.created_at < :to', 'to', a.to ? toInstant(a.to, 'end') : undefined],
       ]);
       const source = q ? 'notes_fts JOIN notes n ON n.id = notes_fts.rowid' : 'notes n';
-      const snippet = q ? "snippet(notes_fts, 1, '**', '**', '…', 16)" : 'substr(n.body, 1, 300)';
+      const snippet = q ? "snippet(notes_fts, 1, '⟦', '⟧', '…', 16)" : 'substr(n.body, 1, 300)';
       return db
         .prepare(
           `SELECT n.id, n.kind, n.title, ${snippet} AS snippet, n.created_at, n.updated_at, ${attachmentsCol('note', 'n.id')}

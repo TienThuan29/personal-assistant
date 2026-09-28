@@ -1823,9 +1823,9 @@ import { callTool, testCtx } from './helpers';
 describe('note tools', () => {
   it('finds accented text without diacritics, with highlighted snippet', () => {
     const ctx = testCtx();
-    callTool(ctx, 'create_note', { body: 'Họp với chị Lan về ngân sách quý 4' });
+    callTool(ctx, 'create_note', { body: 'Họp với chị Lan về **ngân sách** quý 4' });
     const [hit] = callTool<NoteRow[]>(ctx, 'search_notes', { query: 'ngan sach' });
-    expect(hit.snippet).toContain('**');
+    expect(hit.snippet).toContain('⟦ngân⟧ ⟦sách⟧');
     expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'NGÂN SÁCH' })).toHaveLength(1);
   });
 
@@ -1837,25 +1837,42 @@ describe('note tools', () => {
     expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'ĐI' })).toHaveLength(1);
     callTool(ctx, 'create_note', { body: 'dự án' });
     expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'đự' })).toHaveLength(1);
+    callTool(ctx, 'create_note', { body: 'con đường' });
+    expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: '(duong' })).toHaveLength(1);
     expect(ftsQuery('Đi')).toBe('("di"* OR "đi"*)');
   });
 
-  it('prefix-matches and survives punctuation-only queries', () => {
+  it('prefix-matches and returns nothing for punctuation-only queries', () => {
     const ctx = testCtx();
     callTool(ctx, 'create_note', { body: 'Ý tưởng khởi nghiệp' });
     expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'khởi' })).toHaveLength(1);
-    expect(() => callTool(ctx, 'search_notes', { query: '" - *' })).not.toThrow();
-    expect(ftsQuery('a"b c')).toBe('"a""b"* AND "c"*');
+    expect(callTool(ctx, 'search_notes', { query: '" - *' })).toEqual([]);
+    expect(() => callTool(ctx, 'search_notes', { query: 'a\u0000b' })).not.toThrow();
+    expect(ftsQuery('a"b c')).toBe('"a"* AND "b"* AND "c"*');
   });
 
   it('re-indexes on update and forgets on delete', () => {
     const ctx = testCtx();
-    const n = callTool<NoteRow>(ctx, 'create_note', { body: 'táo' });
+    const n = callTool<NoteRow>(ctx, 'create_note', { title: 'cam', body: 'táo' });
     callTool(ctx, 'update_notes', { ids: [n.id], patch: { body: 'chuối' } });
     expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'tao' })).toHaveLength(0);
     expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'chuoi' })).toHaveLength(1);
+    callTool(ctx, 'update_notes', { ids: [n.id], patch: { title: 'xoài' } });
+    expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'cam' })).toHaveLength(0);
+    expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'xoai' })).toHaveLength(1);
     callTool(ctx, 'delete_notes', { ids: [n.id] });
     expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'chuoi' })).toHaveLength(0);
+  });
+
+  it('filters by local creation date, both ends inclusive', () => {
+    const ctx = testCtx();
+    const n = callTool<NoteRow>(ctx, 'create_note', { body: 'khuya' });
+    ctx.db.prepare('UPDATE notes SET created_at = ? WHERE id = ?').run(new Date(2026, 8, 27, 23, 30).toISOString(), n.id);
+    const found = (args: object) => callTool<NoteRow[]>(ctx, 'search_notes', args).length;
+    expect(found({ from: '2026-09-27', to: '2026-09-27' })).toBe(1);
+    expect(found({ query: 'khuya', to: '2026-09-27' })).toBe(1);
+    expect(found({ from: '2026-09-28' })).toBe(0);
+    expect(found({ to: '2026-09-26' })).toBe(0);
   });
 
   it('filters by kind and returns full bodies via get_notes', () => {
@@ -1888,6 +1905,7 @@ import {
   ids,
   readTool,
   requireRows,
+  toInstant,
   updateRows,
   where,
   writeTool,
@@ -1898,13 +1916,13 @@ const kind = z.enum(['note', 'journal']).describe("'note' ghi chú, 'journal' nh
 const phrase = (w: string): string => `"${w.replace(/"/g, '""')}"*`;
 
 /**
- * FTS5 query from free text: each word quoted (so no syntax errors) and prefix-matched.
+ * FTS5 query from free text: split on anything but letters/digits/marks, each word quoted and prefix-matched.
  * unicode61 does not fold đ to d, so a word starting with d/đ matches both (đ only starts a Vietnamese syllable).
  */
 export const ftsQuery = (text: string): string =>
   text
-    .split(/\s+/)
-    .filter((w) => /[\p{L}\p{N}]/u.test(w))
+    .split(/[^\p{L}\p{N}\p{M}]+/u)
+    .filter(Boolean)
     .map((w) => (/^[dđ]/iu.test(w) ? `(${phrase(`d${w.slice(1)}`)} OR ${phrase(`đ${w.slice(1)}`)})` : phrase(w)))
     .join(' AND ');
 
@@ -1912,7 +1930,7 @@ export const noteTools = [
   readTool({
     name: 'search_notes',
     description:
-      'Tìm ghi chú/nhật ký theo từ khóa và khoảng ngày tạo. Bỏ trống query để lấy mới nhất. Trả về đoạn trích; đọc toàn văn bằng get_notes.',
+      'Tìm ghi chú/nhật ký theo từ khóa và khoảng ngày tạo. Bỏ trống query để lấy mới nhất. Trả về đoạn trích, chỗ khớp được bọc trong ⟦ ⟧; đọc toàn văn bằng get_notes.',
     schema: z.object({
       query: z
         .string()
@@ -1925,14 +1943,15 @@ export const noteTools = [
     }),
     run: (a, { db }) => {
       const q = a.query ? ftsQuery(a.query) || undefined : undefined;
+      if (a.query?.trim() && !q) return []; // punctuation only: nothing can match
       const w = where([
         ['notes_fts MATCH :q', 'q', q],
         ['n.kind = :kind', 'kind', a.kind],
-        ["date(n.created_at, 'localtime') >= :from", 'from', a.from],
-        ["date(n.created_at, 'localtime') <= :to", 'to', a.to],
+        ['n.created_at >= :from', 'from', a.from ? toInstant(a.from, 'start') : undefined],
+        ['n.created_at < :to', 'to', a.to ? toInstant(a.to, 'end') : undefined],
       ]);
       const source = q ? 'notes_fts JOIN notes n ON n.id = notes_fts.rowid' : 'notes n';
-      const snippet = q ? "snippet(notes_fts, 1, '**', '**', '…', 16)" : 'substr(n.body, 1, 300)';
+      const snippet = q ? "snippet(notes_fts, 1, '⟦', '⟧', '…', 16)" : 'substr(n.body, 1, 300)';
       return db
         .prepare(
           `SELECT n.id, n.kind, n.title, ${snippet} AS snippet, n.created_at, n.updated_at, ${attachmentsCol('note', 'n.id')}
@@ -1992,7 +2011,7 @@ export const noteTools = [
 ];
 ```
 
-FTS5 `unicode61` does not fold `đ` to `d` (it has no Unicode decomposition), so `ftsQuery` expands a word starting with d/đ into `("d…"* OR "đ…"*)` (đ only starts a Vietnamese syllable). FTS5 has no implicit AND after a parenthesized group, so words are joined with ` AND `.
+FTS5 `unicode61` does not fold `đ` to `d` (it has no Unicode decomposition), so `ftsQuery` expands a word starting with d/đ into `("d…"* OR "đ…"*)` (đ only starts a Vietnamese syllable). FTS5 has no implicit AND after a parenthesized group, so words are joined with ` AND `. Snippets mark matches with `⟦ ⟧`, not `**`, so they never clash with markdown in note bodies.
 
 **Step 4: Register the tools**: `[...taskTools, ...reminderTools, ...noteTools]`
 
@@ -4836,8 +4855,8 @@ import type { NoteRow } from '../../shared/types';
 import { api } from '../api';
 import { Thumbs } from '../components/Thumbs';
 
-/** Renders the **match** markers from FTS snippets. */
-const highlight = (s: string) => s.split('**').map((part, i) => (i % 2 ? <mark key={i}>{part}</mark> : part));
+/** Renders the ⟦match⟧ markers from FTS snippets as <mark>. */
+const highlight = (s: string) => s.split(/[⟦⟧]/).map((part, i) => (i % 2 ? <mark key={i}>{part}</mark> : part));
 
 export function NotesPage() {
   const [query, setQuery] = useState('');

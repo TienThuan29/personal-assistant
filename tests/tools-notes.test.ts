@@ -5,9 +5,9 @@ import { callTool, testCtx } from './helpers';
 describe('note tools', () => {
   it('finds accented text without diacritics, with highlighted snippet', () => {
     const ctx = testCtx();
-    callTool(ctx, 'create_note', { body: 'Họp với chị Lan về ngân sách quý 4' });
+    callTool(ctx, 'create_note', { body: 'Họp với chị Lan về **ngân sách** quý 4' });
     const [hit] = callTool<NoteRow[]>(ctx, 'search_notes', { query: 'ngan sach' });
-    expect(hit.snippet).toContain('**');
+    expect(hit.snippet).toContain('⟦ngân⟧ ⟦sách⟧');
     expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'NGÂN SÁCH' })).toHaveLength(1);
   });
 
@@ -19,25 +19,42 @@ describe('note tools', () => {
     expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'ĐI' })).toHaveLength(1);
     callTool(ctx, 'create_note', { body: 'dự án' });
     expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'đự' })).toHaveLength(1);
+    callTool(ctx, 'create_note', { body: 'con đường' });
+    expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: '(duong' })).toHaveLength(1);
     expect(ftsQuery('Đi')).toBe('("di"* OR "đi"*)');
   });
 
-  it('prefix-matches and survives punctuation-only queries', () => {
+  it('prefix-matches and returns nothing for punctuation-only queries', () => {
     const ctx = testCtx();
     callTool(ctx, 'create_note', { body: 'Ý tưởng khởi nghiệp' });
     expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'khởi' })).toHaveLength(1);
-    expect(() => callTool(ctx, 'search_notes', { query: '" - *' })).not.toThrow();
-    expect(ftsQuery('a"b c')).toBe('"a""b"* AND "c"*');
+    expect(callTool(ctx, 'search_notes', { query: '" - *' })).toEqual([]);
+    expect(() => callTool(ctx, 'search_notes', { query: 'a\u0000b' })).not.toThrow();
+    expect(ftsQuery('a"b c')).toBe('"a"* AND "b"* AND "c"*');
   });
 
   it('re-indexes on update and forgets on delete', () => {
     const ctx = testCtx();
-    const n = callTool<NoteRow>(ctx, 'create_note', { body: 'táo' });
+    const n = callTool<NoteRow>(ctx, 'create_note', { title: 'cam', body: 'táo' });
     callTool(ctx, 'update_notes', { ids: [n.id], patch: { body: 'chuối' } });
     expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'tao' })).toHaveLength(0);
     expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'chuoi' })).toHaveLength(1);
+    callTool(ctx, 'update_notes', { ids: [n.id], patch: { title: 'xoài' } });
+    expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'cam' })).toHaveLength(0);
+    expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'xoai' })).toHaveLength(1);
     callTool(ctx, 'delete_notes', { ids: [n.id] });
     expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'chuoi' })).toHaveLength(0);
+  });
+
+  it('filters by local creation date, both ends inclusive', () => {
+    const ctx = testCtx();
+    const n = callTool<NoteRow>(ctx, 'create_note', { body: 'khuya' });
+    ctx.db.prepare('UPDATE notes SET created_at = ? WHERE id = ?').run(new Date(2026, 8, 27, 23, 30).toISOString(), n.id);
+    const found = (args: object) => callTool<NoteRow[]>(ctx, 'search_notes', args).length;
+    expect(found({ from: '2026-09-27', to: '2026-09-27' })).toBe(1);
+    expect(found({ query: 'khuya', to: '2026-09-27' })).toBe(1);
+    expect(found({ from: '2026-09-28' })).toBe(0);
+    expect(found({ to: '2026-09-26' })).toBe(0);
   });
 
   it('filters by kind and returns full bodies via get_notes', () => {
