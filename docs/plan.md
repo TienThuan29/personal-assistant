@@ -5012,7 +5012,7 @@ export function Thumbs({ ids }: { ids?: string[] | string | null }) {
 
 **Step 2: `src/renderer/chat/ConfirmCard.tsx`**
 
-This is one generic card for all write tools (see the deviation table). Creates get editable fields. Updates and deletes show the current rows, with before → after for each patched field.
+This is one generic card for all write tools (see the deviation table). Creates get editable fields. Updates and deletes show the current rows, with before → after for each patched field. Only fields the LLM filled appear (none can be added). Each editor follows the arg's original type, so clearing a number keeps a number field, and a cleared field is sent as omitted (zod then rejects a required one and the card stays pending). A write that failed on confirm is stored as `cancelled` with `result.error`, so the tag says "Thất bại" instead of "Đã hủy".
 
 ```tsx
 import { Alert, Button, Input, InputNumber, Space, Tag } from '@arco-design/web-react';
@@ -5066,7 +5066,8 @@ type Row = Record<string, unknown> & { id: number };
 
 const fmt = (v: unknown): string => {
   if (v === null || v === undefined || v === '') return '—';
-  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T.*Z$/.test(v)) return new Date(v).toLocaleString('vi-VN');
+  // Stored instants are UTC ISO; LLM-given ones are local 'YYYY-MM-DDTHH:MM'. Both parse correctly.
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)) return new Date(v).toLocaleString('vi-VN');
   return String(v);
 };
 const describe = (r: Row): string =>
@@ -5087,6 +5088,7 @@ export function ConfirmCard(props: {
   const before = (action.preview as { before?: Row[] } | null)?.before ?? [];
   const patch = (args.patch ?? {}) as Record<string, unknown>;
   const error = (action.result as { error?: string } | null)?.error;
+  const status = error ? { color: 'red', text: 'Thất bại' } : STATUS[action.status];
 
   const resolve = async (d: 'confirm' | 'cancel') => {
     setBusy(true);
@@ -5097,11 +5099,13 @@ export function ConfirmCard(props: {
     }
   };
 
+  // Only fields the LLM filled are shown; the user can edit them but not add new ones.
+  // The editor follows the original arg type, so a cleared number stays a number field; cleared = omitted.
   return (
     <div className='confirm-card'>
       <div className='confirm-title'>
         {TITLES[action.tool_name] ?? action.tool_name}
-        <Tag color={STATUS[action.status].color}>{STATUS[action.status].text}</Tag>
+        <Tag color={status.color}>{status.text}</Tag>
       </div>
 
       {isCreate &&
@@ -5112,13 +5116,15 @@ export function ConfirmCard(props: {
               <span className='muted'>{FIELD_LABELS[k] ?? k}</span>
               {!pending ? (
                 <span>{k === 'amount' ? formatMoney(Number(v), String(args.currency ?? 'VND')) : fmt(v)}</span>
-              ) : typeof v === 'number' ? (
+              ) : typeof action.args[k] === 'number' ? (
                 <Space>
-                  <InputNumber value={v} onChange={(n) => onArgsChange({ ...args, [k]: n })} />
-                  {k === 'amount' && <span className='muted'>{formatMoney(v, String(args.currency ?? 'VND'))}</span>}
+                  <InputNumber value={v as number | undefined} onChange={(n) => onArgsChange({ ...args, [k]: n ?? undefined })} />
+                  {k === 'amount' && typeof v === 'number' && (
+                    <span className='muted'>{formatMoney(v, String(args.currency ?? 'VND'))}</span>
+                  )}
                 </Space>
               ) : (
-                <Input value={String(v ?? '')} onChange={(s) => onArgsChange({ ...args, [k]: s })} />
+                <Input value={String(v ?? '')} onChange={(s) => onArgsChange({ ...args, [k]: s || undefined })} />
               )}
             </div>
           ))}
