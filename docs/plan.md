@@ -2533,7 +2533,7 @@ git commit -m "feat(tools): today overview and capped read-only SQL"
 **Step 1: Write the failing tests**
 
 ```ts
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Cipher, getSetting, readSecrets, setSetting, writeSecret } from '../src/main/settings';
 import { tempDir, testDb } from './helpers';
@@ -2561,6 +2561,14 @@ describe('settings', () => {
     expect(readSecrets(file, cipher)).toEqual({ azure: 'sk-secret', gateway: 'tok' });
     expect(readFileSync(file).toString('utf8')).not.toContain('sk-secret');
   });
+
+  it('treats an unreadable secrets file as empty, and a new key replaces it', () => {
+    const file = join(tempDir(), 'secrets.bin');
+    writeFileSync(file, 'garbage');
+    expect(readSecrets(file, cipher)).toEqual({});
+    writeSecret(file, cipher, 'azure', 'sk-new');
+    expect(readSecrets(file, cipher)).toEqual({ azure: 'sk-new' });
+  });
 });
 ```
 
@@ -2572,7 +2580,7 @@ Expected: FAIL, cannot resolve module.
 **Step 3: Implement `src/main/settings.ts`**
 
 ```ts
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { z } from 'zod/v4';
 import type { LlmConfig } from '../shared/types';
 import type { Db } from './db';
@@ -2600,13 +2608,24 @@ export function setSetting(db: Db, key: string, value: unknown): void {
 export type Cipher = { encrypt: (plain: string) => Buffer; decrypt: (data: Buffer) => string };
 type Secrets = Partial<Record<LlmConfig['provider'], string>>;
 
-/** Secrets live in their own file, never in the DB, so query_readonly_sql can't leak them (design D14). */
+/**
+ * Secrets live in their own file, never in the DB, so query_readonly_sql can't leak them (design D14).
+ * An unreadable file (corrupt, or encrypted under another Windows user) reads as empty: the user re-enters the key.
+ */
 export function readSecrets(file: string, cipher: Cipher): Secrets {
-  return existsSync(file) ? (JSON.parse(cipher.decrypt(readFileSync(file))) as Secrets) : {};
+  if (!existsSync(file)) return {};
+  try {
+    return JSON.parse(cipher.decrypt(readFileSync(file))) as Secrets;
+  } catch {
+    return {};
+  }
 }
 
+/** Writes a .tmp then renames it, so a crash mid-write never leaves a half-written file. */
 export function writeSecret(file: string, cipher: Cipher, provider: LlmConfig['provider'], value: string): void {
-  writeFileSync(file, cipher.encrypt(JSON.stringify({ ...readSecrets(file, cipher), [provider]: value })));
+  const tmp = `${file}.tmp`;
+  writeFileSync(tmp, cipher.encrypt(JSON.stringify({ ...readSecrets(file, cipher), [provider]: value })));
+  renameSync(tmp, file);
 }
 ```
 
