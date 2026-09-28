@@ -2,10 +2,9 @@ import { z } from 'zod/v4';
 import type { ReminderRow } from '../../shared/types';
 import { deleteRows, getRows, ids, instant, readTool, requireRows, toInstant, updateRows, where, writeTool } from './common';
 
-const status = z.enum(['pending', 'fired', 'dismissed']);
-const remindAt = instant.describe(
-  'Thời điểm nhắc theo giờ máy, nên kèm giờ, vd 2026-09-29T09:00 (chỉ ngày = 00:00); phải ở tương lai'
-);
+const remindAt = z.iso
+  .datetime({ local: true, offset: true, error: 'Cần thời điểm có giờ, vd 2026-09-29T09:00' })
+  .describe('Thời điểm nhắc theo giờ máy, vd 2026-09-29T09:00; phải ở tương lai');
 
 function futureInstant(s: string, now: Date): string {
   const at = toInstant(s);
@@ -53,11 +52,12 @@ export const reminderTools = [
 
   writeTool({
     name: 'update_reminders',
-    description: 'Sửa nhắc nhở: nội dung, thời điểm (dời giờ thì nhắc lại, status về pending), hoặc status=dismissed để bỏ qua.',
+    description:
+      'Sửa nhắc nhở: nội dung, thời điểm (dời giờ thì nhắc lại, kể cả nhắc đã hiện hoặc đã bỏ qua), hoặc status=dismissed để bỏ qua.',
     schema: z.object({
       ids,
       patch: z
-        .object({ message: z.string().min(1).optional(), remind_at: remindAt.optional(), status: status.optional() })
+        .object({ message: z.string().min(1).optional(), remind_at: remindAt.optional(), status: z.literal('dismissed').optional() })
         .refine((p) => Object.keys(p).length > 0, 'patch không được rỗng'),
     }),
     preview: (a, { db }) => ({ before: requireRows<ReminderRow>(db, 'reminders', a.ids) }),
