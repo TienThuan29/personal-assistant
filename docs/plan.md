@@ -1005,6 +1005,7 @@ It passes vacuously now and starts guarding once tools exist.
 
 ```ts
 import { TOOLS, toOpenAITools } from '../src/main/tools';
+import { date } from '../src/main/tools/common';
 
 describe('tool registry', () => {
   it('has unique, API-safe names', () => {
@@ -1019,6 +1020,14 @@ describe('tool registry', () => {
       expect(t.function.parameters).not.toHaveProperty('$schema');
       expect(t.function.description?.length).toBeGreaterThan(10);
     }
+  });
+});
+
+describe('date schema', () => {
+  it('rejects impossible calendar dates and wrong formats', () => {
+    expect(date.safeParse('2026-02-30').success).toBe(false);
+    expect(date.safeParse('2026-02-28').success).toBe(true);
+    expect(date.safeParse('28/09/2026').success).toBe(false);
   });
 });
 ```
