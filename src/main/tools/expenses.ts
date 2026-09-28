@@ -35,10 +35,16 @@ const category = z
   .min(1)
   .describe('vd: ăn uống, đi lại, nhà cửa, mua sắm, giải trí, sức khỏe, khác (ưu tiên category đã có)');
 
-/** Reuses an existing spelling ('an uong' → 'Ăn uống') so one category never splits by case or accents. */
-const canonCategory = (db: Db, c: string): string =>
-  (db.prepare('SELECT category FROM expenses WHERE fold(category) = fold(?) LIMIT 1').get(c) as { category: string } | undefined)
-    ?.category ?? c;
+/**
+ * Reuses an existing spelling ('an uong' → 'Ăn uống') so one category never splits by case or accents.
+ * `exclude` skips the rows being updated, so renaming all of a category's rows still takes effect.
+ */
+const canonCategory = (db: Db, c: string, exclude: number[] = []): string =>
+  (
+    db
+      .prepare(`SELECT category FROM expenses WHERE fold(category) = fold(?) AND id NOT IN (${exclude.map(() => '?').join(', ')}) LIMIT 1`)
+      .get(c, ...exclude) as { category: string } | undefined
+  )?.category ?? c;
 
 export const expenseTools = [
   readTool({
@@ -104,7 +110,7 @@ export const expenseTools = [
     preview: (a, { db }) => ({ before: requireRows<ExpenseRow>(db, 'expenses', a.ids) }),
     apply: (a, { db }) => {
       requireRows(db, 'expenses', a.ids);
-      const patch = a.patch.category ? { ...a.patch, category: canonCategory(db, a.patch.category) } : a.patch;
+      const patch = a.patch.category ? { ...a.patch, category: canonCategory(db, a.patch.category, a.ids) } : a.patch;
       updateRows(db, 'expenses', a.ids, patch);
       return { updated: getRows<ExpenseRow>(db, 'expenses', a.ids) };
     },

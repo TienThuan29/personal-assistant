@@ -2106,6 +2106,21 @@ describe('expense tools', () => {
     expect(() => parseArgs(findTool('create_expense')!, { amount: 1, category: '   ' })).toThrow();
   });
 
+  it('renames a category when every row with it is updated', () => {
+    const ctx = testCtx();
+    const e = callTool<ExpenseRow>(ctx, 'create_expense', { amount: 1, category: 'an uong' });
+    const r = callTool<{ updated: ExpenseRow[] }>(ctx, 'update_expenses', { ids: [e.id], patch: { category: 'Ăn uống' } });
+    expect(r.updated[0].category).toBe('Ăn uống');
+  });
+
+  it('snaps a partial rename to the spelling of the other rows', () => {
+    const ctx = testCtx();
+    const a = callTool<ExpenseRow>(ctx, 'create_expense', { amount: 1, category: 'an uong' });
+    callTool(ctx, 'create_expense', { amount: 2, category: 'an uong' });
+    const r = callTool<{ updated: ExpenseRow[] }>(ctx, 'update_expenses', { ids: [a.id], patch: { category: 'AN UONG' } });
+    expect(r.updated[0].category).toBe('an uong');
+  });
+
   it('previews an update with the current row', () => {
     const ctx = testCtx();
     const e = callTool<ExpenseRow>(ctx, 'create_expense', { amount: 10, category: 'x' });
@@ -2181,10 +2196,16 @@ const category = z
   .min(1)
   .describe('vd: ăn uống, đi lại, nhà cửa, mua sắm, giải trí, sức khỏe, khác (ưu tiên category đã có)');
 
-/** Reuses an existing spelling ('an uong' → 'Ăn uống') so one category never splits by case or accents. */
-const canonCategory = (db: Db, c: string): string =>
-  (db.prepare('SELECT category FROM expenses WHERE fold(category) = fold(?) LIMIT 1').get(c) as { category: string } | undefined)
-    ?.category ?? c;
+/**
+ * Reuses an existing spelling ('an uong' → 'Ăn uống') so one category never splits by case or accents.
+ * `exclude` skips the rows being updated, so renaming all of a category's rows still takes effect.
+ */
+const canonCategory = (db: Db, c: string, exclude: number[] = []): string =>
+  (
+    db
+      .prepare(`SELECT category FROM expenses WHERE fold(category) = fold(?) AND id NOT IN (${exclude.map(() => '?').join(', ')}) LIMIT 1`)
+      .get(c, ...exclude) as { category: string } | undefined
+  )?.category ?? c;
 
 export const expenseTools = [
   readTool({
@@ -2250,7 +2271,7 @@ export const expenseTools = [
     preview: (a, { db }) => ({ before: requireRows<ExpenseRow>(db, 'expenses', a.ids) }),
     apply: (a, { db }) => {
       requireRows(db, 'expenses', a.ids);
-      const patch = a.patch.category ? { ...a.patch, category: canonCategory(db, a.patch.category) } : a.patch;
+      const patch = a.patch.category ? { ...a.patch, category: canonCategory(db, a.patch.category, a.ids) } : a.patch;
       updateRows(db, 'expenses', a.ids, patch);
       return { updated: getRows<ExpenseRow>(db, 'expenses', a.ids) };
     },
@@ -4352,7 +4373,9 @@ const fmt = (v: unknown): string => {
   return String(v);
 };
 const describe = (r: Row): string =>
-  String(r.title ?? r.message ?? r.description ?? (r.amount != null ? formatMoney(Number(r.amount), String(r.currency)) : String(r.body ?? '').slice(0, 60)));
+  r.amount != null
+    ? `${String(r.description ?? r.category)} · ${formatMoney(Number(r.amount), String(r.currency))}`
+    : String(r.title ?? r.message ?? String(r.body ?? '').slice(0, 60));
 
 export function ConfirmCard(props: {
   action: PendingAction;
@@ -4411,7 +4434,10 @@ export function ConfirmCard(props: {
             </div>
             {Object.entries(patch).map(([k, v]) => (
               <div key={k} className='muted'>
-                {FIELD_LABELS[k] ?? k}: {fmt(row[k])} → {fmt(v)}
+                {FIELD_LABELS[k] ?? k}:{' '}
+                {k === 'amount'
+                  ? `${formatMoney(Number(row[k]), String(row.currency))} → ${formatMoney(Number(v), String(patch.currency ?? row.currency))}`
+                  : `${fmt(row[k])} → ${fmt(v)}`}
               </div>
             ))}
           </div>

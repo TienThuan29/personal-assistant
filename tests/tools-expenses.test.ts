@@ -64,6 +64,21 @@ describe('expense tools', () => {
     expect(() => parseArgs(findTool('create_expense')!, { amount: 1, category: '   ' })).toThrow();
   });
 
+  it('renames a category when every row with it is updated', () => {
+    const ctx = testCtx();
+    const e = callTool<ExpenseRow>(ctx, 'create_expense', { amount: 1, category: 'an uong' });
+    const r = callTool<{ updated: ExpenseRow[] }>(ctx, 'update_expenses', { ids: [e.id], patch: { category: 'Ăn uống' } });
+    expect(r.updated[0].category).toBe('Ăn uống');
+  });
+
+  it('snaps a partial rename to the spelling of the other rows', () => {
+    const ctx = testCtx();
+    const a = callTool<ExpenseRow>(ctx, 'create_expense', { amount: 1, category: 'an uong' });
+    callTool(ctx, 'create_expense', { amount: 2, category: 'an uong' });
+    const r = callTool<{ updated: ExpenseRow[] }>(ctx, 'update_expenses', { ids: [a.id], patch: { category: 'AN UONG' } });
+    expect(r.updated[0].category).toBe('an uong');
+  });
+
   it('previews an update with the current row', () => {
     const ctx = testCtx();
     const e = callTool<ExpenseRow>(ctx, 'create_expense', { amount: 10, category: 'x' });
