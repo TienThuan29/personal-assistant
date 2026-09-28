@@ -13,7 +13,7 @@ export function saveAttachment(
 ): void {
   mkdirSync(dir, { recursive: true });
   const fileName = `${a.id}.${a.mime === 'image/png' ? 'png' : 'jpg'}`;
-  writeFileSync(join(dir, fileName), a.bytes);
+  writeFileSync(join(dir, fileName), a.bytes, { flag: 'wx' }); // an id collision throws instead of overwriting
   db.prepare('INSERT INTO attachments (id, owner_type, owner_id, file_name, mime) VALUES (?, ?, ?, ?, ?)').run(
     a.id,
     a.ownerType,
@@ -41,7 +41,15 @@ export function dataUrl(db: Db, dir: string, id: string): string | undefined {
 export function cleanupOrphans(db: Db, dir: string): number {
   if (!existsSync(dir)) return 0;
   const known = new Set((db.prepare('SELECT file_name FROM attachments').all() as { file_name: string }[]).map((r) => r.file_name));
-  const orphans = readdirSync(dir).filter((f) => !known.has(f));
-  for (const f of orphans) rmSync(join(dir, f));
-  return orphans.length;
+  let deleted = 0;
+  for (const f of readdirSync(dir)) {
+    if (known.has(f)) continue;
+    try {
+      rmSync(join(dir, f), { force: true, recursive: true });
+      deleted++;
+    } catch {
+      // Locked (antivirus, an open viewer): skip it; the next startup retries.
+    }
+  }
+  return deleted;
 }

@@ -1076,7 +1076,7 @@ git commit -m "feat(tools): tool types, zod schemas, SQL helpers and registry"
 **Step 1: Write the failing tests**
 
 ```ts
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { attachmentFile, cleanupOrphans, dataUrl, newAttachmentId, saveAttachment } from '../src/main/attachments';
 import { attachTo } from '../src/main/tools/common';
@@ -1112,6 +1112,27 @@ describe('attachments', () => {
     expect(existsSync(join(att, 'orphan.jpg'))).toBe(false);
     expect(attachmentFile(db, att, kept)).toBeDefined();
   });
+
+  it('refuses to overwrite an existing id', () => {
+    const { db, dir } = testDb();
+    const id = newAttachmentId();
+    saveAttachment(db, dir, { id, bytes: JPEG, mime: 'image/jpeg', ownerType: 'message', ownerId: 1 });
+    expect(() =>
+      saveAttachment(db, dir, { id, bytes: new Uint8Array([1, 2]), mime: 'image/jpeg', ownerType: 'message', ownerId: 2 })
+    ).toThrow();
+    expect(new Uint8Array(readFileSync(attachmentFile(db, dir, id)!.path))).toEqual(JPEG);
+  });
+
+  it('returns undefined for an unknown id or a missing file', () => {
+    const { db, dir } = testDb();
+    expect(attachmentFile(db, dir, 'nope')).toBeUndefined();
+    expect(dataUrl(db, dir, 'nope')).toBeUndefined();
+    const id = newAttachmentId();
+    saveAttachment(db, dir, { id, bytes: JPEG, mime: 'image/jpeg', ownerType: 'message', ownerId: 1 });
+    rmSync(attachmentFile(db, dir, id)!.path);
+    expect(attachmentFile(db, dir, id)).toBeUndefined();
+    expect(dataUrl(db, dir, id)).toBeUndefined();
+  });
 });
 ```
 
@@ -1138,7 +1159,7 @@ export function saveAttachment(
 ): void {
   mkdirSync(dir, { recursive: true });
   const fileName = `${a.id}.${a.mime === 'image/png' ? 'png' : 'jpg'}`;
-  writeFileSync(join(dir, fileName), a.bytes);
+  writeFileSync(join(dir, fileName), a.bytes, { flag: 'wx' }); // an id collision throws instead of overwriting
   db.prepare('INSERT INTO attachments (id, owner_type, owner_id, file_name, mime) VALUES (?, ?, ?, ?, ?)').run(
     a.id,
     a.ownerType,
@@ -1166,16 +1187,24 @@ export function dataUrl(db: Db, dir: string, id: string): string | undefined {
 export function cleanupOrphans(db: Db, dir: string): number {
   if (!existsSync(dir)) return 0;
   const known = new Set((db.prepare('SELECT file_name FROM attachments').all() as { file_name: string }[]).map((r) => r.file_name));
-  const orphans = readdirSync(dir).filter((f) => !known.has(f));
-  for (const f of orphans) rmSync(join(dir, f));
-  return orphans.length;
+  let deleted = 0;
+  for (const f of readdirSync(dir)) {
+    if (known.has(f)) continue;
+    try {
+      rmSync(join(dir, f), { force: true, recursive: true });
+      deleted++;
+    } catch {
+      // Locked (antivirus, an open viewer): skip it; the next startup retries.
+    }
+  }
+  return deleted;
 }
 ```
 
 **Step 4: Run to verify it passes**
 
 Run: `bun run test tests/attachments.test.ts`
-Expected: PASS (3 tests).
+Expected: PASS (5 tests).
 
 **Step 5: Commit**
 

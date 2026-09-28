@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { attachmentFile, cleanupOrphans, dataUrl, newAttachmentId, saveAttachment } from '../src/main/attachments';
 import { attachTo } from '../src/main/tools/common';
@@ -33,5 +33,26 @@ describe('attachments', () => {
     expect(cleanupOrphans(db, att)).toBe(1);
     expect(existsSync(join(att, 'orphan.jpg'))).toBe(false);
     expect(attachmentFile(db, att, kept)).toBeDefined();
+  });
+
+  it('refuses to overwrite an existing id', () => {
+    const { db, dir } = testDb();
+    const id = newAttachmentId();
+    saveAttachment(db, dir, { id, bytes: JPEG, mime: 'image/jpeg', ownerType: 'message', ownerId: 1 });
+    expect(() =>
+      saveAttachment(db, dir, { id, bytes: new Uint8Array([1, 2]), mime: 'image/jpeg', ownerType: 'message', ownerId: 2 })
+    ).toThrow();
+    expect(new Uint8Array(readFileSync(attachmentFile(db, dir, id)!.path))).toEqual(JPEG);
+  });
+
+  it('returns undefined for an unknown id or a missing file', () => {
+    const { db, dir } = testDb();
+    expect(attachmentFile(db, dir, 'nope')).toBeUndefined();
+    expect(dataUrl(db, dir, 'nope')).toBeUndefined();
+    const id = newAttachmentId();
+    saveAttachment(db, dir, { id, bytes: JPEG, mime: 'image/jpeg', ownerType: 'message', ownerId: 1 });
+    rmSync(attachmentFile(db, dir, id)!.path);
+    expect(attachmentFile(db, dir, id)).toBeUndefined();
+    expect(dataUrl(db, dir, id)).toBeUndefined();
   });
 });
