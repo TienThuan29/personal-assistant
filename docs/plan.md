@@ -23,6 +23,7 @@
 - **Style:** single quotes, semicolons, 2-space indent, `import type` for type-only imports. UI strings are Vietnamese; code and comments are English.
 - **Commits:** Conventional Commits. End each message with the trailer `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. The `git commit -m` lines below omit the trailer for brevity, so add it as a second `-m`.
 - **If `bun run dev` shows no window** from the VS Code terminal, run `env -u ELECTRON_RUN_AS_NODE bun run dev`.
+- **Checking the UI without looking at the screen** (from Task 19): `PA_SCREENSHOT=out.png [PA_PAGE=tasks] timeout 90 env -u ELECTRON_RUN_AS_NODE bun run dev` saves a PNG of the window and quits. Dev builds only; see Task 19 Step 6.
 
 ### Deviations from design.md (intentional, smaller)
 
@@ -4444,6 +4445,7 @@ UI tasks have no automated tests: the logic lives in main and is covered there. 
 - Create: `src/renderer/api.ts`, `src/renderer/styles.css`, `src/renderer/App.tsx`
 - Create (stubs, replaced later): `src/renderer/chat/ChatPage.tsx`, `src/renderer/pages/TasksPage.tsx`, `src/renderer/pages/NotesPage.tsx`, `src/renderer/pages/ExpensesPage.tsx`, `src/renderer/pages/SettingsPage.tsx`
 - Replace: `src/renderer/main.tsx`
+- Modify: `src/main/index.ts` (dev screenshot hook)
 
 **Step 1: `src/renderer/api.ts`**
 
@@ -4502,6 +4504,8 @@ body {
 .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .page { flex: 1; overflow: auto; padding: 16px 24px; }
 .muted { color: var(--text-secondary); font-size: 12px; }
+/* Arco spaces only an <svg> icon from the label; icon-park icons are <span class='i-icon'>. */
+.arco-btn > .i-icon + span { margin-left: 8px; }
 
 .chat { display: flex; flex-direction: column; height: 100%; }
 .messages { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 24px; }
@@ -4596,6 +4600,9 @@ const VI_LABELS = {
   processing: 'Đang xử lý...',
 };
 
+// Arco's vi-VN locale lacks the ColorPicker strings its Locale type requires; the app has no ColorPicker.
+const ARCO_LOCALE = { ...viVN, ColorPicker: {} };
+
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
 /** Follows the OS theme and sets the attributes @aionui/ui and Arco key off. */
@@ -4668,7 +4675,7 @@ export function App() {
 
   return (
     <UiProvider theme={theme} locale='vi-VN' labels={VI_LABELS}>
-      <ConfigProvider locale={viVN}>
+      <ConfigProvider locale={ARCO_LOCALE}>
         {modalHolder}
         <div className='app'>
           <header className='titlebar'>
@@ -4732,15 +4739,40 @@ import { App } from './App';
 createRoot(document.getElementById('root')!).render(<App />);
 ```
 
-**Step 6: Verify**
+**Step 6: Dev screenshot hook in `src/main/index.ts`**
+
+Lets you (or an agent) check the UI from a terminal. Add `writeFileSync` to the `node:fs` import and `import { setTimeout as sleep } from 'node:timers/promises';`, then right after `win = createWindow();` in `start()`:
+
+```ts
+  // Dev-only: PA_SCREENSHOT=<file.png> [PA_PAGE=<page>] [PA_SCREENSHOT_DELAY=<ms>] saves a capture of the window, then quits.
+  const shot = process.env.PA_SCREENSHOT;
+  if (!app.isPackaged && shot) {
+    const w = win;
+    w.webContents.once('did-finish-load', async () => {
+      try {
+        await sleep(Number(process.env.PA_SCREENSHOT_DELAY ?? 2500)); // nav earlier loses to the app opening the latest chat
+        if (process.env.PA_PAGE) send('nav', process.env.PA_PAGE);
+        await sleep(300);
+        writeFileSync(shot, (await w.capturePage()).toPNG());
+      } finally {
+        app.exit(0);
+      }
+    });
+  }
+```
+
+`PA_PAGE` goes through the renderer's `api.onNavigate`, so it takes `tasks`, `notes`, `expenses` or `settings` (without it you get the latest chat). The nav is sent after the delay, not on `did-finish-load`: `openLatest()` resolves later and would switch back to the chat.
+
+**Step 7: Verify**
 
 Run: `bun run typecheck`, then `bun run dev`.
 Expected:
 - A frameless window with a working drag area and min/max/close buttons (close hides to the tray).
 - The sider has "Hội thoại mới", Task, Ghi chú, Chi tiêu, the conversation list and Cài đặt, and each shows its stub.
 - Switching the Windows theme to dark flips the app to dark.
+- Screenshots: `PA_SCREENSHOT="$TEMP/pa-shell.png" timeout 90 env -u ELECTRON_RUN_AS_NODE bun run dev`, then again with `PA_PAGE=tasks` and `PA_PAGE=settings`. Each PNG shows the title bar with the window buttons, the sider, and the page's stub text.
 
-**Step 7: Commit**
+**Step 8: Commit**
 
 ```bash
 git add -A

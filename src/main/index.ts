@@ -1,7 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, shell, Tray } from 'electron';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import type { ReminderRow } from '../shared/types';
 import { attachmentFile, cleanupOrphans } from './attachments';
@@ -167,6 +168,21 @@ async function start(): Promise<void> {
   });
 
   win = createWindow();
+  // Dev-only: PA_SCREENSHOT=<file.png> [PA_PAGE=<page>] [PA_SCREENSHOT_DELAY=<ms>] saves a capture of the window, then quits.
+  const shot = process.env.PA_SCREENSHOT;
+  if (!app.isPackaged && shot) {
+    const w = win;
+    w.webContents.once('did-finish-load', async () => {
+      try {
+        await sleep(Number(process.env.PA_SCREENSHOT_DELAY ?? 2500)); // nav earlier loses to the app opening the latest chat
+        if (process.env.PA_PAGE) send('nav', process.env.PA_PAGE);
+        await sleep(300);
+        writeFileSync(shot, (await w.capturePage()).toPNG());
+      } finally {
+        app.exit(0);
+      }
+    });
+  }
   scheduler.refresh();
   powerMonitor.on('resume', () => scheduler.refresh());
   tray = await createTray().catch((e) => {
