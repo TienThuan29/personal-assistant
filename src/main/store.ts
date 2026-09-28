@@ -4,8 +4,13 @@ import { type Db, tx } from './db';
 const DEFAULT_TITLE = 'Hội thoại mới'; // must match the conversations.title default in migrations.ts
 const NOW_ISO = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
 
-export const createConversation = (db: Db): number =>
-  Number(db.prepare('INSERT INTO conversations DEFAULT VALUES').run().lastInsertRowid);
+/** Reuses the newest conversation without messages, so "new chat" clicks don't pile up empty ones. */
+export function createConversation(db: Db): number {
+  const empty = db
+    .prepare('SELECT id FROM conversations c WHERE NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id) ORDER BY id DESC LIMIT 1')
+    .get() as { id: number } | undefined;
+  return empty ? empty.id : Number(db.prepare('INSERT INTO conversations DEFAULT VALUES').run().lastInsertRowid);
+}
 
 export const listConversations = (db: Db): ConversationRow[] =>
   db.prepare('SELECT id, title, updated_at FROM conversations ORDER BY updated_at DESC, id DESC').all() as unknown as ConversationRow[];

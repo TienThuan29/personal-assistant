@@ -19,8 +19,6 @@ body {
   border-bottom: 1px solid var(--border-base);
   -webkit-app-region: drag;
 }
-.titlebar button,
-.titlebar [role='button'] { -webkit-app-region: no-drag; }
 .titlebar-title { font-weight: 600; }
 .app-body { flex: 1; display: flex; min-height: 0; }
 .sider {

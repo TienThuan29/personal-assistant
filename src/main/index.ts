@@ -178,8 +178,10 @@ async function start(): Promise<void> {
         if (process.env.PA_PAGE) send('nav', process.env.PA_PAGE);
         await sleep(300);
         writeFileSync(shot, (await w.capturePage()).toPNG());
-      } finally {
         app.exit(0);
+      } catch (e) {
+        console.error(e);
+        app.exit(1);
       }
     });
   }

@@ -1,10 +1,10 @@
 import { AionScrollArea, SiderItem, UiProvider, WindowControls } from '@aionui/ui';
-import { Button, ConfigProvider, Modal } from '@arco-design/web-react';
+import { Button, ConfigProvider, Message, Modal } from '@arco-design/web-react';
 import viVN from '@arco-design/web-react/es/locale/vi-VN';
 import { CheckOne, Comment, Delete, Notes, Plus, SettingTwo, Wallet } from '@icon-park/react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ConversationRow, Page } from '../shared/types';
-import { api } from './api';
+import { api, errorText } from './api';
 import { ChatPage } from './chat/ChatPage';
 import { ExpensesPage } from './pages/ExpensesPage';
 import { NotesPage } from './pages/NotesPage';
@@ -60,6 +60,12 @@ export function App() {
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [maximized, setMaximized] = useState(false);
   const [modal, modalHolder] = Modal.useModal();
+  const [message, messageHolder] = Message.useMessage();
+  const fail = (e: unknown) => message.error?.(errorText(e));
+  const routeRef = useRef(route); // read after an await: a nav may have arrived meanwhile
+  useEffect(() => {
+    routeRef.current = route;
+  }, [route]);
 
   const refresh = useCallback(async () => {
     const list = await api.conversations.list();
@@ -80,7 +86,7 @@ export function App() {
   }, [refresh, newChat]);
 
   useEffect(() => {
-    void openLatest();
+    openLatest().catch(fail);
     void api.win.isMaximized().then(setMaximized);
     const offs = [
       api.win.onMaximizedChange(setMaximized),
@@ -100,9 +106,14 @@ export function App() {
       content: c.title,
       okButtonProps: { status: 'danger' },
       onOk: async () => {
-        await api.conversations.remove(c.id);
-        if (route?.page === 'chat' && route.id === c.id) await openLatest();
-        else await refresh();
+        try {
+          await api.conversations.remove(c.id);
+          const r = routeRef.current;
+          if (r?.page === 'chat' && r.id === c.id) await openLatest();
+          else await refresh();
+        } catch (e) {
+          fail(e);
+        }
       },
     });
 
@@ -110,6 +121,7 @@ export function App() {
     <UiProvider theme={theme} locale='vi-VN' labels={VI_LABELS}>
       <ConfigProvider locale={ARCO_LOCALE}>
         {modalHolder}
+        {messageHolder}
         <div className='app'>
           <header className='titlebar'>
             <span className='titlebar-title'>Trợ lý cá nhân</span>

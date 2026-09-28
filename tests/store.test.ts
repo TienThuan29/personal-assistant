@@ -28,6 +28,7 @@ describe('store', () => {
     const { db } = testDb();
     const title = (text: string) => {
       const c = createConversation(db);
+      addMessage(db, c, { role: 'user', content: text }); // else the next call reuses this empty conversation
       setTitleIfNew(db, c, text);
       return listConversations(db).find((r) => r.id === c)?.title;
     };
@@ -39,6 +40,7 @@ describe('store', () => {
   it('lists the most recently updated conversation first', () => {
     const { db } = testDb();
     const older = createConversation(db);
+    addMessage(db, older, { role: 'user', content: 'a' });
     const newer = createConversation(db);
     db.exec("UPDATE conversations SET updated_at = '2020-01-01T00:00:00.000Z'");
     expect(listConversations(db).map((r) => r.id)).toEqual([newer, older]);
@@ -71,10 +73,18 @@ describe('store', () => {
     expect(listConversations(db).map((r) => r.id)).toEqual([other]);
   });
 
+  it('reuses the newest empty conversation', () => {
+    const { db } = testDb();
+    const c = createConversation(db);
+    expect(createConversation(db)).toBe(c);
+    addMessage(db, c, { role: 'user', content: 'x' });
+    expect(createConversation(db)).not.toBe(c);
+  });
+
   it('prunes conversations without messages', () => {
     const { db } = testDb();
-    createConversation(db);
-    const kept = createConversation(db);
+    db.exec('INSERT INTO conversations DEFAULT VALUES'); // createConversation would reuse it
+    const kept = Number(db.prepare('INSERT INTO conversations DEFAULT VALUES').run().lastInsertRowid);
     addMessage(db, kept, { role: 'user', content: 'x' });
     pruneEmptyConversations(db);
     expect(listConversations(db).map((c) => c.id)).toEqual([kept]);

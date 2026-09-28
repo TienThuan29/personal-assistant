@@ -3033,6 +3033,7 @@ describe('store', () => {
     const { db } = testDb();
     const title = (text: string) => {
       const c = createConversation(db);
+      addMessage(db, c, { role: 'user', content: text }); // else the next call reuses this empty conversation
       setTitleIfNew(db, c, text);
       return listConversations(db).find((r) => r.id === c)?.title;
     };
@@ -3044,6 +3045,7 @@ describe('store', () => {
   it('lists the most recently updated conversation first', () => {
     const { db } = testDb();
     const older = createConversation(db);
+    addMessage(db, older, { role: 'user', content: 'a' });
     const newer = createConversation(db);
     db.exec("UPDATE conversations SET updated_at = '2020-01-01T00:00:00.000Z'");
     expect(listConversations(db).map((r) => r.id)).toEqual([newer, older]);
@@ -3076,10 +3078,18 @@ describe('store', () => {
     expect(listConversations(db).map((r) => r.id)).toEqual([other]);
   });
 
+  it('reuses the newest empty conversation', () => {
+    const { db } = testDb();
+    const c = createConversation(db);
+    expect(createConversation(db)).toBe(c);
+    addMessage(db, c, { role: 'user', content: 'x' });
+    expect(createConversation(db)).not.toBe(c);
+  });
+
   it('prunes conversations without messages', () => {
     const { db } = testDb();
-    createConversation(db);
-    const kept = createConversation(db);
+    db.exec('INSERT INTO conversations DEFAULT VALUES'); // createConversation would reuse it
+    const kept = Number(db.prepare('INSERT INTO conversations DEFAULT VALUES').run().lastInsertRowid);
     addMessage(db, kept, { role: 'user', content: 'x' });
     pruneEmptyConversations(db);
     expect(listConversations(db).map((c) => c.id)).toEqual([kept]);
@@ -3101,8 +3111,13 @@ import { type Db, tx } from './db';
 const DEFAULT_TITLE = 'Hội thoại mới'; // must match the conversations.title default in migrations.ts
 const NOW_ISO = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
 
-export const createConversation = (db: Db): number =>
-  Number(db.prepare('INSERT INTO conversations DEFAULT VALUES').run().lastInsertRowid);
+/** Reuses the newest conversation without messages, so "new chat" clicks don't pile up empty ones. */
+export function createConversation(db: Db): number {
+  const empty = db
+    .prepare('SELECT id FROM conversations c WHERE NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id) ORDER BY id DESC LIMIT 1')
+    .get() as { id: number } | undefined;
+  return empty ? empty.id : Number(db.prepare('INSERT INTO conversations DEFAULT VALUES').run().lastInsertRowid);
+}
 
 export const listConversations = (db: Db): ConversationRow[] =>
   db.prepare('SELECT id, title, updated_at FROM conversations ORDER BY updated_at DESC, id DESC').all() as unknown as ConversationRow[];
@@ -4486,8 +4501,6 @@ body {
   border-bottom: 1px solid var(--border-base);
   -webkit-app-region: drag;
 }
-.titlebar button,
-.titlebar [role='button'] { -webkit-app-region: no-drag; }
 .titlebar-title { font-weight: 600; }
 .app-body { flex: 1; display: flex; min-height: 0; }
 .sider {
@@ -4566,12 +4579,12 @@ export function ChatPage({ conversationId }: { conversationId: number }) {
 
 ```tsx
 import { AionScrollArea, SiderItem, UiProvider, WindowControls } from '@aionui/ui';
-import { Button, ConfigProvider, Modal } from '@arco-design/web-react';
+import { Button, ConfigProvider, Message, Modal } from '@arco-design/web-react';
 import viVN from '@arco-design/web-react/es/locale/vi-VN';
 import { CheckOne, Comment, Delete, Notes, Plus, SettingTwo, Wallet } from '@icon-park/react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ConversationRow, Page } from '../shared/types';
-import { api } from './api';
+import { api, errorText } from './api';
 import { ChatPage } from './chat/ChatPage';
 import { ExpensesPage } from './pages/ExpensesPage';
 import { NotesPage } from './pages/NotesPage';
@@ -4627,6 +4640,12 @@ export function App() {
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [maximized, setMaximized] = useState(false);
   const [modal, modalHolder] = Modal.useModal();
+  const [message, messageHolder] = Message.useMessage();
+  const fail = (e: unknown) => message.error?.(errorText(e));
+  const routeRef = useRef(route); // read after an await: a nav may have arrived meanwhile
+  useEffect(() => {
+    routeRef.current = route;
+  }, [route]);
 
   const refresh = useCallback(async () => {
     const list = await api.conversations.list();
@@ -4647,7 +4666,7 @@ export function App() {
   }, [refresh, newChat]);
 
   useEffect(() => {
-    void openLatest();
+    openLatest().catch(fail);
     void api.win.isMaximized().then(setMaximized);
     const offs = [
       api.win.onMaximizedChange(setMaximized),
@@ -4667,9 +4686,14 @@ export function App() {
       content: c.title,
       okButtonProps: { status: 'danger' },
       onOk: async () => {
-        await api.conversations.remove(c.id);
-        if (route?.page === 'chat' && route.id === c.id) await openLatest();
-        else await refresh();
+        try {
+          await api.conversations.remove(c.id);
+          const r = routeRef.current;
+          if (r?.page === 'chat' && r.id === c.id) await openLatest();
+          else await refresh();
+        } catch (e) {
+          fail(e);
+        }
       },
     });
 
@@ -4677,6 +4701,7 @@ export function App() {
     <UiProvider theme={theme} locale='vi-VN' labels={VI_LABELS}>
       <ConfigProvider locale={ARCO_LOCALE}>
         {modalHolder}
+        {messageHolder}
         <div className='app'>
           <header className='titlebar'>
             <span className='titlebar-title'>Trợ lý cá nhân</span>
@@ -4754,14 +4779,17 @@ Lets you (or an agent) check the UI from a terminal. Add `writeFileSync` to the 
         if (process.env.PA_PAGE) send('nav', process.env.PA_PAGE);
         await sleep(300);
         writeFileSync(shot, (await w.capturePage()).toPNG());
-      } finally {
         app.exit(0);
+      } catch (e) {
+        console.error(e);
+        app.exit(1);
       }
     });
   }
 ```
 
 `PA_PAGE` goes through the renderer's `api.onNavigate`, so it takes `tasks`, `notes`, `expenses` or `settings` (without it you get the latest chat). The nav is sent after the delay, not on `did-finish-load`: `openLatest()` resolves later and would switch back to the chat.
+The run uses the normal dev profile, so on a fresh profile it creates a conversation in the dev DB (empty, so the next start prunes it).
 
 **Step 7: Verify**
 
@@ -5890,3 +5918,9 @@ git commit -m "build: portable Windows package and release smoke checklist"
 - `bun run test` passes (≈60 tests; eval skipped) and `bun run typecheck` exits 0.
 - `docs/smoke-test.md` is fully checked on the packaged exe.
 - The eval passes at least 17 of 20 against the chosen model.
+
+### Known gaps
+
+- Keyboard access: `@aionui/ui`'s `SiderItem` is a `<div>` with `onClick` (no focus, no Enter/Space), and its "more" menu only shows on hover.
+- `WindowControls` has fixed English `aria-label`s (Minimize, Maximize/Restore, Close).
+- Fix both upstream in the library (`../aionui-ui`), then repack the tarball; no workaround in this app.
