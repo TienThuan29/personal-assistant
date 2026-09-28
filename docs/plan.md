@@ -2040,6 +2040,7 @@ git commit -m "feat(tools): notes with accent-insensitive FTS5 search"
 **Step 1: Write the failing tests**
 
 ```ts
+import { newAttachmentId, saveAttachment } from '../src/main/attachments';
 import { findTool, parseArgs } from '../src/main/tools';
 import type { ExpenseList, ExpenseRow } from '../src/shared/types';
 import { callTool, testCtx } from './helpers';
@@ -2065,6 +2066,7 @@ describe('expense tools', () => {
     const tool = findTool('create_expense')!;
     expect(() => parseArgs(tool, { amount: 12.5, category: 'x' })).toThrow();
     expect(() => parseArgs(tool, { amount: 0, category: 'x' })).toThrow();
+    expect(() => parseArgs(tool, { amount: 1e12 + 1, category: 'x' })).toThrow();
   });
 
   it('normalizes currency to uppercase ISO 4217 and totals each currency', () => {
@@ -2076,22 +2078,51 @@ describe('expense tools', () => {
     callTool(ctx, 'create_expense', { amount: 50, category: 'x', currency: ' USD ' });
     callTool(ctx, 'create_expense', { amount: 10_000, category: 'x' });
     const r = callTool<ExpenseList>(ctx, 'list_expenses', { from: '2026-09-28', to: '2026-09-28' });
-    expect(r.totals).toEqual(
-      expect.arrayContaining([
-        { currency: 'USD', total: 1300 },
-        { currency: 'VND', total: 10_000 },
-      ])
-    );
-    expect(r.totals).toHaveLength(2);
+    expect(r.totals).toEqual([
+      { currency: 'USD', total: 1300 },
+      { currency: 'VND', total: 10_000 },
+    ]);
   });
 
-  it('filters by category ignoring case', () => {
+  it('filters by category ignoring case and accents', () => {
     const ctx = testCtx();
     callTool(ctx, 'create_expense', { amount: 45_000, category: 'Ăn uống' });
     callTool(ctx, 'create_expense', { amount: 30_000, category: 'đi lại' });
     const r = callTool<ExpenseList>(ctx, 'list_expenses', { from: '2026-09-28', to: '2026-09-28', category: 'ăn uống' });
     expect(r.items.map((e) => e.amount)).toEqual([45_000]);
     expect(r.totals).toEqual([{ currency: 'VND', total: 45_000 }]);
+    const plain = callTool<ExpenseList>(ctx, 'list_expenses', { from: '2026-09-28', to: '2026-09-28', category: 'an uong' });
+    expect(plain.items.map((e) => e.amount)).toEqual([45_000]);
+  });
+
+  it('reuses the existing spelling of a category and rejects a blank one', () => {
+    const ctx = testCtx();
+    callTool(ctx, 'create_expense', { amount: 1, category: 'Ăn uống' });
+    const e = callTool<ExpenseRow>(ctx, 'create_expense', { amount: 2, category: ' an uong ' });
+    expect(e.category).toBe('Ăn uống');
+    const other = callTool<ExpenseRow>(ctx, 'create_expense', { amount: 3, category: 'khác' });
+    callTool(ctx, 'update_expenses', { ids: [other.id], patch: { category: 'AN UONG' } });
+    expect(ctx.db.prepare('SELECT DISTINCT category FROM expenses').all()).toEqual([{ category: 'Ăn uống' }]);
+    expect(() => parseArgs(findTool('create_expense')!, { amount: 1, category: '   ' })).toThrow();
+  });
+
+  it('previews an update with the current row', () => {
+    const ctx = testCtx();
+    const e = callTool<ExpenseRow>(ctx, 'create_expense', { amount: 10, category: 'x' });
+    const tool = findTool('update_expenses')!;
+    const args = parseArgs(tool, { ids: [e.id], patch: { amount: 20 } });
+    expect(tool.kind === 'write' && tool.preview?.(args, ctx)).toMatchObject({ before: [{ id: e.id, amount: 10 }] });
+  });
+
+  it('attaches message images and deletes them with the expense', () => {
+    const ctx = testCtx();
+    const img = newAttachmentId();
+    saveAttachment(ctx.db, ctx.dir, { id: img, bytes: new Uint8Array([1]), mime: 'image/jpeg', ownerType: 'message', ownerId: 1 });
+    const e = callTool<ExpenseRow>(ctx, 'create_expense', { amount: 10, category: 'x', attachment_ids: [img] });
+    expect(ctx.db.prepare('SELECT owner_type, owner_id FROM attachments WHERE id = ?').get(img)).toEqual({ owner_type: 'expense', owner_id: e.id });
+    expect(callTool<ExpenseList>(ctx, 'list_expenses', { from: '2026-09-28', to: '2026-09-28' }).items[0].attachment_ids).toBe(img);
+    callTool(ctx, 'delete_expenses', { ids: [e.id] });
+    expect(ctx.db.prepare('SELECT COUNT(*) AS n FROM attachments').get()).toEqual({ n: 0 });
   });
 
   it('updates and deletes', () => {
@@ -2116,6 +2147,7 @@ Expected: FAIL, `no tool create_expense`.
 import { z } from 'zod/v4';
 import { toLocalDate } from '../../shared/dates';
 import type { ExpenseRow } from '../../shared/types';
+import type { Db } from '../db';
 import {
   attachmentIds,
   attachmentsCol,
@@ -2131,14 +2163,28 @@ import {
   writeTool,
 } from './common';
 
-const amount = z.number().int().positive().describe('Số nguyên theo đơn vị nhỏ nhất: VND = đồng, USD = cent (12.50 USD → 1250)');
+const amount = z
+  .number()
+  .int()
+  .positive()
+  .max(1e12)
+  .describe('Số nguyên theo đơn vị nhỏ nhất. VND không có số lẻ: 55k → 55000, 1tr2 → 1200000, "45.000đ" trên hóa đơn → 45000. USD: 12.50 → 1250');
 const currency = z
   .string()
   .trim()
   .toUpperCase()
   .regex(/^[A-Z]{3}$/, 'Mã tiền tệ ISO 4217 gồm 3 chữ cái, vd VND, USD')
   .describe('Mã ISO 4217, vd VND, USD');
-const category = z.string().min(1).describe('vd: ăn uống, đi lại, nhà cửa, mua sắm, giải trí, sức khỏe, khác (ưu tiên category đã có)');
+const category = z
+  .string()
+  .trim()
+  .min(1)
+  .describe('vd: ăn uống, đi lại, nhà cửa, mua sắm, giải trí, sức khỏe, khác (ưu tiên category đã có)');
+
+/** Reuses an existing spelling ('an uong' → 'Ăn uống') so one category never splits by case or accents. */
+const canonCategory = (db: Db, c: string): string =>
+  (db.prepare('SELECT category FROM expenses WHERE fold(category) = fold(?) LIMIT 1').get(c) as { category: string } | undefined)
+    ?.category ?? c;
 
 export const expenseTools = [
   readTool({
@@ -2160,7 +2206,7 @@ export const expenseTools = [
         items: db
           .prepare(`SELECT e.*, ${attachmentsCol('expense', 'e.id')} FROM expenses e ${w.sql} ORDER BY e.spent_at DESC, e.id DESC LIMIT 500`)
           .all(w.params),
-        totals: db.prepare(`SELECT e.currency, SUM(e.amount) AS total FROM expenses e ${w.sql} GROUP BY e.currency`).all(w.params),
+        totals: db.prepare(`SELECT e.currency, SUM(e.amount) AS total FROM expenses e ${w.sql} GROUP BY e.currency ORDER BY e.currency`).all(w.params),
       };
     },
   }),
@@ -2173,13 +2219,13 @@ export const expenseTools = [
       currency: currency.default('VND'),
       category,
       description: z.string().optional(),
-      spent_at: date.optional().describe('Ngày chi YYYY-MM-DD, mặc định hôm nay'),
+      spent_at: date.optional().describe('Ngày chi YYYY-MM-DD (luôn gửi, kể cả hôm nay)'),
       attachment_ids: attachmentIds,
     }),
     apply: (a, { db, now }) => {
       const r = db
         .prepare('INSERT INTO expenses (amount, currency, category, description, spent_at) VALUES (?, ?, ?, ?, ?)')
-        .run(a.amount, a.currency, a.category, a.description ?? null, a.spent_at ?? toLocalDate(now()));
+        .run(a.amount, a.currency, canonCategory(db, a.category), a.description ?? null, a.spent_at ?? toLocalDate(now()));
       const id = Number(r.lastInsertRowid);
       attachTo(db, 'expense', id, a.attachment_ids);
       return getRows<ExpenseRow>(db, 'expenses', [id])[0];
@@ -2204,7 +2250,8 @@ export const expenseTools = [
     preview: (a, { db }) => ({ before: requireRows<ExpenseRow>(db, 'expenses', a.ids) }),
     apply: (a, { db }) => {
       requireRows(db, 'expenses', a.ids);
-      updateRows(db, 'expenses', a.ids, a.patch);
+      const patch = a.patch.category ? { ...a.patch, category: canonCategory(db, a.patch.category) } : a.patch;
+      updateRows(db, 'expenses', a.ids, patch);
       return { updated: getRows<ExpenseRow>(db, 'expenses', a.ids) };
     },
   }),
@@ -2896,7 +2943,7 @@ export function systemPrompt(db: Db, now: Date): string {
     '- Thiếu thông tin bắt buộc (vd số tiền) hoặc yêu cầu mơ hồ thì hỏi lại ngắn gọn.',
     '- Chỉ dùng ID lấy từ kết quả tool. Muốn sửa/xóa thì tìm ID trước.',
     '- Ảnh người dùng gửi có nhãn [ảnh #id]. Đọc nội dung ảnh để điền thông tin, và truyền id vào attachment_ids của bản ghi liên quan.',
-    '- Tiền là số nguyên theo đơn vị nhỏ nhất (VND = đồng, USD = cent).',
+    '- Tiền là số nguyên theo đơn vị nhỏ nhất: VND = đồng (55k → 55000, "45.000đ" → 45000), USD = cent (12.50 → 1250).',
     `- Phân loại task đang có: ${taskCats}. Danh mục chi tiêu đang có: ${expenseCats}. Ưu tiên dùng lại.`,
     '- Tool trả lỗi thì đọc lỗi và sửa tham số. Người dùng hủy thì không thử lại trừ khi họ yêu cầu.',
     '- Trả lời bằng ngôn ngữ người dùng dùng, ngắn gọn, dùng Markdown.',
@@ -4252,6 +4299,7 @@ This is one generic card for all write tools (see the deviation table). Creates 
 ```tsx
 import { Alert, Button, Input, InputNumber, Space, Tag } from '@arco-design/web-react';
 import { useState } from 'react';
+import { formatMoney } from '../../shared/money';
 import type { PendingAction } from '../../shared/types';
 import { Thumbs } from '../components/Thumbs';
 
@@ -4304,7 +4352,7 @@ const fmt = (v: unknown): string => {
   return String(v);
 };
 const describe = (r: Row): string =>
-  String(r.title ?? r.message ?? r.description ?? (r.amount != null ? `${r.amount} ${r.currency}` : String(r.body ?? '').slice(0, 60)));
+  String(r.title ?? r.message ?? r.description ?? (r.amount != null ? formatMoney(Number(r.amount), String(r.currency)) : String(r.body ?? '').slice(0, 60)));
 
 export function ConfirmCard(props: {
   action: PendingAction;
@@ -4343,9 +4391,12 @@ export function ConfirmCard(props: {
             <div key={k} className='confirm-row'>
               <span className='muted'>{FIELD_LABELS[k] ?? k}</span>
               {!pending ? (
-                <span>{fmt(v)}</span>
+                <span>{k === 'amount' ? formatMoney(Number(v), String(args.currency ?? 'VND')) : fmt(v)}</span>
               ) : typeof v === 'number' ? (
-                <InputNumber value={v} onChange={(n) => onArgsChange({ ...args, [k]: n })} />
+                <Space>
+                  <InputNumber value={v} onChange={(n) => onArgsChange({ ...args, [k]: n })} />
+                  {k === 'amount' && <span className='muted'>{formatMoney(v, String(args.currency ?? 'VND'))}</span>}
+                </Space>
               ) : (
                 <Input value={String(v ?? '')} onChange={(s) => onArgsChange({ ...args, [k]: s })} />
               )}

@@ -1,3 +1,4 @@
+import { newAttachmentId, saveAttachment } from '../src/main/attachments';
 import { findTool, parseArgs } from '../src/main/tools';
 import type { ExpenseList, ExpenseRow } from '../src/shared/types';
 import { callTool, testCtx } from './helpers';
@@ -23,6 +24,7 @@ describe('expense tools', () => {
     const tool = findTool('create_expense')!;
     expect(() => parseArgs(tool, { amount: 12.5, category: 'x' })).toThrow();
     expect(() => parseArgs(tool, { amount: 0, category: 'x' })).toThrow();
+    expect(() => parseArgs(tool, { amount: 1e12 + 1, category: 'x' })).toThrow();
   });
 
   it('normalizes currency to uppercase ISO 4217 and totals each currency', () => {
@@ -34,22 +36,51 @@ describe('expense tools', () => {
     callTool(ctx, 'create_expense', { amount: 50, category: 'x', currency: ' USD ' });
     callTool(ctx, 'create_expense', { amount: 10_000, category: 'x' });
     const r = callTool<ExpenseList>(ctx, 'list_expenses', { from: '2026-09-28', to: '2026-09-28' });
-    expect(r.totals).toEqual(
-      expect.arrayContaining([
-        { currency: 'USD', total: 1300 },
-        { currency: 'VND', total: 10_000 },
-      ])
-    );
-    expect(r.totals).toHaveLength(2);
+    expect(r.totals).toEqual([
+      { currency: 'USD', total: 1300 },
+      { currency: 'VND', total: 10_000 },
+    ]);
   });
 
-  it('filters by category ignoring case', () => {
+  it('filters by category ignoring case and accents', () => {
     const ctx = testCtx();
     callTool(ctx, 'create_expense', { amount: 45_000, category: 'Ăn uống' });
     callTool(ctx, 'create_expense', { amount: 30_000, category: 'đi lại' });
     const r = callTool<ExpenseList>(ctx, 'list_expenses', { from: '2026-09-28', to: '2026-09-28', category: 'ăn uống' });
     expect(r.items.map((e) => e.amount)).toEqual([45_000]);
     expect(r.totals).toEqual([{ currency: 'VND', total: 45_000 }]);
+    const plain = callTool<ExpenseList>(ctx, 'list_expenses', { from: '2026-09-28', to: '2026-09-28', category: 'an uong' });
+    expect(plain.items.map((e) => e.amount)).toEqual([45_000]);
+  });
+
+  it('reuses the existing spelling of a category and rejects a blank one', () => {
+    const ctx = testCtx();
+    callTool(ctx, 'create_expense', { amount: 1, category: 'Ăn uống' });
+    const e = callTool<ExpenseRow>(ctx, 'create_expense', { amount: 2, category: ' an uong ' });
+    expect(e.category).toBe('Ăn uống');
+    const other = callTool<ExpenseRow>(ctx, 'create_expense', { amount: 3, category: 'khác' });
+    callTool(ctx, 'update_expenses', { ids: [other.id], patch: { category: 'AN UONG' } });
+    expect(ctx.db.prepare('SELECT DISTINCT category FROM expenses').all()).toEqual([{ category: 'Ăn uống' }]);
+    expect(() => parseArgs(findTool('create_expense')!, { amount: 1, category: '   ' })).toThrow();
+  });
+
+  it('previews an update with the current row', () => {
+    const ctx = testCtx();
+    const e = callTool<ExpenseRow>(ctx, 'create_expense', { amount: 10, category: 'x' });
+    const tool = findTool('update_expenses')!;
+    const args = parseArgs(tool, { ids: [e.id], patch: { amount: 20 } });
+    expect(tool.kind === 'write' && tool.preview?.(args, ctx)).toMatchObject({ before: [{ id: e.id, amount: 10 }] });
+  });
+
+  it('attaches message images and deletes them with the expense', () => {
+    const ctx = testCtx();
+    const img = newAttachmentId();
+    saveAttachment(ctx.db, ctx.dir, { id: img, bytes: new Uint8Array([1]), mime: 'image/jpeg', ownerType: 'message', ownerId: 1 });
+    const e = callTool<ExpenseRow>(ctx, 'create_expense', { amount: 10, category: 'x', attachment_ids: [img] });
+    expect(ctx.db.prepare('SELECT owner_type, owner_id FROM attachments WHERE id = ?').get(img)).toEqual({ owner_type: 'expense', owner_id: e.id });
+    expect(callTool<ExpenseList>(ctx, 'list_expenses', { from: '2026-09-28', to: '2026-09-28' }).items[0].attachment_ids).toBe(img);
+    callTool(ctx, 'delete_expenses', { ids: [e.id] });
+    expect(ctx.db.prepare('SELECT COUNT(*) AS n FROM attachments').get()).toEqual({ n: 0 });
   });
 
   it('updates and deletes', () => {

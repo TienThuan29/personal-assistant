@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
 import { toLocalDate } from '../../shared/dates';
 import type { ExpenseRow } from '../../shared/types';
+import type { Db } from '../db';
 import {
   attachmentIds,
   attachmentsCol,
@@ -16,14 +17,28 @@ import {
   writeTool,
 } from './common';
 
-const amount = z.number().int().positive().describe('Số nguyên theo đơn vị nhỏ nhất: VND = đồng, USD = cent (12.50 USD → 1250)');
+const amount = z
+  .number()
+  .int()
+  .positive()
+  .max(1e12)
+  .describe('Số nguyên theo đơn vị nhỏ nhất. VND không có số lẻ: 55k → 55000, 1tr2 → 1200000, "45.000đ" trên hóa đơn → 45000. USD: 12.50 → 1250');
 const currency = z
   .string()
   .trim()
   .toUpperCase()
   .regex(/^[A-Z]{3}$/, 'Mã tiền tệ ISO 4217 gồm 3 chữ cái, vd VND, USD')
   .describe('Mã ISO 4217, vd VND, USD');
-const category = z.string().min(1).describe('vd: ăn uống, đi lại, nhà cửa, mua sắm, giải trí, sức khỏe, khác (ưu tiên category đã có)');
+const category = z
+  .string()
+  .trim()
+  .min(1)
+  .describe('vd: ăn uống, đi lại, nhà cửa, mua sắm, giải trí, sức khỏe, khác (ưu tiên category đã có)');
+
+/** Reuses an existing spelling ('an uong' → 'Ăn uống') so one category never splits by case or accents. */
+const canonCategory = (db: Db, c: string): string =>
+  (db.prepare('SELECT category FROM expenses WHERE fold(category) = fold(?) LIMIT 1').get(c) as { category: string } | undefined)
+    ?.category ?? c;
 
 export const expenseTools = [
   readTool({
@@ -45,7 +60,7 @@ export const expenseTools = [
         items: db
           .prepare(`SELECT e.*, ${attachmentsCol('expense', 'e.id')} FROM expenses e ${w.sql} ORDER BY e.spent_at DESC, e.id DESC LIMIT 500`)
           .all(w.params),
-        totals: db.prepare(`SELECT e.currency, SUM(e.amount) AS total FROM expenses e ${w.sql} GROUP BY e.currency`).all(w.params),
+        totals: db.prepare(`SELECT e.currency, SUM(e.amount) AS total FROM expenses e ${w.sql} GROUP BY e.currency ORDER BY e.currency`).all(w.params),
       };
     },
   }),
@@ -58,13 +73,13 @@ export const expenseTools = [
       currency: currency.default('VND'),
       category,
       description: z.string().optional(),
-      spent_at: date.optional().describe('Ngày chi YYYY-MM-DD, mặc định hôm nay'),
+      spent_at: date.optional().describe('Ngày chi YYYY-MM-DD (luôn gửi, kể cả hôm nay)'),
       attachment_ids: attachmentIds,
     }),
     apply: (a, { db, now }) => {
       const r = db
         .prepare('INSERT INTO expenses (amount, currency, category, description, spent_at) VALUES (?, ?, ?, ?, ?)')
-        .run(a.amount, a.currency, a.category, a.description ?? null, a.spent_at ?? toLocalDate(now()));
+        .run(a.amount, a.currency, canonCategory(db, a.category), a.description ?? null, a.spent_at ?? toLocalDate(now()));
       const id = Number(r.lastInsertRowid);
       attachTo(db, 'expense', id, a.attachment_ids);
       return getRows<ExpenseRow>(db, 'expenses', [id])[0];
@@ -89,7 +104,8 @@ export const expenseTools = [
     preview: (a, { db }) => ({ before: requireRows<ExpenseRow>(db, 'expenses', a.ids) }),
     apply: (a, { db }) => {
       requireRows(db, 'expenses', a.ids);
-      updateRows(db, 'expenses', a.ids, a.patch);
+      const patch = a.patch.category ? { ...a.patch, category: canonCategory(db, a.patch.category) } : a.patch;
+      updateRows(db, 'expenses', a.ids, patch);
       return { updated: getRows<ExpenseRow>(db, 'expenses', a.ids) };
     },
   }),
