@@ -1,6 +1,6 @@
 import { SettingsPageHeader } from '@aionui/ui';
 import { Button, DatePicker, Space, Table, Tag } from '@arco-design/web-react';
-import { Delete } from '@icon-park/react';
+import { Delete, Edit, Plus } from '@icon-park/react';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { parseLocalDate, toLocalDate } from '../../shared/dates';
@@ -9,6 +9,7 @@ import type { ExpenseList, ExpenseRow } from '../../shared/types';
 import { api, useUiSettings } from '../api';
 import { Thumbs } from '../components/Thumbs';
 import { useData } from '../useData';
+import { ExpenseForm } from './ExpenseForm';
 
 const monthRange = (month: string) => {
   const [y, m] = month.split('-').map(Number);
@@ -20,6 +21,7 @@ export function ExpensesPage() {
   const { moneyStyle } = useUiSettings();
   const money = (amount: number, currency: string) => formatMoney(amount, currency, moneyStyle);
   const [month, setMonth] = useState(() => toLocalDate().slice(0, 7));
+  const [editing, setEditing] = useState<ExpenseRow | null>(); // undefined: closed, null: adding
   const read = useCallback(() => api.data.read<ExpenseList>('list_expenses', monthRange(month)), [month]);
   const { data, loading, busy, remove, holders } = useData<ExpenseList>(read, { items: [], totals: [] });
 
@@ -38,17 +40,27 @@ export function ExpensesPage() {
     {
       title: '',
       dataIndex: 'id',
-      width: 48,
+      width: 80,
       render: (id: number, r: ExpenseRow) => (
-        <Button
-          size='mini'
-          type='text'
-          status='danger'
-          icon={<Delete />}
-          aria-label={t('deleteExpense', { what: r.description || r.category })}
-          disabled={busy.includes(id)}
-          onClick={() => remove(id, 'delete_expenses', `${r.description || r.category}: ${money(r.amount, r.currency)}`)}
-        />
+        <Space size={0}>
+          <Button
+            size='mini'
+            type='text'
+            icon={<Edit />}
+            aria-label={t('editExpenseLabel', { what: r.description || r.category })}
+            disabled={busy.includes(id)}
+            onClick={() => setEditing(r)}
+          />
+          <Button
+            size='mini'
+            type='text'
+            status='danger'
+            icon={<Delete />}
+            aria-label={t('deleteExpense', { what: r.description || r.category })}
+            disabled={busy.includes(id)}
+            onClick={() => remove(id, 'delete_expenses', `${r.description || r.category}: ${money(r.amount, r.currency)}`)}
+          />
+        </Space>
       ),
     },
   ];
@@ -61,13 +73,18 @@ export function ExpensesPage() {
         sticky={false}
         description={data.totals.length ? t('total', { amount: data.totals.map((x) => money(x.total, x.currency)).join(' + ') }) : t('noExpenses')}
         actions={
-          <DatePicker.MonthPicker
-            aria-label={t('month')}
-            format='MM/YYYY'
-            value={`${month.slice(5)}/${month.slice(0, 4)}`}
-            allowClear={false}
-            onChange={(v: string) => v && setMonth(`${v.slice(3)}-${v.slice(0, 2)}`)}
-          />
+          <Space wrap>
+            <DatePicker.MonthPicker
+              aria-label={t('month')}
+              format='MM/YYYY'
+              value={`${month.slice(5)}/${month.slice(0, 4)}`}
+              allowClear={false}
+              onChange={(v: string) => v && setMonth(`${v.slice(3)}-${v.slice(0, 2)}`)}
+            />
+            <Button type='primary' icon={<Plus />} onClick={() => setEditing(null)}>
+              {t('common:add')}
+            </Button>
+          </Space>
         }
       />
       <Space wrap style={{ marginBottom: 16 }}>
@@ -80,6 +97,9 @@ export function ExpensesPage() {
           ))}
       </Space>
       <Table rowKey='id' columns={columns} data={data.items} pagination={false} loading={loading} />
+      {editing !== undefined && (
+        <ExpenseForm expense={editing} categories={data.items.map((x) => x.category)} onClose={() => setEditing(undefined)} />
+      )}
     </div>
   );
 }
