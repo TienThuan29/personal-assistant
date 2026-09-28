@@ -139,6 +139,9 @@ body {
 .row.is-done { opacity: 0.45; }
 .row.is-done .row-main { text-decoration: line-through; }
 .row-main { flex: 1; min-width: 0; }
+.row.is-closed { opacity: 0.55; }
+.form-row { display: flex; gap: 12px; }
+.form-row > * { flex: 1; min-width: 0; }
 
 .settings { display: flex; flex-direction: column; gap: 16px; }
 /* Arco fields use the same gray as SectionCard (bg-2) and vanish inside it. :where() keeps the

@@ -25,6 +25,7 @@ export const vi = {
     undoRemove: 'Giữ lại ảnh',
     imageRejected: 'Chỉ nhận ảnh PNG/JPEG, tối đa 20MB',
     tooManyImages: 'Tối đa {{max}} ảnh',
+    required: 'Bắt buộc',
     // @aionui/ui UiProvider labels
     ui: {
       cancel: 'Hủy',
@@ -135,7 +136,12 @@ export const vi = {
     deleteReminder: 'Xóa nhắc nhở: {{what}}',
     todayEmpty: 'Hôm nay không có việc hay nhắc nhở nào',
     // Tasks
-    tasksHint: 'Tick để hoàn thành. Muốn thêm hoặc sửa, hãy nhắn cho trợ lý.',
+    tasksHint: 'Tick để hoàn thành, bấm vào tiêu đề để sửa.',
+    status: { todo: 'Chưa xong', done: 'Đã xong', cancelled: 'Đã hủy' },
+    recurNone: 'Không lặp',
+    recurWeekly: 'Hằng tuần',
+    recurMonthly: 'Hằng tháng',
+    recurDay: 'Ngày trong tháng',
     all: 'Tất cả',
     today: 'Hôm nay',
     upcoming: 'Sắp tới',

@@ -1,6 +1,6 @@
 import { SettingsPageHeader } from '@aionui/ui';
-import { Button, Checkbox, Empty, Radio, Tag } from '@arco-design/web-react';
-import { Delete } from '@icon-park/react';
+import { Button, Checkbox, Empty, Radio, Space, Tag } from '@arco-design/web-react';
+import { Delete, Edit, Plus } from '@icon-park/react';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { parseLocalDate, recurrenceText, toLocalDate } from '../../shared/dates';
@@ -8,25 +8,32 @@ import type { TaskRow } from '../../shared/types';
 import { api } from '../api';
 import { Thumbs } from '../components/Thumbs';
 import { Skeleton, useData } from '../useData';
+import { TaskForm } from './TaskForm';
 
 const dueText = (t: TaskRow) =>
   [t.due_date && parseLocalDate(t.due_date).toLocaleDateString('vi-VN'), t.due_time].filter(Boolean).join(' ');
 
 export function TasksPage() {
   const [category, setCategory] = useState('all');
-  const read = useCallback(() => api.data.read<TaskRow[]>('list_tasks', category === 'all' ? {} : { category }), [category]);
+  const [status, setStatus] = useState('todo');
+  const [editing, setEditing] = useState<TaskRow | null>(); // undefined: closed, null: adding
+  const read = useCallback(
+    () => api.data.read<TaskRow[]>('list_tasks', category === 'all' ? { status } : { status, category }),
+    [category, status]
+  );
   const { data: tasks, loading, busy, write, remove, holders } = useData(read, []);
   const { t } = useTranslation(['pages', 'common']);
   const categories = t('common:category', { returnObjects: true }) as Record<string, string>;
   const priorityTags = { 1: <Tag color='red'>{t('priorityHigh')}</Tag>, 2: null, 3: <Tag>{t('priorityLow')}</Tag> };
 
   const today = toLocalDate();
-  const groups = [
+  // Closed and mixed views are one flat list; only open tasks group by due date.
+  const groups = status !== 'todo' ? ([['', tasks]] as const) : ([
     ['overdue', tasks.filter((x) => x.due_date && x.due_date < today)],
     ['today', tasks.filter((x) => x.due_date === today)],
     ['upcoming', tasks.filter((x) => x.due_date && x.due_date > today)],
     ['noDate', tasks.filter((x) => !x.due_date)],
-  ] as const;
+  ] as const);
 
   return (
     <div className='page'>
@@ -36,16 +43,27 @@ export function TasksPage() {
         sticky={false}
         description={t('tasksHint')}
         actions={
-          <Radio.Group
-            type='button'
-            value={category}
-            onChange={setCategory}
-            options={[
-              { label: t('all'), value: 'all' },
-              { label: categories.work, value: 'work' },
-              { label: categories.personal, value: 'personal' },
-            ]}
-          />
+          <Space wrap>
+            <Radio.Group
+              type='button'
+              value={status}
+              onChange={setStatus}
+              options={[...(['todo', 'done', 'cancelled'] as const).map((s) => ({ label: t(`status.${s}`), value: s })), { label: t('all'), value: 'all' }]}
+            />
+            <Radio.Group
+              type='button'
+              value={category}
+              onChange={setCategory}
+              options={[
+                { label: t('all'), value: 'all' },
+                { label: categories.work, value: 'work' },
+                { label: categories.personal, value: 'personal' },
+              ]}
+            />
+            <Button type='primary' icon={<Plus />} onClick={() => setEditing(null)}>
+              {t('common:add')}
+            </Button>
+          </Space>
         }
       />
       {loading && <Skeleton />}
@@ -54,39 +72,56 @@ export function TasksPage() {
         .filter(([, list]) => list.length)
         .map(([group, list]) => (
           <section key={group}>
-            <div className='group-title'>
-              {t(group)} <span className='count'>{list.length}</span>
-            </div>
-            {list.map((task) => (
-              <div key={task.id} className={busy.includes(task.id) ? 'row is-done' : 'row'}>
-                <Checkbox
-                  aria-label={t('complete', { title: task.title })}
-                  checked={busy.includes(task.id)}
-                  disabled={busy.includes(task.id)}
-                  onChange={() => void write(task.id, 'update_tasks', { ids: [task.id], patch: { status: 'done' } })}
-                />
-                <div className='row-main'>
-                  {task.title}
-                  {task.recurrence && <span className='muted'> · {recurrenceText(task.recurrence, t)}</span>}
-                  {task.notes && <div className='muted'>{task.notes}</div>}
-                  <Thumbs ids={task.attachment_ids} />
-                </div>
-                <span className={group === 'overdue' ? 'overdue' : 'muted'}>{dueText(task)}</span>
-                {priorityTags[task.priority]}
-                <Tag>{categories[task.category] ?? task.category}</Tag>
-                <Button
-                  size='mini'
-                  type='text'
-                  status='danger'
-                  icon={<Delete />}
-                  aria-label={t('deleteTask', { what: task.title })}
-                  disabled={busy.includes(task.id)}
-                  onClick={() => remove(task.id, 'delete_tasks', task.title)}
-                />
+            {group && (
+              <div className='group-title'>
+                {t(group)} <span className='count'>{list.length}</span>
               </div>
-            ))}
+            )}
+            {list.map((task) => {
+              const closed = task.status !== 'todo';
+              return (
+                <div key={task.id} className={busy.includes(task.id) ? 'row is-done' : closed ? 'row is-closed' : 'row'}>
+                  <Checkbox
+                    aria-label={t('complete', { title: task.title })}
+                    checked={closed || busy.includes(task.id)}
+                    disabled={closed || busy.includes(task.id)}
+                    onChange={() => void write(task.id, 'update_tasks', { ids: [task.id], patch: { status: 'done' } })}
+                  />
+                  <div className='row-main'>
+                    <button type='button' className='link' onClick={() => setEditing(task)}>
+                      {task.title}
+                    </button>
+                    {task.recurrence && <span className='muted'> · {recurrenceText(task.recurrence, t)}</span>}
+                    {task.notes && <div className='muted'>{task.notes}</div>}
+                    <Thumbs ids={task.attachment_ids} />
+                  </div>
+                  <span className={group === 'overdue' ? 'overdue' : 'muted'}>{dueText(task)}</span>
+                  {priorityTags[task.priority]}
+                  <Tag>{categories[task.category] ?? task.category}</Tag>
+                  <Button
+                    size='mini'
+                    type='text'
+                    icon={<Edit />}
+                    aria-label={`${t('editTask')}: ${task.title}`}
+                    onClick={() => setEditing(task)}
+                  />
+                  <Button
+                    size='mini'
+                    type='text'
+                    status='danger'
+                    icon={<Delete />}
+                    aria-label={t('deleteTask', { what: task.title })}
+                    disabled={busy.includes(task.id)}
+                    onClick={() => remove(task.id, 'delete_tasks', task.title)}
+                  />
+                </div>
+              );
+            })}
           </section>
         ))}
+      {editing !== undefined && (
+        <TaskForm task={editing} categories={tasks.map((x) => x.category)} onClose={() => setEditing(undefined)} />
+      )}
     </div>
   );
 }
