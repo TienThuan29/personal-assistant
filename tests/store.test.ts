@@ -51,7 +51,7 @@ describe('store', () => {
   it('tracks pending actions', () => {
     const { db } = testDb();
     const c = createConversation(db);
-    const id = createAction(db, { conversation_id: c, tool_call_id: 't1', tool_name: 'create_task', args: { title: 'A' }, preview: null });
+    const id = createAction(db, { conversation_id: c, message_id: null, tool_call_id: 't1', tool_name: 'create_task', args: { title: 'A' }, preview: null });
     expect(listActions(db, c, 'pending')).toMatchObject([{ id, args: { title: 'A' }, preview: null, result: null }]);
     finishAction(db, id, 'confirmed', { title: 'B' }, { ok: 1 });
     finishAction(db, id, 'cancelled', {}, null); // already resolved: ignored
@@ -66,7 +66,7 @@ describe('store', () => {
     img(addMessage(db, other, { role: 'user', content: 'keep' }));
     const c = createConversation(db);
     img(addMessage(db, c, { role: 'user', content: 'x' }));
-    createAction(db, { conversation_id: c, tool_call_id: 't', tool_name: 'x', args: {}, preview: null });
+    createAction(db, { conversation_id: c, message_id: null, tool_call_id: 't', tool_name: 'x', args: {}, preview: null });
     deleteConversation(db, c);
     const count = (t: string) => db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get();
     expect([count('messages'), count('pending_actions'), count('attachments')]).toEqual([{ n: 1 }, { n: 0 }, { n: 1 }]);

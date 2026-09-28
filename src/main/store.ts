@@ -61,12 +61,13 @@ const toAction = (r: ActionRow): PendingAction => ({
 
 export function createAction(
   db: Db,
-  a: { conversation_id: number; tool_call_id: string; tool_name: string; args: unknown; preview: unknown }
+  a: { conversation_id: number; message_id: number | null; tool_call_id: string; tool_name: string; args: unknown; preview: unknown }
 ): number {
   return Number(
     db
-      .prepare('INSERT INTO pending_actions (conversation_id, tool_call_id, tool_name, args, preview) VALUES (?, ?, ?, ?, ?)')
-      .run(a.conversation_id, a.tool_call_id, a.tool_name, JSON.stringify(a.args), JSON.stringify(a.preview ?? null)).lastInsertRowid
+      .prepare('INSERT INTO pending_actions (conversation_id, message_id, tool_call_id, tool_name, args, preview) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(a.conversation_id, a.message_id, a.tool_call_id, a.tool_name, JSON.stringify(a.args), JSON.stringify(a.preview ?? null))
+      .lastInsertRowid
   );
 }
 

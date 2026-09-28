@@ -79,8 +79,8 @@ export async function runTurn(deps: AgentDeps, conversationId: number, signal?: 
     const calls = reply.tool_calls ?? [];
     // One transaction: a tool_calls message is never stored without its replies or parked actions.
     const outcomes = tx(deps.db, () => {
-      addMessage(deps.db, conversationId, reply);
-      return calls.map((c) => handleCall(deps, conversationId, c));
+      const messageId = addMessage(deps.db, conversationId, reply);
+      return calls.map((c) => handleCall(deps, conversationId, messageId, c));
     });
     deps.emit({ type: 'saved', conversationId });
     calls.forEach((c, i) => outcomes[i] === 'ran' && deps.emit({ type: 'tool', conversationId, name: c.function.name }));
@@ -101,7 +101,7 @@ export async function runTurn(deps: AgentDeps, conversationId: number, signal?: 
 }
 
 /** Runs a read tool now ('ran'), parks a write tool as a pending action ('parked'), or answers with an error. */
-function handleCall(deps: AgentDeps, conversationId: number, c: ToolCall): 'ran' | 'parked' | 'error' {
+function handleCall(deps: AgentDeps, conversationId: number, messageId: number, c: ToolCall): 'ran' | 'parked' | 'error' {
   const respond = (result: unknown): void =>
     void addMessage(deps.db, conversationId, { role: 'tool', tool_call_id: c.id, content: JSON.stringify(result) });
   const tool = findTool(c.function.name);
@@ -131,7 +131,7 @@ function handleCall(deps: AgentDeps, conversationId: number, c: ToolCall): 'ran'
     respond({ error: errMsg(e) }); // e.g. unknown ids: tell the model instead of showing a broken card
     return 'error';
   }
-  createAction(deps.db, { conversation_id: conversationId, tool_call_id: c.id, tool_name: tool.name, args, preview });
+  createAction(deps.db, { conversation_id: conversationId, message_id: messageId, tool_call_id: c.id, tool_name: tool.name, args, preview });
   return 'parked';
 }
 

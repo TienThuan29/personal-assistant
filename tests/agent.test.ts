@@ -153,6 +153,21 @@ describe('runTurn', () => {
     expect(getMessages(deps.db, conv).at(-1)).toMatchObject({ role: 'assistant', content: 'Xong.' });
   });
 
+  it('links each parked action to its assistant message, even when a gateway reuses tool_call_ids', async () => {
+    const deps = testDeps([call('call_0', 'create_task', { title: 'A' }), say('Ok.'), call('call_0', 'create_task', { title: 'B' })]);
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    resolveAction(deps, listActions(deps.db, conv, 'pending')[0].id, 'confirm');
+    await runTurn(deps, conv);
+    addMessage(deps.db, conv, { role: 'user', content: 'again' });
+    await runTurn(deps, conv);
+    const withCalls = getMessages(deps.db, conv).filter((m) => m.role === 'assistant' && m.tool_calls);
+    expect(listActions(deps.db, conv).map((a) => [a.tool_call_id, a.message_id])).toEqual([
+      ['call_0', withCalls[0].id],
+      ['call_0', withCalls[1].id],
+    ]);
+  });
+
   it('LLM errors keep partial text and emit an error', async () => {
     const broken: Llm = {
       async *stream() {

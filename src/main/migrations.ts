@@ -101,4 +101,7 @@ export const MIGRATIONS: string[] = [
 
   CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   `,
+  // The assistant message that proposed the action: tool_call_ids are not unique (some gateways reuse call_0, call_1...).
+  // Older rows stay NULL and are matched by tool_call_id.
+  `ALTER TABLE pending_actions ADD COLUMN message_id INTEGER;`,
 ];

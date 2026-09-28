@@ -59,6 +59,8 @@ export type ChatMessage = StoredMessage & { id: number; created_at: string };
 export type PendingAction = {
   id: number;
   conversation_id: number;
+  /** The assistant message holding the tool call; null on rows from before migration 2. */
+  message_id: number | null;
   tool_call_id: string;
   tool_name: string;
   args: Record<string, unknown>;

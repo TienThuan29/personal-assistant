@@ -6363,6 +6363,7 @@ Done after Task 26, one commit each. The listings above are not all updated; the
 
 1. **Installer** (`build:`): `win.target: nsis`, per-user one-click with a Start-menu shortcut (Task 26 listing updated). The shortcut carries the AppUserModelID, so toasts show. The login item uses the default path (`process.execPath`, the install location).
 2. **Hôm nay page** (`feat(ui):`): `Page` gains `'today'`, the sider gets "Hôm nay" (icon-park `Sun`) above Task, and `src/renderer/pages/TodayPage.tsx` shows `get_today_overview` (overdue and today's tasks with a done checkbox, today's reminders, the total spent today) plus `list_reminders` from tomorrow through the next 7 days. Each reminder has "Bỏ qua" (`update_reminders` with `status: 'dismissed'`) and delete (confirm dialog). The upcoming list starts tomorrow so today's reminders are not listed twice. A toast click opens this page instead of Task.
+3. **Cards by message** (`fix(chat):`): migration 2 adds `pending_actions.message_id`, set by `handleCall` to the assistant message it belongs to (its id is known inside the same transaction). `MessageList` matches cards by `message_id`, falling back to `tool_call_id` for older rows, so a gateway that reuses ids (`call_0` every turn) no longer shows a card under every message.
 
 ---
 

@@ -31,7 +31,9 @@ const MessageRow = memo(function MessageRow({ m, actions, resolve }: { m: ChatMe
       </div>
     );
 
-  const cards = (m.tool_calls ?? []).flatMap((c) => actions.filter((a) => a.tool_call_id === c.id));
+  // By message: tool_call_ids repeat across turns with some gateways. Rows from before migration 2 have no message_id.
+  const callIds = new Set((m.tool_calls ?? []).map((c) => c.id));
+  const cards = actions.filter((a) => (a.message_id === null ? callIds.has(a.tool_call_id) : a.message_id === m.id));
   const open = cards.filter((a) => a.status === 'pending');
   const decide = (a: PendingAction, d: 'confirm' | 'cancel') => resolve(a.id, d, d === 'confirm' ? edits[a.id] : undefined);
   const confirmAll = async () => {
