@@ -21,7 +21,11 @@ export const llmConfigSchema = z
   .object({
     provider: z.enum(['azure', 'gateway']),
     endpoint,
-    model: z.string().trim(),
+    // Model is stored in plain text; refuse something that looks like a pasted key/token (it belongs in the key field).
+    model: z
+      .string()
+      .trim()
+      .refine((m) => !/^(sk|pk|gw|key)[-_]|^bearer\s/i.test(m), 'errors:modelLooksLikeKey'),
     apiVersion: z.string().trim(),
   })
   // `when`: also check when the endpoint is invalid, so every error shows at once.

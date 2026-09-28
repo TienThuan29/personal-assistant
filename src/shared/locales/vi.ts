@@ -201,6 +201,7 @@ export const vi = {
     endpointUrl: 'Endpoint chưa đúng dạng URL (vd https://…)',
     endpointHttps: 'Endpoint phải dùng https',
     modelRequired: 'Chưa nhập model/deployment',
+    modelLooksLikeKey: 'Ô Model trông giống API key/token. Hãy dán key vào ô Access token/API key và để trống hoặc nhập tên model ở ô Model.',
     apiVersionRequired: 'Chưa nhập API version',
     // tools
     notFound: 'Không tìm thấy {{table}} #{{ids}}',

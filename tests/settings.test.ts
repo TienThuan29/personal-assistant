@@ -57,6 +57,14 @@ describe('settings', () => {
     expect(r.error?.issues.map((i) => tr(i.message))).toEqual(['Chưa nhập model/deployment', 'Chưa nhập API version']);
   });
 
+  it('refuses a key/token pasted into the plain-text Model field', () => {
+    const gw = { provider: 'gateway', endpoint: 'https://gw.example/v1', apiVersion: '' };
+    for (const m of ['sk-gw-0740c47e9f5a', 'sk_live_abc', 'Bearer abc'])
+      expect(llmConfigSchema.safeParse({ ...gw, model: m }).error?.issues.map((i) => tr(i.message))[0]).toMatch(/Access token/);
+    for (const m of ['gpt-4o', 'anthropic.claude-3-5-sonnet-20240620-v1:0', 'gemini-1.5-pro', ''])
+      expect(llmConfigSchema.safeParse({ ...gw, model: m }).success).toBe(true);
+  });
+
   it('explains invalid fields in Vietnamese', () => {
     const r = llmConfigSchema.safeParse({ provider: 'azure', endpoint: '', model: ' ', apiVersion: '2024-10-21' });
     expect(r.error?.issues.map((i) => tr(i.message))).toEqual(['Endpoint chưa đúng dạng URL (vd https://…)', 'Chưa nhập model/deployment']);

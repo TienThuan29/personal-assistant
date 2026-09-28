@@ -194,6 +194,7 @@ export const en: Resources = {
     endpointUrl: 'The endpoint is not a valid URL (e.g. https://…)',
     endpointHttps: 'The endpoint must use https',
     modelRequired: 'Enter a model/deployment',
+    modelLooksLikeKey: 'The Model field looks like an API key/token. Paste the key into the Access token/API key field, and leave Model empty or enter a model name.',
     apiVersionRequired: 'Enter an API version',
     notFound: 'Not found: {{table}} #{{ids}}',
     reminderPast: 'The reminder time has already passed',
