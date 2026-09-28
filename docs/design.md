@@ -91,7 +91,7 @@ tasks(id, title, notes, category TEXT DEFAULT 'personal',
       created_at, completed_at)
 
 reminders(id, task_id NULL REFERENCES tasks ON DELETE CASCADE,
-          message, remind_at TEXT,   -- ISO kèm offset
+          message, remind_at TEXT,   -- ISO UTC (toISOString), để sắp xếp theo chuỗi
           status TEXT CHECK(status IN ('pending','fired','dismissed')))
 
 notes(id, kind TEXT CHECK(kind IN ('note','journal')), title, body, created_at, updated_at)
