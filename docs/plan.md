@@ -1826,6 +1826,18 @@ describe('note tools', () => {
     callTool(ctx, 'create_note', { body: 'Họp với chị Lan về ngân sách quý 4' });
     const [hit] = callTool<NoteRow[]>(ctx, 'search_notes', { query: 'ngan sach' });
     expect(hit.snippet).toContain('**');
+    expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'NGÂN SÁCH' })).toHaveLength(1);
+  });
+
+  it('matches title-only hits and đ as d', () => {
+    const ctx = testCtx();
+    callTool(ctx, 'create_note', { title: 'Đi chợ', body: 'mua rau' });
+    expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'cho' })).toHaveLength(1);
+    expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'di cho' })).toHaveLength(1);
+    expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'ĐI' })).toHaveLength(1);
+    callTool(ctx, 'create_note', { body: 'dự án' });
+    expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'đự' })).toHaveLength(1);
+    expect(ftsQuery('Đi')).toBe('("di"* OR "đi"*)');
   });
 
   it('prefix-matches and survives punctuation-only queries', () => {
@@ -1833,7 +1845,7 @@ describe('note tools', () => {
     callTool(ctx, 'create_note', { body: 'Ý tưởng khởi nghiệp' });
     expect(callTool<NoteRow[]>(ctx, 'search_notes', { query: 'khởi' })).toHaveLength(1);
     expect(() => callTool(ctx, 'search_notes', { query: '" - *' })).not.toThrow();
-    expect(ftsQuery('a"b c')).toBe('"a""b"* "c"*');
+    expect(ftsQuery('a"b c')).toBe('"a""b"* AND "c"*');
   });
 
   it('re-indexes on update and forgets on delete', () => {
@@ -1883,24 +1895,33 @@ import {
 
 const kind = z.enum(['note', 'journal']).describe("'note' ghi chú, 'journal' nhật ký");
 
-/** FTS5 query from free text: each word quoted (so no syntax errors) and prefix-matched. */
+const phrase = (w: string): string => `"${w.replace(/"/g, '""')}"*`;
+
+/**
+ * FTS5 query from free text: each word quoted (so no syntax errors) and prefix-matched.
+ * unicode61 does not fold đ to d, so a word starting with d/đ matches both (đ only starts a Vietnamese syllable).
+ */
 export const ftsQuery = (text: string): string =>
   text
     .split(/\s+/)
     .filter((w) => /[\p{L}\p{N}]/u.test(w))
-    .map((w) => `"${w.replace(/"/g, '""')}"*`)
-    .join(' ');
+    .map((w) => (/^[dđ]/iu.test(w) ? `(${phrase(`d${w.slice(1)}`)} OR ${phrase(`đ${w.slice(1)}`)})` : phrase(w)))
+    .join(' AND ');
 
 export const noteTools = [
   readTool({
     name: 'search_notes',
-    description: 'Tìm ghi chú/nhật ký theo từ khóa (không phân biệt dấu) và khoảng ngày tạo. Bỏ trống query để lấy mới nhất. Trả về đoạn trích.',
+    description:
+      'Tìm ghi chú/nhật ký theo từ khóa và khoảng ngày tạo. Bỏ trống query để lấy mới nhất. Trả về đoạn trích; đọc toàn văn bằng get_notes.',
     schema: z.object({
-      query: z.string().optional(),
+      query: z
+        .string()
+        .optional()
+        .describe('Từ khóa tìm trong tiêu đề và nội dung, không phân biệt dấu và hoa thường, khớp cả đầu từ; mọi từ phải có mặt'),
       kind: kind.optional(),
-      from: date.optional(),
-      to: date.optional(),
-      limit: z.number().int().min(1).max(100).default(20),
+      from: date.optional().describe('Ngày tạo từ (tính cả ngày này)'),
+      to: date.optional().describe('Ngày tạo đến (tính cả ngày này)'),
+      limit: z.number().int().min(1).max(100).default(20).describe('Số kết quả tối đa (1-100)'),
     }),
     run: (a, { db }) => {
       const q = a.query ? ftsQuery(a.query) || undefined : undefined;
@@ -1970,6 +1991,8 @@ export const noteTools = [
   }),
 ];
 ```
+
+FTS5 `unicode61` does not fold `đ` to `d` (it has no Unicode decomposition), so `ftsQuery` expands a word starting with d/đ into `("d…"* OR "đ…"*)` (đ only starts a Vietnamese syllable). FTS5 has no implicit AND after a parenthesized group, so words are joined with ` AND `.
 
 **Step 4: Register the tools**: `[...taskTools, ...reminderTools, ...noteTools]`
 
