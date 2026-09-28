@@ -65,3 +65,25 @@ export function recurrenceText(rule: string, t: TFunction<Namespace> = (viT ??= 
   if (rule.startsWith('monthly:')) return t('common:recurMonthly', { day: rule.slice(8) });
   return rule;
 }
+
+/** A recurrence rule as form fields. weekdays: 1 = Monday … 7 = Sunday. */
+export type RecurrenceForm = { kind: 'none' | 'daily' | 'weekly' | 'monthly'; weekdays: number[]; day: number };
+
+export function parseRecurrence(s: string | null): RecurrenceForm {
+  const f: RecurrenceForm = { kind: 'none', weekdays: [], day: 1 };
+  if (!s || !RECURRENCE_RE.test(s)) return f;
+  if (s === 'daily') return { ...f, kind: 'daily' };
+  if (s.startsWith('weekly:')) return { ...f, kind: 'weekly', weekdays: s.slice(7).split(',').map(Number) };
+  return { ...f, kind: 'monthly', day: Number(s.slice(8)) };
+}
+
+/** The rule for RECURRENCE_RE, or null for none (and for weekly without days). */
+export function formatRecurrence(f: RecurrenceForm): string | null {
+  if (f.kind === 'daily') return 'daily';
+  if (f.kind === 'weekly') {
+    const days = [...new Set(f.weekdays)].filter((d) => Number.isInteger(d) && d >= 1 && d <= 7).sort((a, b) => a - b);
+    return days.length ? `weekly:${days.join(',')}` : null;
+  }
+  if (f.kind === 'monthly') return `monthly:${Math.min(31, Math.max(1, Math.round(f.day) || 1))}`;
+  return null;
+}

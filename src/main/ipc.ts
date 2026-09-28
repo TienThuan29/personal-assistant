@@ -5,6 +5,7 @@ import { newAttachmentId, saveAttachment } from './attachments';
 import { type Db, tx } from './db';
 import { i18n, setLanguage } from './i18n';
 import { collect, createLlm, describeLlmError, listModels } from './llm';
+import { saveRecord } from './save';
 import { activeLlm, type Cipher, getLlm, getUi, parseLlmSettings, readSecrets, saveUi, setSetting, writeSecret } from './settings';
 import {
   addMessage,
@@ -151,6 +152,13 @@ export function registerIpc(m: MainCtx): void {
     const result = tx(m.db, () => tool.apply(parsed, ctx));
     m.onDataChanged();
     return result;
+  });
+  ipcMain.handle('data:save', (_e, name: unknown, args: unknown, images: unknown = [], removeIds?: unknown) => {
+    if (!Array.isArray(images) || images.length > MAX_IMAGES) throw new UserError('tooManyImages', { max: MAX_IMAGES });
+    const jpegs = images.map((img: ImageInput) => toJpeg(img?.bytes)); // validate everything before saving anything
+    const row = saveRecord({ ...ctx, attachmentsDir: m.attachmentsDir }, name, args, jpegs, removeIds);
+    m.onDataChanged();
+    return row;
   });
 
   ipcMain.handle('settings:get', (): SettingsView => {

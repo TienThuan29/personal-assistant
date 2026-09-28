@@ -230,6 +230,7 @@ export const en: Resources = {
     emptyMessage: 'The message is empty',
     invalidDecision: 'Invalid decision',
     notAllowed: 'Not allowed: {{name}}',
+    saveOneRecord: 'Only one record can be saved at a time',
     invalidApiKey: 'Invalid API key',
     invalidValue: 'Invalid value',
     noEncryption: 'The operating system does not support encryption (safeStorage)',

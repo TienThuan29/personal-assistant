@@ -130,6 +130,8 @@ export type Api = {
   data: {
     read<T = unknown>(tool: string, args: object): Promise<T>;
     write(tool: string, args: object): Promise<unknown>;
+    /** A create_* / update_* of one record, adding images and removing its attachments `removeIds`; returns the saved row. */
+    save(tool: string, args: object, images?: ImageInput[], removeIds?: string[]): Promise<unknown>;
     onChanged(cb: () => void): () => void;
   };
   settings: {

@@ -29,6 +29,7 @@ const api: Api = {
   data: {
     read: (tool, args) => invoke('data:read', tool, args),
     write: (tool, args) => invoke('data:write', tool, args),
+    save: (tool, args, images, removeIds) => invoke('data:save', tool, args, images, removeIds),
     onChanged: listen<void>('data:changed'),
   },
   settings: {

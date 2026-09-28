@@ -241,6 +241,7 @@ export const vi = {
     emptyMessage: 'Tin nhắn trống',
     invalidDecision: 'Quyết định không hợp lệ',
     notAllowed: 'Không cho phép: {{name}}',
+    saveOneRecord: 'Chỉ lưu được một bản ghi mỗi lần',
     invalidApiKey: 'API key không hợp lệ',
     invalidValue: 'Giá trị không hợp lệ',
     // startup
