@@ -3862,6 +3862,26 @@ describe('reminder scheduler', () => {
     expect(fired).toEqual([['Far']]);
     s.stop();
   });
+
+  it('a throwing notify neither re-fires nor stops the timer', () => {
+    const ctx = testCtx(() => new Date());
+    const fired: string[] = [];
+    const s = createScheduler({
+      db: ctx.db,
+      now: () => new Date(),
+      notify: (rows) => {
+        fired.push(...rows.map((r) => r.message));
+        throw new Error('notification failed');
+      },
+    });
+    callTool(ctx, 'create_reminder', { message: 'A', remind_at: '2026-09-28T09:01' });
+    callTool(ctx, 'create_reminder', { message: 'B', remind_at: '2026-09-28T09:30' });
+    vi.setSystemTime(new Date(2026, 8, 28, 9, 5));
+    expect(() => s.refresh()).toThrow('notification failed');
+    expect(() => vi.advanceTimersByTime(25 * 60_000)).toThrow('notification failed');
+    expect(fired).toEqual(['A', 'B']);
+    s.stop();
+  });
 });
 ```
 
@@ -3874,7 +3894,7 @@ Expected: FAIL, cannot resolve module.
 
 ```ts
 import type { ReminderRow } from '../shared/types';
-import type { Db } from './db';
+import { type Db, tx } from './db';
 
 const MAX_WAIT = 60 * 60 * 1000;
 
@@ -3882,6 +3902,8 @@ const MAX_WAIT = 60 * 60 * 1000;
  * Fires due reminders (several at once = one grouped notification) and sleeps until the next one,
  * at most an hour at a time so clock changes and sleep/resume can't make it miss.
  * Call refresh() after any reminder write and on powerMonitor 'resume'.
+ * Due rows are marked fired and the next timer armed before notify runs, so a throwing notify
+ * never re-fires them or stops the scheduler, and notify may call refresh() itself.
  */
 export function createScheduler(opts: { db: Db; now: () => Date; notify: (due: ReminderRow[]) => void }) {
   const { db, now, notify } = opts;
@@ -3889,16 +3911,17 @@ export function createScheduler(opts: { db: Db; now: () => Date; notify: (due: R
 
   function refresh(): void {
     clearTimeout(timer);
-    const due = db
-      .prepare("SELECT * FROM reminders WHERE status = 'pending' AND remind_at <= ? ORDER BY remind_at")
-      .all(now().toISOString()) as unknown as ReminderRow[];
-    if (due.length) {
+    const due = tx(db, () => {
+      const rows = db
+        .prepare("SELECT * FROM reminders WHERE status = 'pending' AND remind_at <= ? ORDER BY remind_at")
+        .all(now().toISOString()) as unknown as ReminderRow[];
       const mark = db.prepare("UPDATE reminders SET status = 'fired' WHERE id = ?");
-      for (const r of due) mark.run(r.id);
-      notify(due);
-    }
+      for (const r of rows) mark.run(r.id);
+      return rows;
+    });
     const { at } = db.prepare("SELECT MIN(remind_at) AS at FROM reminders WHERE status = 'pending'").get() as { at: string | null };
     if (at) timer = setTimeout(refresh, Math.min(Math.max(Date.parse(at) - now().getTime(), 0), MAX_WAIT));
+    if (due.length) notify(due);
   }
 
   return { refresh, stop: () => clearTimeout(timer) };
@@ -3908,7 +3931,7 @@ export function createScheduler(opts: { db: Db; now: () => Date; notify: (due: R
 **Step 4: Run to verify it passes**
 
 Run: `bun run test tests/reminders.test.ts`
-Expected: PASS (3 tests).
+Expected: PASS (4 tests).
 
 **Step 5: Commit**
 
