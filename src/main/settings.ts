@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { z } from 'zod/v4';
-import { DEFAULT_LLM, DEFAULT_UI, type LlmConfig, type LlmSettings, type Provider, type UiSettings } from '../shared/types';
+import { DEFAULT_LLM, DEFAULT_UI, type LlmConfig, type LlmSettings, type Provider, PROVIDER_NAMES, type UiSettings } from '../shared/types';
 import type { Db } from './db';
 import { tr, UserError } from './errors';
 
@@ -47,6 +47,19 @@ export const llmSettingsSchema = z
     message: 'errors:apiVersionRequired',
     when: () => true,
   });
+
+/**
+ * Validates LLM settings from the renderer, throwing the translated issues. An issue in the provider that is not on screen
+ * (not `active`) is prefixed with its name, e.g. "Azure AI Foundry: Endpoint phải dùng https".
+ */
+export function parseLlmSettings(v: unknown): LlmSettings {
+  const r = llmSettingsSchema.safeParse(v);
+  if (r.success) return r.data;
+  const active = (v as { active?: unknown } | null)?.active;
+  const text = ({ path: [p], message }: (typeof r.error.issues)[number]) =>
+    (p === 'azure' || p === 'gateway') && p !== active ? `${PROVIDER_NAMES[p]}: ${tr(message)}` : tr(message);
+  throw new Error([...new Set(r.error.issues.map(text))].join('; '));
+}
 
 /**
  * The stored LLM settings over the defaults. A row in the old flat shape `{provider, endpoint, model, apiVersion}` reads as

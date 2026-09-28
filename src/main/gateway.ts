@@ -39,16 +39,28 @@ function parseBlock(raw: string): ToolCall[] {
   return items.map((i) => call(i.name as string, typeof i.arguments === 'string' ? i.arguments : JSON.stringify(i.arguments ?? {})));
 }
 
-/** The calls in every ```tool_calls block of a reply (an unclosed last block too). */
-export const parseToolCalls = (text: string): ToolCall[] =>
-  [...text.matchAll(/```tool_calls[^\n]*\n?([\s\S]*?)(?:```|$)/g)].flatMap((b) => parseBlock(b[1].trim()));
+/**
+ * A ```tool_calls block, used by both the parser and the stream so they always agree on where a block ends:
+ * - on its own lines: the body runs to a closing ``` at the START of a line (JSON strings hold no raw newlines, so a fence
+ *   inside a string value, e.g. a note with code, never closes it), or to the end of the reply when unclosed;
+ * - inline (JSON on the fence line): the rest of that line, minus a trailing ```.
+ * Every fence matches, so text the stream hides always becomes at least one call (maybe BAD_BLOCK).
+ */
+const BLOCK = /```tool_calls(?:[ \t]*\r?\n([\s\S]*?)(?:\r?\n```[ \t]*(?=\r?\n|$)|$)|([^\n]*))/g;
 
-/** How much of a streamed reply the user may see: everything before a ```tool_calls fence, holding back a partial one (G7). */
-export function visibleLength(text: string): number {
-  const at = text.indexOf(FENCE);
-  if (at >= 0) return at;
-  for (let k = Math.min(FENCE.length - 1, text.length); k > 0; k--) if (FENCE.startsWith(text.slice(-k))) return text.length - k;
-  return text.length;
+/** The calls in every ```tool_calls block of a reply. */
+export const parseToolCalls = (text: string): ToolCall[] =>
+  [...text.matchAll(BLOCK)].flatMap((m) => parseBlock((m[1] ?? m[2].trim().replace(/`{3}$/, '')).trim()));
+
+/**
+ * The reply as the user sees it: every block removed. While `streaming`, a trailing partial fence is held back too (G7).
+ * An unclosed block runs to the end, so this only grows as text arrives.
+ */
+export function visibleText(text: string, streaming = false): string {
+  const visible = text.replace(BLOCK, '');
+  if (!streaming) return visible;
+  for (let k = Math.min(FENCE.length - 1, visible.length); k > 0; k--) if (FENCE.startsWith(visible.slice(-k))) return visible.slice(0, -k);
+  return visible;
 }
 
 type Content = ChatCompletionMessageParam['content'];
@@ -99,21 +111,22 @@ const chunk = (delta: ChatCompletionChunk.Choice.Delta, finish: string | null = 
  */
 export async function* fromGateway(stream: AsyncIterable<ChatCompletionChunk>): AsyncGenerator<ChatCompletionChunk> {
   let text = '';
-  let sent = 0;
+  let shown = '';
   let finish: string | null = null;
+  const show = function* (visible: string) {
+    if (visible.length <= shown.length || !visible.startsWith(shown)) return; // only ever append
+    yield chunk({ content: visible.slice(shown.length) });
+    shown = visible;
+  };
   for await (const c of stream) {
     const choice = c.choices[0];
     if (!choice) continue;
     if (choice.finish_reason) finish = choice.finish_reason;
     if (!choice.delta?.content) continue;
     text += choice.delta.content;
-    const visible = visibleLength(text);
-    if (visible > sent) {
-      yield chunk({ content: text.slice(sent, visible) });
-      sent = visible;
-    }
+    yield* show(visibleText(text, true));
   }
-  if (!text.includes(FENCE) && text.length > sent) yield chunk({ content: text.slice(sent) }); // a held-back partial fence
+  yield* show(visibleText(text)); // a held-back partial fence that never became one
   for (const [index, c] of parseToolCalls(text).entries()) yield chunk({ tool_calls: [{ index, ...c }] });
   if (finish) yield chunk({}, finish);
 }

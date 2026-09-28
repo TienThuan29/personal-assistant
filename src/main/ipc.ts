@@ -5,7 +5,7 @@ import { newAttachmentId, saveAttachment } from './attachments';
 import { type Db, tx } from './db';
 import { i18n, setLanguage } from './i18n';
 import { collect, createLlm, describeLlmError, listModels } from './llm';
-import { activeLlm, type Cipher, getLlm, getUi, llmSettingsSchema, readSecrets, saveUi, setSetting, writeSecret } from './settings';
+import { activeLlm, type Cipher, getLlm, getUi, parseLlmSettings, readSecrets, saveUi, setSetting, writeSecret } from './settings';
 import {
   addMessage,
   createConversation,
@@ -17,7 +17,7 @@ import {
   setTitleIfNew,
 } from './store';
 import { findTool, parseArgs } from './tools';
-import { te, tr, UserError } from './errors';
+import { te, UserError } from './errors';
 
 export type MainCtx = {
   db: Db;
@@ -169,12 +169,11 @@ export function registerIpc(m: MainCtx): void {
     };
   });
   ipcMain.handle('settings:save', (_e, s: SettingsInput) => {
-    const parsed = llmSettingsSchema.safeParse(s?.llm);
-    if (!parsed.success) throw new Error([...new Set(parsed.error.issues.map((i) => tr(i.message)))].join('; '));
+    const llm = parseLlmSettings(s?.llm);
     if (s.apiKey !== undefined && typeof s.apiKey !== 'string') throw new UserError('invalidApiKey');
-    setSetting(m.db, 'llm', parsed.data);
+    setSetting(m.db, 'llm', llm);
     const key = s.apiKey?.trim();
-    if (key) writeSecret(m.secretsFile, m.cipher, parsed.data.active, key);
+    if (key) writeSecret(m.secretsFile, m.cipher, llm.active, key);
   });
   ipcMain.handle('settings:listModels', async (_e, provider: unknown) => {
     if (provider !== 'gateway') throw new UserError('invalidValue'); // only a gateway lists its models (design G2)

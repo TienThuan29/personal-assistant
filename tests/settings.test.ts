@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { activeLlm, type Cipher, getLlm, getSetting, getUi, llmSettingsSchema, readSecrets, saveUi, setSetting, writeSecret } from '../src/main/settings';
+import { activeLlm, type Cipher, getLlm, getSetting, getUi, llmSettingsSchema, parseLlmSettings, readSecrets, saveUi, setSetting, writeSecret } from '../src/main/settings';
 import { DEFAULT_LLM, DEFAULT_UI } from '../src/shared/types';
 import { tr } from '../src/main/tools/common';
 import { tempDir, testDb } from './helpers';
@@ -65,6 +65,18 @@ describe('settings', () => {
     expect(errors(settings('azure', { endpoint: 'https://r', model: 'm', apiVersion: ' ' }))).toEqual(['Chưa nhập API version']);
     expect(errors({ ...gw, active: 'other' })).toEqual(['Giá trị không hợp lệ']);
     expect(errors(null)?.length).toBeGreaterThan(0);
+  });
+
+  it('names the provider that is not on screen in its errors', () => {
+    const gw = settings('gateway', { endpoint: 'http://example.com', model: 'sk-abc' }, { endpoint: 'not a url' });
+    expect(() => parseLlmSettings(gw)).toThrow(
+      /^Azure AI Foundry: Endpoint phải dùng https; Azure AI Foundry: Ô Model trông giống[^;]*; Endpoint chưa đúng dạng URL \(vd https:\/\/…\)$/
+    );
+    expect(() => parseLlmSettings({ ...gw, active: 'azure', gateway: { endpoint: 'http://x.com', model: '' } })).toThrow(
+      /^Endpoint phải dùng https; Ô Model[^;]*; LLM gateway: Endpoint phải dùng https$/
+    );
+    expect(parseLlmSettings(settings('gateway', {}, { endpoint: 'https://gw/v1' })).gateway.endpoint).toBe('https://gw/v1');
+    expect(() => parseLlmSettings(undefined)).toThrow();
   });
 
   it('refuses a key/token pasted into the plain-text Model field of either provider', () => {

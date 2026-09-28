@@ -4,7 +4,7 @@ import { Refresh } from '@icon-park/react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatMoney } from '../../shared/money';
-import { DEFAULT_LLM, type LlmSettings, type Provider, type SettingsView, type UiSettings } from '../../shared/types';
+import { DEFAULT_LLM, type LlmSettings, type Provider, PROVIDER_NAMES, type SettingsView, type UiSettings } from '../../shared/types';
 import { api, errorText, useUiSettings } from '../api';
 
 const CURRENCIES = ['VND', 'USD', 'EUR', 'JPY'];
@@ -82,7 +82,10 @@ export function SettingsPage() {
     setLoadingModels(true);
     api.settings
       .listModels('gateway')
-      .then(setModels, (e) => !quiet && message.error?.(errorText(e)))
+      .then(setModels, (e) => {
+        setModels([]); // don't offer models of an endpoint that no longer answers
+        if (!quiet) message.error?.(errorText(e));
+      })
       .finally(() => setLoadingModels(false));
   };
 
@@ -147,8 +150,8 @@ export function SettingsPage() {
             }}
             style={{ width: 380 }}
             options={[
-              { label: 'Azure AI Foundry', value: 'azure' },
-              { label: 'LLM gateway', value: 'gateway' },
+              { label: PROVIDER_NAMES.azure, value: 'azure' },
+              { label: PROVIDER_NAMES.gateway, value: 'gateway' },
             ]}
           />
         </PreferenceRow>

@@ -1,7 +1,7 @@
 import type { ChatCompletionChunk, ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { buildLlmMessages, resolveAction, runTurn } from '../src/main/agent';
 import { newAttachmentId, saveAttachment } from '../src/main/attachments';
-import { BAD_BLOCK, fromGateway, parseToolCalls, toGatewayMessages, visibleLength } from '../src/main/gateway';
+import { BAD_BLOCK, fromGateway, parseToolCalls, toGatewayMessages, visibleText } from '../src/main/gateway';
 import { collect, createLlm } from '../src/main/llm';
 import { addMessage, createConversation, getMessages, listActions } from '../src/main/store';
 import { toOpenAITools } from '../src/main/tools';
@@ -31,6 +31,29 @@ describe('parseToolCalls', () => {
     expect(names('```tool_calls  \n[{"name":"list_tasks","arguments":{}}]')).toEqual([['list_tasks', '{}']]);
   });
 
+  it('a code fence inside a JSON string value does not close the block', () => {
+    const body = 'Ví dụ:\n```js\nconsole.log(1)\n```\nhết';
+    const reply = `Mình ghi lại nhé.\n${block([{ name: 'create_note', arguments: { body } }])}\nXong.`;
+    const [c] = parseToolCalls(reply);
+    expect(c.function.name).toBe('create_note');
+    expect(JSON.parse(c.function.arguments)).toEqual({ body });
+    expect(visibleText(reply)).toBe('Mình ghi lại nhé.\n\nXong.');
+    // pretty-printed JSON too: an indented ``` is not at the start of a line
+    expect(names('```tool_calls\n[\n  {"name": "list_tasks", "arguments": {"q": "```"}}\n]\n```')).toEqual([['list_tasks', '{"q":"```"}']]);
+  });
+
+  it('reads CRLF line endings', () => {
+    expect(names('Ok\r\n```tool_calls\r\n[{"name":"list_tasks","arguments":{}}]\r\n```\r\n')).toEqual([['list_tasks', '{}']]);
+    expect(visibleText('Ok\r\n```tool_calls\r\n[{"name":"list_tasks"}]\r\n```\r\nXong')).toBe('Ok\r\n\r\nXong');
+  });
+
+  it('reads an inline block on the fence line, without swallowing the next lines', () => {
+    const reply = 'Xem nhé ```tool_calls [{"name":"list_tasks","arguments":{}}]```\nĐợi chút.';
+    expect(names(reply)).toEqual([['list_tasks', '{}']]);
+    expect(visibleText(reply)).toBe('Xem nhé \nĐợi chút.');
+    expect(names('```tool_calls json\n[]\n```')).toEqual([[BAD_BLOCK, 'json']]); // an info string: told to resend
+  });
+
   it('turns bad JSON or a nameless item into one BAD_BLOCK call holding the raw block (G9)', () => {
     expect(names('```tool_calls\n[{"name": "list_tasks", "arguments": {]\n```')).toEqual([[BAD_BLOCK, '[{"name": "list_tasks", "arguments": {]']]);
     expect(names(block([{ arguments: {} }]))).toEqual([[BAD_BLOCK, '[{"arguments":{}}]']]);
@@ -45,12 +68,14 @@ describe('parseToolCalls', () => {
   });
 });
 
-describe('visibleLength', () => {
-  it('holds back a fence and anything that could still become one', () => {
-    expect(visibleLength('Chào')).toBe(4);
-    expect(visibleLength('Xem nhé ```tool')).toBe(8);
-    expect(visibleLength('Xem ```tool_calls\n[')).toBe(4);
-    expect(visibleLength('Mã:\n```ts')).toBe(9); // another code block streams on
+describe('visibleText while streaming', () => {
+  it('hides blocks, and holds back anything that could still become a fence', () => {
+    expect(visibleText('Chào', true)).toBe('Chào');
+    expect(visibleText('Xem nhé ```tool', true)).toBe('Xem nhé ');
+    expect(visibleText('Xem ```tool_calls', true)).toBe('Xem ');
+    expect(visibleText('Xem ```tool_calls\n[{"q":"\\n```', true)).toBe('Xem '); // unclosed: hidden to the end
+    expect(visibleText('Mã:\n```ts', true)).toBe('Mã:\n```ts'); // another code block streams on
+    expect(visibleText('Xem nhé ```tool', false)).toBe('Xem nhé ```tool'); // at the end, a partial fence is plain text
   });
 });
 
@@ -76,6 +101,18 @@ describe('fromGateway', () => {
     const msg = await collect(fromGateway(chunked('Dùng lệnh `ls`', 2)), (d) => shown.push(d));
     expect(shown.join('')).toBe('Dùng lệnh `ls`');
     expect(msg).toEqual({ role: 'assistant', content: 'Dùng lệnh `ls`' });
+  });
+
+  it('streams text after a closed block, and a fence inside a JSON string stays hidden, at any chunk size', async () => {
+    const body = 'a\n```js\nx\n```';
+    const reply = `Trước.\n${block([{ name: 'create_note', arguments: { body } }])}\nSau.`;
+    for (const size of [1, 4, 1000]) {
+      const shown: string[] = [];
+      const msg = await collect(fromGateway(chunked(reply, size)), (d) => shown.push(d));
+      expect(shown.join('')).toBe('Trước.\n\nSau.');
+      expect(msg.content).toBe('Trước.\n\nSau.');
+      expect(JSON.parse(msg.tool_calls![0].function.arguments)).toEqual({ body });
+    }
   });
 
   it('still reports a cut-off reply', async () => {

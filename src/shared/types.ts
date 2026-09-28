@@ -91,6 +91,8 @@ export type LlmSettings = {
   azure: { endpoint: string; model: string; apiVersion: string };
   gateway: { endpoint: string; model: string };
 };
+/** Product names, the same in every language. */
+export const PROVIDER_NAMES: Record<Provider, string> = { azure: 'Azure AI Foundry', gateway: 'LLM gateway' };
 export const DEFAULT_LLM: LlmSettings = {
   active: 'gateway',
   azure: { endpoint: '', model: '', apiVersion: '2024-10-21' },
