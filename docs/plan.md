@@ -5851,7 +5851,7 @@ export function useData<T>(read: () => Promise<T>, initial: T, delay = 0) {
       {modalHolder}
     </>
   );
-  return { data, busy, write, remove, holders };
+  return { data, busy, write, remove, fail, holders };
 }
 ```
 
@@ -5975,60 +5975,83 @@ git commit -m "feat(ui): task quick view grouped by due date"
 
 **Files:**
 - Replace: `src/renderer/pages/NotesPage.tsx`, `src/renderer/pages/ExpensesPage.tsx`
+- Modify: `src/renderer/styles.css`
+
+Both pages use `useData` from Task 23.
 
 **Step 1: `NotesPage.tsx`**
+
+The note title is a real `<button>` for keyboard users; the snippet is also clickable with the mouse. Only a typed query is debounced, so the list shows right away.
 
 ```tsx
 import { AionModal, AionSearchInput, SettingsPageHeader } from '@aionui/ui';
 import { Button, Empty, Tag } from '@arco-design/web-react';
 import { Delete } from '@icon-park/react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { NoteRow } from '../../shared/types';
 import { api } from '../api';
 import { Thumbs } from '../components/Thumbs';
+import { useData } from '../useData';
 
 /** Renders the ⟦match⟧ markers from FTS snippets as <mark>. */
 const highlight = (s: string) => s.split(/[⟦⟧]/).map((part, i) => (i % 2 ? <mark key={i}>{part}</mark> : part));
 
+const when = (iso: string) => new Date(iso).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' });
+
 export function NotesPage() {
   const [query, setQuery] = useState('');
-  const [notes, setNotes] = useState<NoteRow[]>([]);
   const [open, setOpen] = useState<NoteRow | null>(null);
+  const read = useCallback(() => api.data.read<NoteRow[]>('search_notes', { query: query.trim() || undefined, limit: 100 }), [query]);
+  const { data: notes, busy, remove, fail, holders } = useData(read, [], query ? 250 : 0); // debounce typing
 
-  const load = useCallback(() => {
-    void api.data.read<NoteRow[]>('search_notes', { query: query.trim() || undefined, limit: 100 }).then(setNotes);
-  }, [query]);
-  useEffect(() => {
-    const t = setTimeout(load, 250); // debounce typing
-    const off = api.data.onChanged(load);
-    return () => {
-      clearTimeout(t);
-      off();
-    };
-  }, [load]);
-
-  const openNote = async (id: number) => setOpen((await api.data.read<NoteRow[]>('get_notes', { ids: [id] }))[0] ?? null);
+  const openNote = (id: number) => void api.data.read<NoteRow[]>('get_notes', { ids: [id] }).then((r) => setOpen(r[0] ?? null), fail);
 
   return (
     <div className='page'>
-      <SettingsPageHeader title='Ghi chú & nhật ký' description='Tìm không cần gõ dấu. Muốn thêm hoặc sửa, hãy nhắn cho trợ lý.' />
-      <AionSearchInput value={query} onChange={setQuery} placeholder='Tìm ghi chú…' allowClear />
-      {!notes.length && <Empty description='Không có ghi chú nào' />}
+      {holders}
+      <SettingsPageHeader title='Ghi chú & nhật ký' sticky={false} description='Tìm không cần gõ dấu. Muốn thêm hoặc sửa, hãy nhắn cho trợ lý.' />
+      <AionSearchInput value={query} onChange={setQuery} placeholder='Tìm ghi chú…' />
+      {!notes.length && <Empty description={query.trim() ? 'Không tìm thấy ghi chú nào' : 'Chưa có ghi chú nào'} />}
       {notes.map((n) => (
         <div key={n.id} className='row'>
-          <div className='row-main' style={{ cursor: 'pointer' }} onClick={() => void openNote(n.id)}>
+          <div className='row-main'>
             <div>
-              {n.kind === 'journal' && <Tag color='purple'>Nhật ký</Tag>} <b>{n.title}</b>
+              {n.kind === 'journal' && <Tag color='purple'>Nhật ký</Tag>}{' '}
+              <button type='button' className='link' onClick={() => openNote(n.id)}>
+                {n.title || 'Không tiêu đề'}
+              </button>
             </div>
-            <div className='muted'>{highlight(n.snippet ?? '')}</div>
+            <div className='muted snippet' onClick={() => openNote(n.id)}>
+              {highlight(n.snippet ?? '')}
+            </div>
             <Thumbs ids={n.attachment_ids} />
           </div>
-          <span className='muted'>{new Date(n.created_at).toLocaleString('vi-VN')}</span>
-          <Button size='mini' type='text' status='danger' icon={<Delete />} onClick={() => void api.data.write('delete_notes', { ids: [n.id] })} />
+          <span className='muted'>{when(n.created_at)}</span>
+          <Button
+            size='mini'
+            type='text'
+            status='danger'
+            icon={<Delete />}
+            aria-label={`Xóa ghi chú: ${n.title || 'Không tiêu đề'}`}
+            disabled={busy.includes(n.id)}
+            onClick={() => remove(n.id, 'delete_notes', n.title || n.snippet?.replace(/[⟦⟧]/g, '') || '')}
+          />
         </div>
       ))}
-      <AionModal visible={open !== null} onCancel={() => setOpen(null)} size='large' header={{ title: open?.title || 'Ghi chú' }} footer={null}>
-        <div style={{ whiteSpace: 'pre-wrap' }}>{open?.body}</div>
+      <AionModal
+        visible={open !== null}
+        onCancel={() => setOpen(null)}
+        size='large'
+        style={{ height: 'auto' }}
+        header={open?.title || 'Ghi chú'}
+        footer={null}
+      >
+        {open && (
+          <>
+            <div className='muted'>{when(open.created_at)}</div>
+            <div className='note-body'>{open.body}</div>
+          </>
+        )}
       </AionModal>
     </div>
   );
@@ -6041,12 +6064,13 @@ export function NotesPage() {
 import { SettingsPageHeader } from '@aionui/ui';
 import { Button, DatePicker, Space, Table, Tag } from '@arco-design/web-react';
 import { Delete } from '@icon-park/react';
-import { useCallback, useEffect, useState } from 'react';
-import { toLocalDate } from '../../shared/dates';
+import { useCallback, useState } from 'react';
+import { parseLocalDate, toLocalDate } from '../../shared/dates';
 import { formatMoney } from '../../shared/money';
 import type { ExpenseList, ExpenseRow } from '../../shared/types';
 import { api } from '../api';
 import { Thumbs } from '../components/Thumbs';
+import { useData } from '../useData';
 
 const monthRange = (month: string) => {
   const [y, m] = month.split('-').map(Number);
@@ -6055,24 +6079,17 @@ const monthRange = (month: string) => {
 
 export function ExpensesPage() {
   const [month, setMonth] = useState(() => toLocalDate().slice(0, 7));
-  const [data, setData] = useState<ExpenseList>({ items: [], totals: [] });
+  const read = useCallback(() => api.data.read<ExpenseList>('list_expenses', monthRange(month)), [month]);
+  const { data, busy, remove, holders } = useData<ExpenseList>(read, { items: [], totals: [] });
 
-  const load = useCallback(() => {
-    void api.data.read<ExpenseList>('list_expenses', monthRange(month)).then(setData);
-  }, [month]);
-  useEffect(() => {
-    load();
-    return api.data.onChanged(load);
-  }, [load]);
-
-  const byCategory = new Map<string, { currency: string; total: number }>();
+  const byCategory = new Map<string, { category: string; currency: string; total: number }>();
   for (const e of data.items) {
     const key = `${e.category}|${e.currency}`;
-    byCategory.set(key, { currency: e.currency, total: (byCategory.get(key)?.total ?? 0) + e.amount });
+    byCategory.set(key, { category: e.category, currency: e.currency, total: (byCategory.get(key)?.total ?? 0) + e.amount });
   }
 
   const columns = [
-    { title: 'Ngày', dataIndex: 'spent_at', width: 110 },
+    { title: 'Ngày', dataIndex: 'spent_at', width: 110, render: (v: string) => parseLocalDate(v).toLocaleDateString('vi-VN') },
     { title: 'Danh mục', dataIndex: 'category', width: 140 },
     { title: 'Mô tả', dataIndex: 'description', render: (v: string | null) => v ?? '—' },
     { title: 'Số tiền', dataIndex: 'amount', align: 'right' as const, render: (_: number, r: ExpenseRow) => formatMoney(r.amount, r.currency) },
@@ -6081,25 +6098,43 @@ export function ExpensesPage() {
       title: '',
       dataIndex: 'id',
       width: 48,
-      render: (id: number) => (
-        <Button size='mini' type='text' status='danger' icon={<Delete />} onClick={() => void api.data.write('delete_expenses', { ids: [id] })} />
+      render: (id: number, r: ExpenseRow) => (
+        <Button
+          size='mini'
+          type='text'
+          status='danger'
+          icon={<Delete />}
+          aria-label={`Xóa khoản chi: ${r.description ?? r.category}`}
+          disabled={busy.includes(id)}
+          onClick={() => remove(id, 'delete_expenses', `${r.description ?? r.category}: ${formatMoney(r.amount, r.currency)}`)}
+        />
       ),
     },
   ];
 
   return (
     <div className='page'>
+      {holders}
       <SettingsPageHeader
         title='Chi tiêu'
-        description={data.totals.map((t) => `Tổng: ${formatMoney(t.total, t.currency)}`).join(' · ') || 'Chưa có khoản chi'}
-        actions={<DatePicker.MonthPicker value={month} allowClear={false} onChange={(v: string) => v && setMonth(v)} />}
+        sticky={false}
+        description={data.totals.length ? `Tổng: ${data.totals.map((t) => formatMoney(t.total, t.currency)).join(' + ')}` : 'Chưa có khoản chi'}
+        actions={
+          <DatePicker.MonthPicker
+            aria-label='Tháng'
+            format='MM/YYYY'
+            value={`${month.slice(5)}/${month.slice(0, 4)}`}
+            allowClear={false}
+            onChange={(v: string) => v && setMonth(`${v.slice(3)}-${v.slice(0, 2)}`)}
+          />
+        }
       />
-      <Space wrap style={{ margin: '8px 0 16px' }}>
-        {[...byCategory]
-          .sort((a, b) => b[1].total - a[1].total)
-          .map(([key, v]) => (
-            <Tag key={key}>
-              {key.split('|')[0]}: {formatMoney(v.total, v.currency)}
+      <Space wrap style={{ marginBottom: 16 }}>
+        {[...byCategory.values()]
+          .sort((a, b) => b.total - a.total)
+          .map((v) => (
+            <Tag key={`${v.category}|${v.currency}`}>
+              {v.category}: {formatMoney(v.total, v.currency)}
             </Tag>
           ))}
       </Space>
@@ -6109,10 +6144,20 @@ export function ExpensesPage() {
 }
 ```
 
+Append to `styles.css`:
+
+```css
+.link { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; text-align: start; }
+.link:hover { color: rgb(var(--primary-6)); }
+.snippet { cursor: pointer; }
+mark { background: rgb(var(--warning-2)); color: inherit; border-radius: 2px; }
+.note-body { margin-top: 8px; max-height: 60vh; overflow: auto; white-space: pre-wrap; }
+```
+
 **Step 3: Verify** (`bun run typecheck`, `bun run dev`)
 
 - Notes: search "ngan sach" finds "ngân sách" with the match highlighted, and clicking a row opens the full text.
-- Expenses: switching months reloads, per-category tags and the total match, receipt thumbnails zoom on click, and delete works.
+- Expenses: switching months reloads, per-category tags and the total match, receipt thumbnails zoom on click, and delete (after the confirm) works.
 
 **Step 4: Commit**
 

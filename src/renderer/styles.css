@@ -84,3 +84,8 @@ body {
 .settings :where(.arco-input-inner-wrapper, .arco-input),
 .settings .arco-select-view { background-color: var(--bg-1); border: 1px solid var(--border-base); }
 .overdue { color: rgb(var(--danger-6)); font-size: 12px; }
+.link { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; text-align: start; }
+.link:hover { color: rgb(var(--primary-6)); }
+.snippet { cursor: pointer; }
+mark { background: rgb(var(--warning-2)); color: inherit; border-radius: 2px; }
+.note-body { margin-top: 8px; max-height: 60vh; overflow: auto; white-space: pre-wrap; }

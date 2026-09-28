@@ -61,5 +61,5 @@ export function useData<T>(read: () => Promise<T>, initial: T, delay = 0) {
       {modalHolder}
     </>
   );
-  return { data, busy, write, remove, holders };
+  return { data, busy, write, remove, fail, holders };
 }
