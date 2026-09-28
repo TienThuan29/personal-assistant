@@ -4799,7 +4799,13 @@ Lets you (or an agent) check the UI from a terminal. Add `writeFileSync` to the 
         await sleep(Number(process.env.PA_SCREENSHOT_DELAY ?? 2500)); // nav earlier loses to the app opening the latest chat
         if (process.env.PA_PAGE) send('nav', process.env.PA_PAGE);
         await sleep(300);
-        writeFileSync(shot, (await w.capturePage()).toPNG());
+        let img = await w.capturePage();
+        for (let i = 0; i < 5 && img.isEmpty(); i++) {
+          await sleep(500); // the window may not have painted yet
+          img = await w.capturePage();
+        }
+        if (img.isEmpty()) throw new Error('Screenshot is empty');
+        writeFileSync(shot, img.toPNG());
         app.exit(0);
       } catch (e) {
         console.error(e);
@@ -4809,6 +4815,7 @@ Lets you (or an agent) check the UI from a terminal. Add `writeFileSync` to the 
   }
 ```
 
+If the capture comes back empty (the window has not painted yet), it retries up to 5 times, 500 ms apart, then exits 1.
 `PA_PAGE` goes through the renderer's `api.onNavigate`, so it takes `tasks`, `notes`, `expenses` or `settings` (without it you get the latest chat). The nav is sent after the delay, not on `did-finish-load`: `openLatest()` resolves later and would switch back to the chat.
 The run uses the normal dev profile, so on a fresh profile it creates a conversation in the dev DB (empty, so the next start prunes it).
 
@@ -5046,12 +5053,12 @@ export function Thumbs({ ids }: { ids?: string[] | string | null }) {
 
 **Step 2: `src/renderer/chat/ConfirmCard.tsx`**
 
-This is one generic card for all write tools (see the deviation table). Creates get editable fields. Updates and deletes show the current rows, with before → after for each patched field. Only fields the LLM filled appear (none can be added). Each editor follows the arg's original type, so clearing a number keeps a number field, and a cleared field is sent as omitted (zod then rejects a required one and the card stays pending). A write that failed on confirm is stored as `cancelled` with `result.error`, so the tag says "Thất bại" instead of "Đã hủy". Once resolved, the card shows the stored `action.args`, not the local edits. Enum values, recurrence rules and dates read in Vietnamese; `kind` and `priority` are picked from a Select; long text fields use an auto-growing TextArea.
+This is one generic card for all write tools (see the deviation table). Creates get editable fields. Updates and deletes show the current rows, with before → after for each patched field. Only fields the LLM filled appear (none can be added). Each editor follows the arg's original type, so clearing a number keeps a number field, and a cleared field is sent as omitted (zod then rejects a required one and the card stays pending). A write that failed on confirm is stored as `cancelled` with `result.error`, so the tag says "Thất bại" instead of "Đã hủy". Once resolved, the card shows the stored `action.args`, not the local edits. Enum values, recurrence rules and dates read in Vietnamese; `kind` and `priority` are picked from a Select; long text fields use an auto-growing TextArea, while the title and other short fields stay single-line. A valid recurrence rule shows its Vietnamese reading next to its input, like the amount does.
 
 ```tsx
 import { Alert, Button, Input, InputNumber, Select, Space, Tag } from '@arco-design/web-react';
 import { useState } from 'react';
-import { parseLocalDate, recurrenceText } from '../../shared/dates';
+import { parseLocalDate, RECURRENCE_RE, recurrenceText } from '../../shared/dates';
 import { formatMoney } from '../../shared/money';
 import type { PendingAction } from '../../shared/types';
 import { Thumbs } from '../components/Thumbs';
@@ -5100,7 +5107,7 @@ const VALUE_LABELS: Record<string, Record<string, string>> = {
 };
 const SELECTS = new Set(['kind', 'priority']);
 /** Single-line string fields; the others get an auto-growing textarea. */
-const SHORT = new Set(['due_date', 'due_time', 'remind_at', 'spent_at', 'currency', 'category', 'recurrence']);
+const SHORT = new Set(['title', 'due_date', 'due_time', 'remind_at', 'spent_at', 'currency', 'category']);
 
 const STATUS = {
   pending: { color: 'arcoblue', text: 'Chờ xác nhận' },
@@ -5122,9 +5129,9 @@ const fmt = (k: string, v: unknown): string => {
 };
 const cut = (s: string, n = 60): string => (s.length > n ? `${s.slice(0, n)}…` : s);
 const describe = (r: Row): string => {
-  if (r.amount != null) return `${cut(String(r.description ?? r.category))} · ${formatMoney(Number(r.amount), String(r.currency))}`;
+  if (r.amount != null) return `${cut(String(r.description || r.category))} · ${formatMoney(Number(r.amount), String(r.currency))}`;
   if (r.remind_at) return `${cut(String(r.message))} · ${fmt('remind_at', r.remind_at)}`;
-  return cut(String(r.title ?? r.body ?? ''));
+  return cut(String(r.title || r.body || ''));
 };
 
 export function ConfirmCard(props: {
@@ -5169,6 +5176,14 @@ export function ConfirmCard(props: {
         <Space>
           <InputNumber aria-label={label} value={v as number | undefined} onChange={set} />
           {k === 'amount' && typeof v === 'number' && <span className='muted'>{formatMoney(v, currency)}</span>}
+        </Space>
+      );
+    }
+    if (k === 'recurrence') {
+      return (
+        <Space>
+          <Input aria-label={label} value={String(v ?? '')} onChange={set} />
+          {RECURRENCE_RE.test(String(v)) && <span className='muted'>{recurrenceText(String(v))}</span>}
         </Space>
       );
     }
@@ -5263,11 +5278,17 @@ git commit -m "feat(ui): image thumbnails and generic confirm card"
 - Create: `src/renderer/chat/useChat.ts`, `src/renderer/chat/MessageList.tsx`, `src/renderer/chat/SendBox.tsx`
 - Replace: `src/renderer/chat/ChatPage.tsx`
 
+Notes on the less obvious parts:
+- **Running state after send/retry/resolve.** Main stops a running turn and awaits it before starting the next, so the stopped turn's `done` arrives *before* the IPC call returns. The hook marks the new turn running again afterwards, unless the last event was `error` or `pending`: a missing config makes the new turn fail synchronously, also before the call returns, and the spinner must not stick.
+- **Confirm all** shows a loading state and stops at the first card that fails (IPC error or a failed write), so its error stays visible. `chat.resolve` returns `true` on success for this.
+- **Message rows are memoized** (`React.memo`, stable `chat.resolve`), and each row keeps its own card edits, so stream deltas and typing in a card don't re-render every Markdown block.
+- **Scrolling follows the list's size** (a `ResizeObserver`), not `useAutoScroll`: `Markdown` fills its shadow root one render after it mounts, so a content-change check scrolls too early, ends short of the bottom, and then stops following (opening a long chat showed its top; a long answer ended cut off).
+
 **Step 1: `src/renderer/chat/useChat.ts`**
 
 ```ts
-import { useCallback, useEffect, useState } from 'react';
-import type { ChatMessage, ImageInput, PendingAction } from '../../shared/types';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { AgentEvent, ChatMessage, ImageInput, PendingAction } from '../../shared/types';
 import { api, errorText } from '../api';
 
 /** Chat state for one conversation; main streams events, and the DB stays the source of truth (reload on each step). */
@@ -5278,6 +5299,7 @@ export function useChat(conversationId: number) {
   const [running, setRunning] = useState(false);
   const [tool, setTool] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const last = useRef<AgentEvent['type'] | null>(null);
 
   const reload = useCallback(async () => {
     const [m, a] = await Promise.all([api.chat.messages(conversationId), api.chat.actions(conversationId)]);
@@ -5290,6 +5312,7 @@ export function useChat(conversationId: number) {
     void reload();
     return api.chat.onEvent((e) => {
       if (e.conversationId !== conversationId) return;
+      last.current = e.type;
       if (e.type === 'text') {
         setStreaming((s) => s + e.delta);
         setTool(null);
@@ -5309,7 +5332,7 @@ export function useChat(conversationId: number) {
     });
   }, [conversationId, reload]);
 
-  const guard = async (fn: () => Promise<unknown>) => {
+  const guard = useCallback(async (fn: () => Promise<unknown>) => {
     setError(null);
     try {
       await fn();
@@ -5317,34 +5340,47 @@ export function useChat(conversationId: number) {
       setRunning(false);
       setError(errorText(e));
     }
-  };
+  }, []);
 
-  return {
-    messages,
-    actions,
-    streaming,
-    running,
-    tool,
-    error,
-    send: (text: string, images: ImageInput[]) =>
-      guard(async () => {
-        setRunning(true);
-        await api.chat.send(conversationId, text, images);
-        await reload();
-      }),
-    stop: () => void api.chat.stop(conversationId),
-    retry: () =>
-      guard(async () => {
-        setRunning(true);
-        await api.chat.retry(conversationId);
-      }),
-    resolve: (actionId: number, decision: 'confirm' | 'cancel', args?: unknown) =>
-      guard(async () => {
+  // Main stops a running turn before starting the next one, so the stopped turn's 'done' lands before send/retry/resolve
+  // returns. The new turn is then marked running again, unless it has already ended: a config error or pending cards end
+  // it before the call returns.
+  const ended = () => last.current === 'error' || last.current === 'pending';
+
+  const send = (text: string, images: ImageInput[]) =>
+    guard(async () => {
+      setRunning(true);
+      last.current = null;
+      await api.chat.send(conversationId, text, images);
+      if (!ended()) setRunning(true);
+      await reload();
+    });
+  const stop = () => void api.chat.stop(conversationId);
+  const retry = () =>
+    guard(async () => {
+      setRunning(true);
+      last.current = null;
+      await api.chat.retry(conversationId);
+      if (!ended()) setRunning(true);
+    });
+
+  /** False if main refused or the write failed, so "confirm all" can stop at that card. Stable, for the memoized rows. */
+  const resolve = useCallback(
+    async (actionId: number, decision: 'confirm' | 'cancel', args?: unknown): Promise<boolean> => {
+      let ok = false;
+      await guard(async () => {
+        last.current = null;
         await api.chat.resolve(actionId, decision, args);
         const left = await reload();
-        if (!left.some((a) => a.status === 'pending')) setRunning(true); // main resumed the turn
-      }),
-  };
+        ok = !(left.find((a) => a.id === actionId)?.result as { error?: string } | null)?.error;
+        if (!left.some((a) => a.status === 'pending') && !ended()) setRunning(true); // main resumed the turn
+      });
+      return ok;
+    },
+    [guard, reload]
+  );
+
+  return { messages, actions, streaming, running, tool, error, send, stop, retry, resolve };
 }
 
 export type ChatState = ReturnType<typeof useChat>;
@@ -5353,11 +5389,11 @@ export type ChatState = ReturnType<typeof useChat>;
 **Step 2: `src/renderer/chat/MessageList.tsx`**
 
 ```tsx
-import { ThoughtDisplay, useAutoScroll } from '@aionui/ui';
+import { ThoughtDisplay } from '@aionui/ui';
 import { Markdown } from '@aionui/ui/markdown';
 import { Alert, Button } from '@arco-design/web-react';
-import { useRef, useState } from 'react';
-import type { PendingAction } from '../../shared/types';
+import { memo, useEffect, useRef, useState } from 'react';
+import type { ChatMessage, PendingAction } from '../../shared/types';
 import { Thumbs } from '../components/Thumbs';
 import { ConfirmCard } from './ConfirmCard';
 import type { ChatState } from './useChat';
@@ -5372,12 +5408,80 @@ const TOOL_LABELS: Record<string, string> = {
   query_readonly_sql: 'thống kê dữ liệu',
 };
 
+/** One message; memoized (with its card edits kept here) so streaming and typing don't re-render every Markdown block. */
+const MessageRow = memo(function MessageRow({ m, actions, resolve }: { m: ChatMessage; actions: PendingAction[]; resolve: ChatState['resolve'] }) {
+  const [edits, setEdits] = useState<Record<number, Record<string, unknown>>>({});
+  const [confirmingAll, setConfirmingAll] = useState(false);
+
+  if (m.role === 'tool') return null;
+  if (m.role === 'user')
+    return (
+      <div className='msg-user'>
+        {m.content}
+        <Thumbs ids={m.attachment_ids} />
+      </div>
+    );
+
+  const cards = (m.tool_calls ?? []).flatMap((c) => actions.filter((a) => a.tool_call_id === c.id));
+  const open = cards.filter((a) => a.status === 'pending');
+  const decide = (a: PendingAction, d: 'confirm' | 'cancel') => resolve(a.id, d, d === 'confirm' ? edits[a.id] : undefined);
+  const confirmAll = async () => {
+    setConfirmingAll(true);
+    try {
+      // Sequential by design; stop at the first failure so its error stays visible.
+      for (const a of open) if (!(await decide(a, 'confirm'))) break; // oxlint-disable-line no-await-in-loop
+    } finally {
+      setConfirmingAll(false);
+    }
+  };
+
+  return (
+    <div className='msg-assistant'>
+      {m.content && <Markdown>{m.content}</Markdown>}
+      {cards.map((a) => (
+        <ConfirmCard
+          key={a.id}
+          action={a}
+          args={edits[a.id] ?? a.args}
+          onArgsChange={(args) => setEdits((e) => ({ ...e, [a.id]: args }))}
+          onResolve={async (d) => {
+            await decide(a, d);
+          }}
+        />
+      ))}
+      {open.length > 1 && (
+        <Button type='primary' loading={confirmingAll} style={{ alignSelf: 'flex-start' }} onClick={() => void confirmAll()}>
+          Xác nhận tất cả ({open.length})
+        </Button>
+      )}
+    </div>
+  );
+});
+
 export function MessageList({ chat }: { chat: ChatState }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [edits, setEdits] = useState<Record<number, Record<string, unknown>>>({});
-  useAutoScroll({ containerRef: ref, content: `${chat.messages.length}:${chat.streaming.length}:${chat.actions.length}:${chat.running}` });
-  const byCall = new Map(chat.actions.map((a) => [a.tool_call_id, a]));
-  const resolve = (a: PendingAction, d: 'confirm' | 'cancel') => chat.resolve(a.id, d, d === 'confirm' ? edits[a.id] : undefined);
+  // Follow new content while the user is at the bottom. This watches the list's size, not its content (as useAutoScroll
+  // does): Markdown fills its shadow root a render after it mounts, so a content check scrolls too early and stops short.
+  useEffect(() => {
+    const el = ref.current!;
+    let stick = true;
+    let lastTop = 0;
+    const onScroll = () => {
+      // Scrolling up unsticks, reaching the bottom sticks again. The scroll event of our own jump can arrive after
+      // more growth, so a gap alone must not unstick.
+      stick = el.scrollHeight - el.scrollTop - el.clientHeight < 40 || (stick && el.scrollTop >= lastTop);
+      lastTop = el.scrollTop;
+    };
+    const ro = new ResizeObserver(() => {
+      if (stick) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(el.firstElementChild!);
+    el.addEventListener('scroll', onScroll);
+    return () => {
+      ro.disconnect();
+      el.removeEventListener('scroll', onScroll);
+    };
+  }, []);
 
   return (
     <div ref={ref} className='messages'>
@@ -5389,42 +5493,7 @@ export function MessageList({ chat }: { chat: ChatState }) {
             hoặc gõ <b>/</b> để xem lệnh nhanh.
           </div>
         )}
-        {chat.messages.map((m) => {
-          if (m.role === 'tool') return null;
-          if (m.role === 'user')
-            return (
-              <div key={m.id} className='msg-user'>
-                {m.content}
-                <Thumbs ids={m.attachment_ids} />
-              </div>
-            );
-          const cards = (m.tool_calls ?? []).flatMap((c) => byCall.get(c.id) ?? []);
-          const open = cards.filter((a) => a.status === 'pending');
-          return (
-            <div key={m.id} className='msg-assistant'>
-              {m.content && <Markdown>{m.content}</Markdown>}
-              {cards.map((a) => (
-                <ConfirmCard
-                  key={a.id}
-                  action={a}
-                  args={edits[a.id] ?? a.args}
-                  onArgsChange={(args) => setEdits((e) => ({ ...e, [a.id]: args }))}
-                  onResolve={(d) => resolve(a, d)}
-                />
-              ))}
-              {open.length > 1 && (
-                <Button
-                  type='primary'
-                  onClick={async () => {
-                    for (const a of open) await resolve(a, 'confirm'); // oxlint-disable-line no-await-in-loop -- sequential by design
-                  }}
-                >
-                  Xác nhận tất cả ({open.length})
-                </Button>
-              )}
-            </div>
-          );
-        })}
+        {chat.messages.map((m) => <MessageRow key={m.id} m={m} actions={chat.actions} resolve={chat.resolve} />)}
         {chat.streaming && (
           <div className='msg-assistant'>
             <Markdown>{chat.streaming}</Markdown>
@@ -5623,6 +5692,8 @@ export function ChatPage({ conversationId }: { conversationId: number }) {
 5. Type `/`. Expected: the slash menu; ↓ + Enter sends the canned prompt.
 6. Press Dừng during a reply. Expected: the partial text stays with "(bị gián đoạn)".
 7. Set a wrong key in Settings, then send. Expected: a red alert with the key hint and a "Thử lại" button.
+8. With no endpoint/key configured, send. Expected: the alert "Chưa cấu hình LLM. Mở Cài đặt…" with "Thử lại", the Gửi button (not Dừng) and no spinner. Thử lại gives the same alert.
+9. Open a long conversation. Expected: it opens scrolled to the latest message.
 
 **Step 6: Commit**
 

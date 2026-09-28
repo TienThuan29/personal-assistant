@@ -1,6 +1,6 @@
 import { Alert, Button, Input, InputNumber, Select, Space, Tag } from '@arco-design/web-react';
 import { useState } from 'react';
-import { parseLocalDate, recurrenceText } from '../../shared/dates';
+import { parseLocalDate, RECURRENCE_RE, recurrenceText } from '../../shared/dates';
 import { formatMoney } from '../../shared/money';
 import type { PendingAction } from '../../shared/types';
 import { Thumbs } from '../components/Thumbs';
@@ -49,7 +49,7 @@ const VALUE_LABELS: Record<string, Record<string, string>> = {
 };
 const SELECTS = new Set(['kind', 'priority']);
 /** Single-line string fields; the others get an auto-growing textarea. */
-const SHORT = new Set(['due_date', 'due_time', 'remind_at', 'spent_at', 'currency', 'category', 'recurrence']);
+const SHORT = new Set(['title', 'due_date', 'due_time', 'remind_at', 'spent_at', 'currency', 'category']);
 
 const STATUS = {
   pending: { color: 'arcoblue', text: 'Chờ xác nhận' },
@@ -71,9 +71,9 @@ const fmt = (k: string, v: unknown): string => {
 };
 const cut = (s: string, n = 60): string => (s.length > n ? `${s.slice(0, n)}…` : s);
 const describe = (r: Row): string => {
-  if (r.amount != null) return `${cut(String(r.description ?? r.category))} · ${formatMoney(Number(r.amount), String(r.currency))}`;
+  if (r.amount != null) return `${cut(String(r.description || r.category))} · ${formatMoney(Number(r.amount), String(r.currency))}`;
   if (r.remind_at) return `${cut(String(r.message))} · ${fmt('remind_at', r.remind_at)}`;
-  return cut(String(r.title ?? r.body ?? ''));
+  return cut(String(r.title || r.body || ''));
 };
 
 export function ConfirmCard(props: {
@@ -118,6 +118,14 @@ export function ConfirmCard(props: {
         <Space>
           <InputNumber aria-label={label} value={v as number | undefined} onChange={set} />
           {k === 'amount' && typeof v === 'number' && <span className='muted'>{formatMoney(v, currency)}</span>}
+        </Space>
+      );
+    }
+    if (k === 'recurrence') {
+      return (
+        <Space>
+          <Input aria-label={label} value={String(v ?? '')} onChange={set} />
+          {RECURRENCE_RE.test(String(v)) && <span className='muted'>{recurrenceText(String(v))}</span>}
         </Space>
       );
     }

@@ -177,7 +177,13 @@ async function start(): Promise<void> {
         await sleep(Number(process.env.PA_SCREENSHOT_DELAY ?? 2500)); // nav earlier loses to the app opening the latest chat
         if (process.env.PA_PAGE) send('nav', process.env.PA_PAGE);
         await sleep(300);
-        writeFileSync(shot, (await w.capturePage()).toPNG());
+        let img = await w.capturePage();
+        for (let i = 0; i < 5 && img.isEmpty(); i++) {
+          await sleep(500); // the window may not have painted yet
+          img = await w.capturePage();
+        }
+        if (img.isEmpty()) throw new Error('Screenshot is empty');
+        writeFileSync(shot, img.toPNG());
         app.exit(0);
       } catch (e) {
         console.error(e);

@@ -1,3 +1,13 @@
+import { MessageList } from './MessageList';
+import { SendBox } from './SendBox';
+import { useChat } from './useChat';
+
 export function ChatPage({ conversationId }: { conversationId: number }) {
-  return <div className='page'>Hội thoại #{conversationId}</div>;
+  const chat = useChat(conversationId);
+  return (
+    <div className='chat'>
+      <MessageList chat={chat} />
+      <SendBox running={chat.running} onSend={chat.send} onStop={chat.stop} />
+    </div>
+  );
 }
