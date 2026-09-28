@@ -83,3 +83,4 @@ body {
    input rule below Arco's hover/focus and inner-password rules, so those still apply. */
 .settings :where(.arco-input-inner-wrapper, .arco-input),
 .settings .arco-select-view { background-color: var(--bg-1); border: 1px solid var(--border-base); }
+.overdue { color: rgb(var(--danger-6)); font-size: 12px; }

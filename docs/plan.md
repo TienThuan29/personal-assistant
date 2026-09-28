@@ -5779,34 +5779,105 @@ git commit -m "feat(ui): streaming chat with confirm cards, images and slash com
 ### Task 23: Tasks page
 
 **Files:**
+- Create: `src/renderer/useData.tsx` (shared by the three data pages)
 - Replace: `src/renderer/pages/TasksPage.tsx`
+- Modify: `src/renderer/styles.css`
 
-**Step 1: Implement**
+**Step 1: `useData.tsx`**
+
+Loads on mount and on every `data:changed`, drops stale responses, shows read/write errors as a message, blocks a second write on a row while one is in flight, and asks before deleting.
+
+```tsx
+import { Message, Modal } from '@arco-design/web-react';
+import { useEffect, useRef, useState } from 'react';
+import { api, errorText } from './api';
+
+/**
+ * Data page plumbing: runs `read` (after `delay` ms) and again on every data:changed, keeps only the latest
+ * result, and runs row writes one at a time per row, showing failures as a message.
+ * `read` must be memoized (useCallback): a new function reloads.
+ */
+export function useData<T>(read: () => Promise<T>, initial: T, delay = 0) {
+  const [data, setData] = useState(initial);
+  const [busy, setBusy] = useState<number[]>([]);
+  const [message, messageHolder] = Message.useMessage();
+  const [modal, modalHolder] = Modal.useModal();
+  const fail = (e: unknown) => message.error?.(errorText(e));
+  const failRef = useRef(fail); // useMessage returns a new object every render
+  failRef.current = fail;
+
+  useEffect(() => {
+    let live = true; // drops responses of an older `read` (e.g. a previous search query)
+    const load = () =>
+      void read().then(
+        (d) => live && setData(d),
+        (e) => live && failRef.current(e)
+      );
+    const t = setTimeout(load, delay);
+    const off = api.data.onChanged(load);
+    return () => {
+      live = false;
+      clearTimeout(t);
+      off();
+    };
+  }, [read, delay]);
+
+  /** Direct UI writes need no confirm card (design D7); data:changed triggers the reload. */
+  const write = async (id: number, tool: string, args: object) => {
+    if (busy.includes(id)) return;
+    setBusy((b) => [...b, id]);
+    try {
+      await api.data.write(tool, args);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy((b) => b.filter((x) => x !== id));
+    }
+  };
+
+  /** Asks before deleting row `id` with `tool`; `what` names it in the dialog. */
+  const remove = (id: number, tool: string, what: string) =>
+    modal.confirm?.({
+      title: 'Xóa?',
+      content: what,
+      okText: 'Xóa',
+      okButtonProps: { status: 'danger' },
+      onOk: () => write(id, tool, { ids: [id] }),
+    });
+
+  const holders = (
+    <>
+      {messageHolder}
+      {modalHolder}
+    </>
+  );
+  return { data, busy, write, remove, holders };
+}
+```
+
+**Step 2: `TasksPage.tsx`**
 
 ```tsx
 import { SettingsPageHeader } from '@aionui/ui';
 import { Button, Checkbox, Empty, Radio, Tag } from '@arco-design/web-react';
 import { Delete } from '@icon-park/react';
-import { useCallback, useEffect, useState } from 'react';
-import { recurrenceText, toLocalDate } from '../../shared/dates';
+import { useCallback, useState } from 'react';
+import { parseLocalDate, recurrenceText, toLocalDate } from '../../shared/dates';
 import type { TaskRow } from '../../shared/types';
 import { api } from '../api';
 import { Thumbs } from '../components/Thumbs';
+import { useData } from '../useData';
 
 const CATEGORY_LABELS: Record<string, string> = { work: 'Công việc', personal: 'Cá nhân' };
-const PRIORITY_COLORS = { 1: 'red', 2: 'arcoblue', 3: 'gray' } as const;
+const PRIORITY_TAGS = { 1: <Tag color='red'>Ưu tiên cao</Tag>, 2: null, 3: <Tag>Ưu tiên thấp</Tag> };
+
+const dueText = (t: TaskRow) =>
+  [t.due_date && parseLocalDate(t.due_date).toLocaleDateString('vi-VN'), t.due_time].filter(Boolean).join(' ');
 
 export function TasksPage() {
   const [category, setCategory] = useState('all');
-  const [tasks, setTasks] = useState<TaskRow[]>([]);
-
-  const load = useCallback(() => {
-    void api.data.read<TaskRow[]>('list_tasks', category === 'all' ? {} : { category }).then(setTasks);
-  }, [category]);
-  useEffect(() => {
-    load();
-    return api.data.onChanged(load);
-  }, [load]);
+  const read = useCallback(() => api.data.read<TaskRow[]>('list_tasks', category === 'all' ? {} : { category }), [category]);
+  const { data: tasks, busy, write, remove, holders } = useData(read, []);
 
   const today = toLocalDate();
   const groups: [string, TaskRow[]][] = [
@@ -5815,13 +5886,13 @@ export function TasksPage() {
     ['Sắp tới', tasks.filter((t) => t.due_date && t.due_date > today)],
     ['Chưa có ngày', tasks.filter((t) => !t.due_date)],
   ];
-  // Direct UI writes need no confirm card (design D7); data:changed triggers the reload.
-  const write = (tool: string, args: object) => void api.data.write(tool, args);
 
   return (
     <div className='page'>
+      {holders}
       <SettingsPageHeader
         title='Task'
+        sticky={false}
         description='Tick để hoàn thành. Muốn thêm hoặc sửa, hãy nhắn cho trợ lý.'
         actions={
           <Radio.Group
@@ -5846,16 +5917,30 @@ export function TasksPage() {
             </div>
             {list.map((t) => (
               <div key={t.id} className='row'>
-                <Checkbox checked={false} onChange={() => write('update_tasks', { ids: [t.id], patch: { status: 'done' } })} />
+                <Checkbox
+                  aria-label={`Hoàn thành: ${t.title}`}
+                  checked={busy.includes(t.id)}
+                  disabled={busy.includes(t.id)}
+                  onChange={() => void write(t.id, 'update_tasks', { ids: [t.id], patch: { status: 'done' } })}
+                />
                 <div className='row-main'>
                   {t.title}
                   {t.recurrence && <span className='muted'> · {recurrenceText(t.recurrence)}</span>}
                   {t.notes && <div className='muted'>{t.notes}</div>}
                   <Thumbs ids={t.attachment_ids} />
                 </div>
-                <span className='muted'>{[t.due_date, t.due_time].filter(Boolean).join(' ')}</span>
-                <Tag color={PRIORITY_COLORS[t.priority]}>{CATEGORY_LABELS[t.category] ?? t.category}</Tag>
-                <Button size='mini' type='text' status='danger' icon={<Delete />} onClick={() => write('delete_tasks', { ids: [t.id] })} />
+                <span className={title === 'Quá hạn' ? 'overdue' : 'muted'}>{dueText(t)}</span>
+                {PRIORITY_TAGS[t.priority]}
+                <Tag>{CATEGORY_LABELS[t.category] ?? t.category}</Tag>
+                <Button
+                  size='mini'
+                  type='text'
+                  status='danger'
+                  icon={<Delete />}
+                  aria-label={`Xóa task: ${t.title}`}
+                  disabled={busy.includes(t.id)}
+                  onClick={() => remove(t.id, 'delete_tasks', t.title)}
+                />
               </div>
             ))}
           </section>
@@ -5865,13 +5950,19 @@ export function TasksPage() {
 }
 ```
 
-**Step 2: Verify** (`bun run typecheck`, `bun run dev`)
+Append to `styles.css`:
+
+```css
+.overdue { color: rgb(var(--danger-6)); font-size: 12px; }
+```
+
+**Step 3: Verify** (`bun run typecheck`, `bun run dev`)
 
 - Tasks created in chat show up grouped as Quá hạn / Hôm nay / Sắp tới / Chưa có ngày, and the category filter works.
-- Tick a recurring task. Expected: it disappears and its next occurrence appears.
+- Tick a recurring task. Expected: it disappears and its next occurrence appears. Delete asks first; a failed write shows a message.
 - Confirm a new task in chat while this page is open in another route. Switch back. Expected: it's listed, since `data:changed` reloads the page.
 
-**Step 3: Commit**
+**Step 4: Commit**
 
 ```bash
 git add -A
