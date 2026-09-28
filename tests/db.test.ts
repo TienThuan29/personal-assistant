@@ -13,6 +13,19 @@ describe('db', () => {
     expect(() => openDb(path)).not.toThrow();
   });
 
+  it('upgrades a v1 DB: pending actions get message_id, old rows keep null', () => {
+    const path = join(tempDir(), 'v1.db');
+    const old = new DatabaseSync(path);
+    old.exec(MIGRATIONS[0]);
+    old.exec('PRAGMA user_version = 1');
+    old.exec('INSERT INTO conversations DEFAULT VALUES');
+    old.exec("INSERT INTO pending_actions (conversation_id, tool_call_id, tool_name, args) VALUES (1, 'c1', 'create_task', '{}')");
+    old.close();
+    const db = openDb(path);
+    expect((db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(MIGRATIONS.length);
+    expect(db.prepare('SELECT message_id FROM pending_actions').get()).toEqual({ message_id: null });
+  });
+
   it('refuses a DB from a newer app version', () => {
     const { db, path } = testDb();
     db.exec(`PRAGMA user_version = ${MIGRATIONS.length + 1}`);
