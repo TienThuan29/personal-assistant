@@ -2717,6 +2717,7 @@ export const call = (id: string, name: string, args: object): AssistantMessage =
 
 ```ts
 import { APIConnectionError, APIError } from 'openai';
+import type { ChatCompletionChunk } from 'openai/resources/chat/completions';
 import { collect, createLlm, describeLlmError } from '../src/main/llm';
 import { DEFAULT_LLM } from '../src/shared/types';
 import { call, chunk, fakeLlm } from './helpers';
@@ -2728,6 +2729,23 @@ describe('collect', () => {
     const msg = await collect(scripted.stream({ messages: [] }), (d) => texts.push(d));
     expect(texts.join('')).toBe('Để mình xem');
     expect(msg.tool_calls).toEqual([{ id: 'c1', type: 'function', function: { name: 'list_tasks', arguments: '{"status":"todo"}' } }]);
+  });
+
+  it('skips empty-choice chunks, keeps a repeated name once, fills a missing id', async () => {
+    async function* odd() {
+      yield { id: 'f', object: 'chat.completion.chunk', created: 0, model: 'x', choices: [] } as unknown as ChatCompletionChunk;
+      yield chunk({ tool_calls: [{ index: 0, function: { name: 'list_tasks', arguments: '{}' } }] });
+      yield chunk({ tool_calls: [{ index: 0, function: { name: 'list_tasks' } }] });
+    }
+    const msg = await collect(odd(), () => {});
+    expect(msg.content).toBeNull();
+    expect(msg.tool_calls?.[0].function).toEqual({ name: 'list_tasks', arguments: '{}' });
+    expect(msg.tool_calls?.[0].id).toMatch(/^call_/);
+  });
+
+  it('returns an empty message when the stream has nothing', async () => {
+    async function* empty() {}
+    expect(await collect(empty(), () => {})).toEqual({ role: 'assistant', content: null });
   });
 
   it('keeps partial text when the stream breaks', async () => {
@@ -2794,7 +2812,7 @@ export async function collect(
 ): Promise<AssistantMessage> {
   const calls: ToolCall[] = [];
   for await (const c of stream) {
-    const delta = c.choices[0]?.delta;
+    const delta = c.choices[0]?.delta; // Azure sends content-filter chunks with empty `choices`
     if (!delta) continue;
     if (delta.content) {
       partial.content += delta.content;
@@ -2803,7 +2821,7 @@ export async function collect(
     for (const tc of delta.tool_calls ?? []) {
       const acc = (calls[tc.index] ??= { id: '', type: 'function', function: { name: '', arguments: '' } });
       if (tc.id) acc.id = tc.id;
-      if (tc.function?.name) acc.function.name += tc.function.name;
+      if (tc.function?.name) acc.function.name = tc.function.name; // assign like the SDK does: some providers repeat it
       if (tc.function?.arguments) acc.function.arguments += tc.function.arguments;
     }
   }
