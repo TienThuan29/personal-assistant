@@ -5,10 +5,17 @@ it('states the current date, weekday and existing categories', () => {
   const ctx = testCtx();
   callTool(ctx, 'create_expense', { amount: 1, category: 'ăn uống' });
   const p = systemPrompt(ctx.db, NOW);
-  expect(p).toContain('2026-09-28 09:00');
+  expect(p).toContain('2026-09-28T09:00');
   expect(p).toMatch(/thứ hai/i);
+  expect(p).toMatch(/^Ngày tới: .*T6 2026-10-02/m);
   expect(p).toContain('ăn uống');
   expect(p).toContain('work, personal'); // fallback while there are no tasks yet
+});
+
+it('puts the per-round facts after the static rules', () => {
+  const p = systemPrompt(testCtx().db, NOW);
+  expect(p.indexOf('Bây giờ là')).toBeGreaterThan(p.indexOf('Quy tắc:'));
+  expect(p).toContain('ăn uống, đi lại, mua sắm'); // expense fallback
 });
 
 it('keeps categories on one line and caps them at 30', () => {
