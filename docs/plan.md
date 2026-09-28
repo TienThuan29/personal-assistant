@@ -31,7 +31,6 @@
 |---|---|---|
 | `src/main/db/`, `agent/`, `llm/`, `reminders/` folders | flat files in `src/main/` + `src/main/tools/` | fewer files; one module each |
 | one confirm-card renderer per entity | one generic `ConfirmCard` with a field-label map | same UX, a quarter of the code |
-| notification click opens the related task | opens the Task page | no per-task deep link needed yet |
 | `@aionui/ui` via `file:../aionui-ui` (D1) | packed tarball `vendor/aionui-ui-0.1.0.tgz` | bun copies the whole directory (incl. `node_modules`, `.git`) and fails with EPERM. To update the library: `cd ../aionui-ui && bun pm pack --destination ../personal-assistant/vendor`, then `bun install --ignore-scripts` |
 | read tools listed in §6 | adds `get_notes({ids})` | `search_notes` returns only snippets; the bot needs full text |
 
@@ -391,7 +390,7 @@ export type SettingsView = { llm: LlmConfig; hasKey: Record<LlmConfig['provider'
 export type SettingsInput = { llm: LlmConfig; apiKey?: string; openAtLogin: boolean };
 
 export type ImageInput = { name: string; bytes: Uint8Array };
-export type Page = 'chat' | 'tasks' | 'notes' | 'expenses' | 'settings';
+export type Page = 'chat' | 'today' | 'tasks' | 'notes' | 'expenses' | 'settings';
 
 export type Api = {
   conversations: {
@@ -6319,13 +6318,14 @@ The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-
 - [ ] Wrong API key → "API key/token sai hoặc hết hạn…" + "Thử lại"; network off → "Không kết nối được tới LLM endpoint…"; "Dừng" mid-stream keeps the partial text.
 
 **Pages**
+- [ ] Hôm nay: overdue and today's tasks (tick one → it leaves the list), today's and next 7 days' reminders ("Bỏ qua" and delete work), today's spending total.
 - [ ] Task page: tick a task done; a weekly recurring task ticked → the next occurrence appears.
 - [ ] Notes search without diacritics ("ngan sach") finds accented text ("ngân sách").
 - [ ] Chi tiêu page shows this month grouped by category.
 - [ ] Data pages refresh after a chat change and when the window regains focus.
 
 **Reminders and tray**
-- [ ] Reminder 2 minutes ahead → Windows toast on time, **with the window hidden in the tray**. Click → opens the Task page.
+- [ ] Reminder 2 minutes ahead → Windows toast on time, **with the window hidden in the tray**. Click → opens the Hôm nay page.
 - [ ] Reminder while the app is quit → on next start one grouped "Bạn có N nhắc nhở" toast.
 - [ ] Sleep the PC past a reminder, wake → toast fires shortly after resume.
 - [ ] Tray: close hides the window, tray click shows it, right-click menu "Mở Trợ lý" / "Thoát" work; a second launch focuses the running instance.
@@ -6354,6 +6354,15 @@ Checks done when this task was implemented:
 git add -A
 git commit -m "build: Windows installer and release smoke checklist"
 ```
+
+---
+
+### Task 27: Whole-app review fixes
+
+Done after Task 26, one commit each. The listings above are not all updated; the code is the reference.
+
+1. **Installer** (`build:`): `win.target: nsis`, per-user one-click with a Start-menu shortcut (Task 26 listing updated). The shortcut carries the AppUserModelID, so toasts show. The login item uses the default path (`process.execPath`, the install location).
+2. **Hôm nay page** (`feat(ui):`): `Page` gains `'today'`, the sider gets "Hôm nay" (icon-park `Sun`) above Task, and `src/renderer/pages/TodayPage.tsx` shows `get_today_overview` (overdue and today's tasks with a done checkbox, today's reminders, the total spent today) plus `list_reminders` from tomorrow through the next 7 days. Each reminder has "Bỏ qua" (`update_reminders` with `status: 'dismissed'`) and delete (confirm dialog). The upcoming list starts tomorrow so today's reminders are not listed twice. A toast click opens this page instead of Task.
 
 ---
 

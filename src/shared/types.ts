@@ -83,7 +83,7 @@ export type SettingsView = { llm: LlmConfig; hasKey: Record<LlmConfig['provider'
 export type SettingsInput = { llm: LlmConfig; apiKey?: string; openAtLogin: boolean };
 
 export type ImageInput = { name: string; bytes: Uint8Array };
-export type Page = 'chat' | 'tasks' | 'notes' | 'expenses' | 'settings';
+export type Page = 'chat' | 'today' | 'tasks' | 'notes' | 'expenses' | 'settings';
 
 export type Api = {
   conversations: {

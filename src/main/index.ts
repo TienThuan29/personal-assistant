@@ -101,7 +101,7 @@ function notify(rows: ReminderRow[]): void {
   n.on('click', () => {
     notifications.delete(n);
     showWindow();
-    send('nav', 'tasks');
+    send('nav', 'today');
   });
   n.show();
   send('data:changed'); // the fired reminders changed status

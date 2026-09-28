@@ -1,7 +1,7 @@
 import { AionScrollArea, SiderItem, UiProvider, WindowControls } from '@aionui/ui';
 import { Button, ConfigProvider, Message, Modal } from '@arco-design/web-react';
 import viVN from '@arco-design/web-react/es/locale/vi-VN';
-import { CheckOne, Comment, Delete, Notes, Plus, SettingTwo, Wallet } from '@icon-park/react';
+import { CheckOne, Comment, Delete, Notes, Plus, SettingTwo, Sun, Wallet } from '@icon-park/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ConversationRow, Page } from '../shared/types';
 import { api, errorText } from './api';
@@ -10,10 +10,12 @@ import { ExpensesPage } from './pages/ExpensesPage';
 import { NotesPage } from './pages/NotesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TasksPage } from './pages/TasksPage';
+import { TodayPage } from './pages/TodayPage';
 
 type Route = { page: 'chat'; id: number } | { page: Exclude<Page, 'chat'> };
 
 const NAV = [
+  { page: 'today', name: 'Hôm nay', icon: <Sun /> },
   { page: 'tasks', name: 'Task', icon: <CheckOne /> },
   { page: 'notes', name: 'Ghi chú', icon: <Notes /> },
   { page: 'expenses', name: 'Chi tiêu', icon: <Wallet /> },
@@ -158,6 +160,7 @@ export function App() {
             </aside>
             <main className='content'>
               {route?.page === 'chat' && <ChatPage key={route.id} conversationId={route.id} />}
+              {route?.page === 'today' && <TodayPage />}
               {route?.page === 'tasks' && <TasksPage />}
               {route?.page === 'notes' && <NotesPage />}
               {route?.page === 'expenses' && <ExpensesPage />}

@@ -25,13 +25,14 @@ The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-
 - [ ] Wrong API key → "API key/token sai hoặc hết hạn…" + "Thử lại"; network off → "Không kết nối được tới LLM endpoint…"; "Dừng" mid-stream keeps the partial text.
 
 **Pages**
+- [ ] Hôm nay: overdue and today's tasks (tick one → it leaves the list), today's and next 7 days' reminders ("Bỏ qua" and delete work), today's spending total.
 - [ ] Task page: tick a task done; a weekly recurring task ticked → the next occurrence appears.
 - [ ] Notes search without diacritics ("ngan sach") finds accented text ("ngân sách").
 - [ ] Chi tiêu page shows this month grouped by category.
 - [ ] Data pages refresh after a chat change and when the window regains focus.
 
 **Reminders and tray**
-- [ ] Reminder 2 minutes ahead → Windows toast on time, **with the window hidden in the tray**. Click → opens the Task page.
+- [ ] Reminder 2 minutes ahead → Windows toast on time, **with the window hidden in the tray**. Click → opens the Hôm nay page.
 - [ ] Reminder while the app is quit → on next start one grouped "Bạn có N nhắc nhở" toast.
 - [ ] Sleep the PC past a reminder, wake → toast fires shortly after resume.
 - [ ] Tray: close hides the window, tray click shows it, right-click menu "Mở Trợ lý" / "Thoát" work; a second launch focuses the running instance.
