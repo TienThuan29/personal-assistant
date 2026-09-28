@@ -88,7 +88,7 @@ export function TasksPage() {
                     onChange={() => void write(task.id, 'update_tasks', { ids: [task.id], patch: { status: 'done' } })}
                   />
                   <div className='row-main'>
-                    <button type='button' className='link' onClick={() => setEditing(task)}>
+                    <button type='button' className='link' disabled={busy.includes(task.id)} onClick={() => setEditing(task)}>
                       {task.title}
                     </button>
                     {task.recurrence && <span className='muted'> · {recurrenceText(task.recurrence, t)}</span>}

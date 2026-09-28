@@ -5,7 +5,7 @@ import { findTool, parseArgs, type ToolCtx } from './tools';
 import { attachmentsCol, getRows, ids as idsSchema, type OwnerType, requireRows } from './tools/common';
 
 /** Tools the manual forms save through (design C6): the record's image owner (null: takes no images) and table. */
-const SAVE_TOOLS: Record<string, { owner: OwnerType | null; table: string }> = {
+export const SAVE_TOOLS: Record<string, { owner: OwnerType | null; table: string }> = {
   create_task: { owner: 'task', table: 'tasks' },
   update_tasks: { owner: 'task', table: 'tasks' },
   create_note: { owner: 'note', table: 'notes' },
@@ -15,6 +15,9 @@ const SAVE_TOOLS: Record<string, { owner: OwnerType | null; table: string }> = {
   create_reminder: { owner: null, table: 'reminders' },
   update_reminders: { owner: null, table: 'reminders' },
 };
+
+/** Images per record, and per chat message. */
+export const MAX_IMAGES = 10;
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -63,6 +66,8 @@ export function saveRecord(
       for (const bytes of jpegs) saveAttachment(ctx.db, ctx.attachmentsDir, { id: newAttachmentId(), bytes, mime: 'image/jpeg', ownerType: owner, ownerId });
       const del = ctx.db.prepare('DELETE FROM attachments WHERE id = ? AND owner_type = ? AND owner_id = ?');
       for (const id of remove) del.run(id, owner, ownerId); // another record's id matches nothing
+      const { n } = ctx.db.prepare('SELECT COUNT(*) AS n FROM attachments WHERE owner_type = ? AND owner_id = ?').get(owner, ownerId) as { n: number };
+      if (n > MAX_IMAGES) throw new UserError('tooManyImages', { max: MAX_IMAGES }); // rolls the save back
     }
     // With attachment_ids, like the list tools.
     return owner

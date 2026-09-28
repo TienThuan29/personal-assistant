@@ -38,7 +38,7 @@ export function ExpensesPage() {
       title: t('description'),
       dataIndex: 'description',
       render: (v: string | null, r: ExpenseRow) => (
-        <button type='button' className='link' onClick={() => setEditing(r)}>
+        <button type='button' className='link' disabled={busy.includes(r.id)} onClick={() => setEditing(r)}>
           {v || '—'}
         </button>
       ),

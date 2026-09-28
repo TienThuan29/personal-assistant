@@ -5,7 +5,7 @@ import { newAttachmentId, saveAttachment } from './attachments';
 import { type Db, tx } from './db';
 import { i18n, setLanguage } from './i18n';
 import { collect, createLlm, describeLlmError, listModels } from './llm';
-import { saveRecord } from './save';
+import { MAX_IMAGES, SAVE_TOOLS, saveRecord } from './save';
 import { activeLlm, type Cipher, getLlm, getUi, parseLlmSettings, readSecrets, saveUi, setSetting, writeSecret } from './settings';
 import {
   addMessage,
@@ -35,7 +35,6 @@ export type MainCtx = {
 /** Writes the renderer may run directly: a click is the user's own intent (design D7). */
 const UI_WRITES = new Set(['update_tasks', 'delete_tasks', 'update_reminders', 'delete_reminders', 'delete_notes', 'delete_expenses']);
 const MAX_TEXT = 20_000;
-const MAX_IMAGES = 10;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_SIDE = 1568;
 // Chromium's network stack: trusts the Windows certificate store and uses the system proxy, so corporate TLS inspection
@@ -154,6 +153,7 @@ export function registerIpc(m: MainCtx): void {
     return result;
   });
   ipcMain.handle('data:save', (_e, name: unknown, args: unknown, images: unknown = [], removeIds?: unknown) => {
+    if (typeof name !== 'string' || !Object.hasOwn(SAVE_TOOLS, name)) throw new UserError('notAllowed', { name: String(name) }); // before decoding images
     if (!Array.isArray(images) || images.length > MAX_IMAGES) throw new UserError('tooManyImages', { max: MAX_IMAGES });
     const jpegs = images.map((img: ImageInput) => toJpeg(img?.bytes)); // validate everything before saving anything
     const row = saveRecord({ ...ctx, attachmentsDir: m.attachmentsDir }, name, args, jpegs, removeIds);

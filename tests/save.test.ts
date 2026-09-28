@@ -52,6 +52,17 @@ describe('saveRecord', () => {
     expect(owners(ctx)).toMatchObject([{ owner_type: 'note', owner_id: a.id }]);
   });
 
+  it('caps a record at MAX_IMAGES, counting kept images, and rolls back past it', () => {
+    const ctx = saveCtx();
+    const n = saveRecord(ctx, 'create_note', { body: 'a' }, Array(8).fill(IMG), []) as NoteRow;
+    const patch = { ids: [n.id], patch: { body: 'b' } };
+    expect(() => saveRecord(ctx, 'update_notes', patch, [IMG, IMG, IMG], [])).toThrow(key('tooManyImages'));
+    expect(owners(ctx)).toHaveLength(8);
+    expect(callTool<NoteRow[]>(ctx, 'get_notes', { ids: [n.id] })[0].body).toBe('a');
+    saveRecord(ctx, 'update_notes', patch, [IMG, IMG, IMG], [owners(ctx)[0].id]); // swapping one frees room
+    expect(owners(ctx)).toHaveLength(10);
+  });
+
   it('rejects tools outside the allowlist', () => {
     const ctx = saveCtx();
     expect(() => saveRecord(ctx, 'delete_tasks', { ids: [1] }, [], [])).toThrow(key('notAllowed'));

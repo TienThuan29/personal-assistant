@@ -53,11 +53,11 @@ export function NotesPage() {
           <div className='row-main'>
             <div>
               {n.kind === 'journal' && <Tag color='purple'>{t('journal')}</Tag>}{' '}
-              <button type='button' className='link' onClick={() => openNote(n)}>
+              <button type='button' className='link' disabled={busy.includes(n.id)} onClick={() => openNote(n)}>
                 {n.title || t('untitled')}
               </button>
             </div>
-            <div className='muted snippet' onClick={() => openNote(n)}>
+            <div className='muted snippet' onClick={() => busy.includes(n.id) || openNote(n)}>
               {highlight(n.snippet ?? '')}
             </div>
             <Thumbs ids={n.attachment_ids} />
