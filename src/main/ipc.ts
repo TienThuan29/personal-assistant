@@ -1,4 +1,4 @@
-import { type BrowserWindow, ipcMain, nativeImage } from 'electron';
+import { ipcMain, nativeImage } from 'electron';
 import { z } from 'zod/v4';
 import { DEFAULT_LLM, type ImageInput, type LlmConfig, type SettingsInput, type SettingsView } from '../shared/types';
 import { type AgentDeps, cancelOpenActions, resolveAction, runTurn } from './agent';
@@ -24,7 +24,8 @@ export type MainCtx = {
   attachmentsDir: string;
   secretsFile: string;
   cipher: Cipher;
-  win: () => BrowserWindow | undefined;
+  /** Sends to the window if it is still alive. */
+  send: (channel: string, payload?: unknown) => void;
   onDataChanged: () => void;
   loginItem: { get: () => boolean; set: (on: boolean) => void };
 };
@@ -60,41 +61,51 @@ export function registerIpc(m: MainCtx): void {
   const deps: AgentDeps = {
     ...ctx,
     attachmentsDir: m.attachmentsDir,
-    emit: (e) => m.win()?.webContents.send('chat:event', e),
+    emit: (e) => m.send('chat:event', e),
     llm: () => {
       const cfg = llmConfig();
       return createLlm(cfg, readSecrets(m.secretsFile, m.cipher)[cfg.provider] ?? '');
     },
   };
-  const running = new Map<number, AbortController>();
+  const running = new Map<number, { ctl: AbortController; done: Promise<void> }>();
+
+  /** Aborts a running turn and waits until it has saved its partial reply, so that reply never lands after what comes next. */
+  async function stopTurn(conversationId: number): Promise<void> {
+    const r = running.get(conversationId);
+    if (!r) return;
+    r.ctl.abort();
+    await r.done;
+  }
 
   function startTurn(conversationId: number): void {
-    running.get(conversationId)?.abort();
+    running.get(conversationId)?.ctl.abort(); // only if two requests raced past stopTurn
     const ctl = new AbortController();
-    running.set(conversationId, ctl);
-    void runTurn(deps, conversationId, ctl.signal)
+    const done = runTurn(deps, conversationId, ctl.signal)
       .catch((e) => deps.emit({ type: 'error', conversationId, message: describeLlmError(e) }))
       .finally(() => {
-        if (running.get(conversationId) === ctl) running.delete(conversationId);
+        if (running.get(conversationId)?.ctl === ctl) running.delete(conversationId);
       });
+    running.set(conversationId, { ctl, done });
   }
 
   ipcMain.handle('conv:list', () => listConversations(m.db));
   ipcMain.handle('conv:create', () => createConversation(m.db));
-  ipcMain.handle('conv:remove', (_e, convId: unknown) => {
-    running.get(id(convId))?.abort();
-    deleteConversation(m.db, id(convId));
+  ipcMain.handle('conv:remove', async (_e, convId: unknown) => {
+    const cid = id(convId);
+    await stopTurn(cid);
+    deleteConversation(m.db, cid);
   });
 
   ipcMain.handle('chat:messages', (_e, convId: unknown) => getMessages(m.db, id(convId)));
   ipcMain.handle('chat:actions', (_e, convId: unknown) => listActions(m.db, id(convId)));
-  ipcMain.handle('chat:send', (_e, convId: unknown, text: unknown, images: ImageInput[]) => {
+  ipcMain.handle('chat:send', async (_e, convId: unknown, text: unknown, images: ImageInput[]) => {
     const cid = id(convId);
     if (typeof text !== 'string' || text.length > MAX_TEXT) throw new Error('Tin nhắn không hợp lệ');
     if (!Array.isArray(images) || images.length > MAX_IMAGES) throw new Error(`Tối đa ${MAX_IMAGES} ảnh mỗi tin nhắn`);
     if (!text.trim() && !images.length) throw new Error('Tin nhắn trống');
     const jpegs = images.map((img) => toJpeg(img?.bytes)); // validate everything before saving anything
     const attachmentIds = jpegs.map(() => newAttachmentId());
+    await stopTurn(cid);
     // One transaction: a failed image save leaves no message pointing at missing attachments
     // (files already written become orphans, swept at startup).
     tx(m.db, () => {
@@ -107,14 +118,21 @@ export function registerIpc(m: MainCtx): void {
     });
     startTurn(cid);
   });
-  ipcMain.handle('chat:stop', (_e, convId: unknown) => running.get(id(convId))?.abort());
-  ipcMain.handle('chat:retry', (_e, convId: unknown) => startTurn(id(convId)));
-  ipcMain.handle('chat:resolve', (_e, actionId: unknown, decision: unknown, args?: unknown) => {
+  ipcMain.handle('chat:stop', (_e, convId: unknown) => stopTurn(id(convId)));
+  ipcMain.handle('chat:retry', async (_e, convId: unknown) => {
+    const cid = id(convId);
+    await stopTurn(cid);
+    startTurn(cid);
+  });
+  ipcMain.handle('chat:resolve', async (_e, actionId: unknown, decision: unknown, args?: unknown) => {
     if (decision !== 'confirm' && decision !== 'cancel') throw new Error('Quyết định không hợp lệ');
     const action = getAction(m.db, id(actionId));
     const last = resolveAction(deps, id(actionId), decision, args);
     if (decision === 'confirm') m.onDataChanged();
-    if (last && action) startTurn(action.conversation_id);
+    if (last && action) {
+      await stopTurn(action.conversation_id);
+      startTurn(action.conversation_id);
+    }
   });
 
   ipcMain.handle('data:read', (_e, name: unknown, args: unknown) => {

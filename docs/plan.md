@@ -3986,7 +3986,7 @@ There are no unit tests here, since this is glue around Electron APIs. It is ver
 **Step 1: Create `src/main/ipc.ts`**
 
 ```ts
-import { type BrowserWindow, ipcMain, nativeImage } from 'electron';
+import { ipcMain, nativeImage } from 'electron';
 import { z } from 'zod/v4';
 import { DEFAULT_LLM, type ImageInput, type LlmConfig, type SettingsInput, type SettingsView } from '../shared/types';
 import { type AgentDeps, cancelOpenActions, resolveAction, runTurn } from './agent';
@@ -4012,7 +4012,8 @@ export type MainCtx = {
   attachmentsDir: string;
   secretsFile: string;
   cipher: Cipher;
-  win: () => BrowserWindow | undefined;
+  /** Sends to the window if it is still alive. */
+  send: (channel: string, payload?: unknown) => void;
   onDataChanged: () => void;
   loginItem: { get: () => boolean; set: (on: boolean) => void };
 };
@@ -4048,41 +4049,51 @@ export function registerIpc(m: MainCtx): void {
   const deps: AgentDeps = {
     ...ctx,
     attachmentsDir: m.attachmentsDir,
-    emit: (e) => m.win()?.webContents.send('chat:event', e),
+    emit: (e) => m.send('chat:event', e),
     llm: () => {
       const cfg = llmConfig();
       return createLlm(cfg, readSecrets(m.secretsFile, m.cipher)[cfg.provider] ?? '');
     },
   };
-  const running = new Map<number, AbortController>();
+  const running = new Map<number, { ctl: AbortController; done: Promise<void> }>();
+
+  /** Aborts a running turn and waits until it has saved its partial reply, so that reply never lands after what comes next. */
+  async function stopTurn(conversationId: number): Promise<void> {
+    const r = running.get(conversationId);
+    if (!r) return;
+    r.ctl.abort();
+    await r.done;
+  }
 
   function startTurn(conversationId: number): void {
-    running.get(conversationId)?.abort();
+    running.get(conversationId)?.ctl.abort(); // only if two requests raced past stopTurn
     const ctl = new AbortController();
-    running.set(conversationId, ctl);
-    void runTurn(deps, conversationId, ctl.signal)
+    const done = runTurn(deps, conversationId, ctl.signal)
       .catch((e) => deps.emit({ type: 'error', conversationId, message: describeLlmError(e) }))
       .finally(() => {
-        if (running.get(conversationId) === ctl) running.delete(conversationId);
+        if (running.get(conversationId)?.ctl === ctl) running.delete(conversationId);
       });
+    running.set(conversationId, { ctl, done });
   }
 
   ipcMain.handle('conv:list', () => listConversations(m.db));
   ipcMain.handle('conv:create', () => createConversation(m.db));
-  ipcMain.handle('conv:remove', (_e, convId: unknown) => {
-    running.get(id(convId))?.abort();
-    deleteConversation(m.db, id(convId));
+  ipcMain.handle('conv:remove', async (_e, convId: unknown) => {
+    const cid = id(convId);
+    await stopTurn(cid);
+    deleteConversation(m.db, cid);
   });
 
   ipcMain.handle('chat:messages', (_e, convId: unknown) => getMessages(m.db, id(convId)));
   ipcMain.handle('chat:actions', (_e, convId: unknown) => listActions(m.db, id(convId)));
-  ipcMain.handle('chat:send', (_e, convId: unknown, text: unknown, images: ImageInput[]) => {
+  ipcMain.handle('chat:send', async (_e, convId: unknown, text: unknown, images: ImageInput[]) => {
     const cid = id(convId);
     if (typeof text !== 'string' || text.length > MAX_TEXT) throw new Error('Tin nhắn không hợp lệ');
     if (!Array.isArray(images) || images.length > MAX_IMAGES) throw new Error(`Tối đa ${MAX_IMAGES} ảnh mỗi tin nhắn`);
     if (!text.trim() && !images.length) throw new Error('Tin nhắn trống');
     const jpegs = images.map((img) => toJpeg(img?.bytes)); // validate everything before saving anything
     const attachmentIds = jpegs.map(() => newAttachmentId());
+    await stopTurn(cid);
     // One transaction: a failed image save leaves no message pointing at missing attachments
     // (files already written become orphans, swept at startup).
     tx(m.db, () => {
@@ -4095,14 +4106,21 @@ export function registerIpc(m: MainCtx): void {
     });
     startTurn(cid);
   });
-  ipcMain.handle('chat:stop', (_e, convId: unknown) => running.get(id(convId))?.abort());
-  ipcMain.handle('chat:retry', (_e, convId: unknown) => startTurn(id(convId)));
-  ipcMain.handle('chat:resolve', (_e, actionId: unknown, decision: unknown, args?: unknown) => {
+  ipcMain.handle('chat:stop', (_e, convId: unknown) => stopTurn(id(convId)));
+  ipcMain.handle('chat:retry', async (_e, convId: unknown) => {
+    const cid = id(convId);
+    await stopTurn(cid);
+    startTurn(cid);
+  });
+  ipcMain.handle('chat:resolve', async (_e, actionId: unknown, decision: unknown, args?: unknown) => {
     if (decision !== 'confirm' && decision !== 'cancel') throw new Error('Quyết định không hợp lệ');
     const action = getAction(m.db, id(actionId));
     const last = resolveAction(deps, id(actionId), decision, args);
     if (decision === 'confirm') m.onDataChanged();
-    if (last && action) startTurn(action.conversation_id);
+    if (last && action) {
+      await stopTurn(action.conversation_id);
+      startTurn(action.conversation_id);
+    }
   });
 
   ipcMain.handle('data:read', (_e, name: unknown, args: unknown) => {
@@ -4166,6 +4184,12 @@ const startHidden = process.argv.includes('--hidden');
 let win: BrowserWindow | undefined;
 let tray: Tray | undefined; // module scope keeps the tray from being garbage-collected
 let quitting = false;
+const notifications = new Set<Notification>(); // referenced until closed, or GC drops their click handler
+
+/** Sends to the window unless it is gone (quit in progress). */
+function send(channel: string, payload?: unknown): void {
+  if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+}
 
 // Login items only make sense for the packaged app; the portable exe exposes its real path in this env var.
 const loginItemOpts = () => ({ path: process.env.PORTABLE_EXECUTABLE_FILE ?? process.execPath, args: ['--hidden'] });
@@ -4206,17 +4230,25 @@ function createWindow(): BrowserWindow {
     e.preventDefault();
     w.hide(); // keep running in the tray so reminders still fire
   });
+  w.on('closed', () => {
+    win = undefined;
+  });
   w.on('maximize', () => w.webContents.send('win:maximized', true));
   w.on('unmaximize', () => w.webContents.send('win:maximized', false));
+  w.webContents.on('render-process-gone', (_e, d) => {
+    if (d.reason !== 'clean-exit') w.webContents.reload(); // ponytail: a renderer that crashes on load reloads in a loop; add a retry cap if seen
+  });
   w.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
   const devUrl = process.env.ELECTRON_RENDERER_URL;
   const indexHtml = join(__dirname, '../renderer/index.html');
-  const appUrl = devUrl ?? pathToFileURL(indexHtml).href; // only the app itself, not any file:// page (it would get window.api)
+  // Only the app itself, not any other page (it would get window.api).
+  const isApp = (url: string): boolean =>
+    devUrl ? URL.canParse(url) && new URL(url).origin === new URL(devUrl).origin : url.split('#')[0] === pathToFileURL(indexHtml).href;
   w.webContents.on('will-navigate', (e, url) => {
-    if (!url.startsWith(appUrl)) e.preventDefault();
+    if (!isApp(url)) e.preventDefault();
   });
   if (devUrl) void w.loadURL(devUrl);
   else void w.loadFile(indexHtml);
@@ -4229,11 +4261,15 @@ function notify(rows: ReminderRow[]): void {
       ? { title: 'Nhắc nhở', body: rows[0].message }
       : { title: `Bạn có ${rows.length} nhắc nhở`, body: rows.map((r) => `• ${r.message}`).join('\n') }
   );
+  notifications.add(n);
+  n.on('close', () => notifications.delete(n));
   n.on('click', () => {
+    notifications.delete(n);
     showWindow();
-    win?.webContents.send('nav', 'tasks');
+    send('nav', 'tasks');
   });
   n.show();
+  send('data:changed'); // the fired reminders changed status
 }
 
 async function createTray(): Promise<Tray> {
@@ -4255,6 +4291,7 @@ async function createTray(): Promise<Tray> {
 
 async function start(): Promise<void> {
   app.setAppUserModelId(app.isPackaged ? 'com.personal-assistant.app' : process.execPath);
+  if (app.isPackaged) Menu.setApplicationMenu(null); // no DevTools/reload shortcuts
   const dataDir = app.getPath('userData');
   const dbPath = join(dataDir, 'assistant.db');
   const attachmentsDir = join(dataDir, 'attachments');
@@ -4287,18 +4324,21 @@ async function start(): Promise<void> {
     attachmentsDir,
     secretsFile: join(dataDir, 'secrets.bin'),
     cipher,
-    win: () => win,
+    send,
     loginItem,
     onDataChanged: () => {
       scheduler.refresh();
-      win?.webContents.send('data:changed');
+      send('data:changed');
     },
   });
 
   win = createWindow();
   scheduler.refresh();
   powerMonitor.on('resume', () => scheduler.refresh());
-  tray = await createTray();
+  tray = await createTray().catch((e) => {
+    console.error('Tray failed', e); // the window still works without it
+    return undefined;
+  });
 }
 
 if (!app.requestSingleInstanceLock()) {

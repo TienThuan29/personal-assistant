@@ -18,6 +18,12 @@ const startHidden = process.argv.includes('--hidden');
 let win: BrowserWindow | undefined;
 let tray: Tray | undefined; // module scope keeps the tray from being garbage-collected
 let quitting = false;
+const notifications = new Set<Notification>(); // referenced until closed, or GC drops their click handler
+
+/** Sends to the window unless it is gone (quit in progress). */
+function send(channel: string, payload?: unknown): void {
+  if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+}
 
 // Login items only make sense for the packaged app; the portable exe exposes its real path in this env var.
 const loginItemOpts = () => ({ path: process.env.PORTABLE_EXECUTABLE_FILE ?? process.execPath, args: ['--hidden'] });
@@ -58,17 +64,25 @@ function createWindow(): BrowserWindow {
     e.preventDefault();
     w.hide(); // keep running in the tray so reminders still fire
   });
+  w.on('closed', () => {
+    win = undefined;
+  });
   w.on('maximize', () => w.webContents.send('win:maximized', true));
   w.on('unmaximize', () => w.webContents.send('win:maximized', false));
+  w.webContents.on('render-process-gone', (_e, d) => {
+    if (d.reason !== 'clean-exit') w.webContents.reload(); // ponytail: a renderer that crashes on load reloads in a loop; add a retry cap if seen
+  });
   w.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
   const devUrl = process.env.ELECTRON_RENDERER_URL;
   const indexHtml = join(__dirname, '../renderer/index.html');
-  const appUrl = devUrl ?? pathToFileURL(indexHtml).href; // only the app itself, not any file:// page (it would get window.api)
+  // Only the app itself, not any other page (it would get window.api).
+  const isApp = (url: string): boolean =>
+    devUrl ? URL.canParse(url) && new URL(url).origin === new URL(devUrl).origin : url.split('#')[0] === pathToFileURL(indexHtml).href;
   w.webContents.on('will-navigate', (e, url) => {
-    if (!url.startsWith(appUrl)) e.preventDefault();
+    if (!isApp(url)) e.preventDefault();
   });
   if (devUrl) void w.loadURL(devUrl);
   else void w.loadFile(indexHtml);
@@ -81,11 +95,15 @@ function notify(rows: ReminderRow[]): void {
       ? { title: 'Nhắc nhở', body: rows[0].message }
       : { title: `Bạn có ${rows.length} nhắc nhở`, body: rows.map((r) => `• ${r.message}`).join('\n') }
   );
+  notifications.add(n);
+  n.on('close', () => notifications.delete(n));
   n.on('click', () => {
+    notifications.delete(n);
     showWindow();
-    win?.webContents.send('nav', 'tasks');
+    send('nav', 'tasks');
   });
   n.show();
+  send('data:changed'); // the fired reminders changed status
 }
 
 async function createTray(): Promise<Tray> {
@@ -107,6 +125,7 @@ async function createTray(): Promise<Tray> {
 
 async function start(): Promise<void> {
   app.setAppUserModelId(app.isPackaged ? 'com.personal-assistant.app' : process.execPath);
+  if (app.isPackaged) Menu.setApplicationMenu(null); // no DevTools/reload shortcuts
   const dataDir = app.getPath('userData');
   const dbPath = join(dataDir, 'assistant.db');
   const attachmentsDir = join(dataDir, 'attachments');
@@ -139,18 +158,21 @@ async function start(): Promise<void> {
     attachmentsDir,
     secretsFile: join(dataDir, 'secrets.bin'),
     cipher,
-    win: () => win,
+    send,
     loginItem,
     onDataChanged: () => {
       scheduler.refresh();
-      win?.webContents.send('data:changed');
+      send('data:changed');
     },
   });
 
   win = createWindow();
   scheduler.refresh();
   powerMonitor.on('resume', () => scheduler.refresh());
-  tray = await createTray();
+  tray = await createTray().catch((e) => {
+    console.error('Tray failed', e); // the window still works without it
+    return undefined;
+  });
 }
 
 if (!app.requestSingleInstanceLock()) {
