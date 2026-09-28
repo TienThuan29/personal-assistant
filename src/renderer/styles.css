@@ -53,7 +53,8 @@ body {
 .empty-hint { margin: 20vh auto 0; text-align: center; color: var(--text-secondary); }
 
 .thumbs { display: flex; gap: 8px; flex-wrap: wrap; }
-.thumbs img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; cursor: zoom-in; }
+.thumb { padding: 0; border: 0; background: none; border-radius: 8px; cursor: zoom-in; }
+.thumb img { display: block; width: 72px; height: 72px; object-fit: cover; border-radius: 8px; }
 
 .confirm-card {
   display: flex;
@@ -66,6 +67,7 @@ body {
 }
 .confirm-title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
 .confirm-row { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; }
+.confirm-value { white-space: pre-wrap; }
 
 .sendbox { position: relative; padding: 12px 24px; border-top: 1px solid var(--border-base); }
 .sendbox-inner { display: flex; flex-direction: column; gap: 8px; max-width: 860px; margin: 0 auto; }

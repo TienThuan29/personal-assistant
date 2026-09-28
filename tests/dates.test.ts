@@ -1,4 +1,4 @@
-import { addDays, localDayRange, nextOccurrence, toLocalDate } from '../src/shared/dates';
+import { addDays, localDayRange, nextOccurrence, recurrenceText, toLocalDate } from '../src/shared/dates';
 import { formatMoney } from '../src/shared/money';
 
 describe('dates', () => {
@@ -29,6 +29,11 @@ describe('dates', () => {
   it('rejects unknown rules', () => {
     expect(() => nextOccurrence('yearly', '2026-09-28')).toThrow();
     expect(() => nextOccurrence('monthly:0', '2026-01-31')).toThrow();
+  });
+  it('recurrenceText reads rules in Vietnamese', () => {
+    expect(recurrenceText('daily')).toBe('Hằng ngày');
+    expect(recurrenceText('weekly:1,3,7')).toBe('Hằng tuần: T2, T4, CN');
+    expect(recurrenceText('monthly:15')).toBe('Ngày 15 hằng tháng');
   });
 });
 

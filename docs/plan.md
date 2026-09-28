@@ -432,7 +432,7 @@ export type Api = {
 **Step 2: Write the failing tests** in `tests/dates.test.ts`
 
 ```ts
-import { addDays, localDayRange, nextOccurrence, toLocalDate } from '../src/shared/dates';
+import { addDays, localDayRange, nextOccurrence, recurrenceText, toLocalDate } from '../src/shared/dates';
 import { formatMoney } from '../src/shared/money';
 
 describe('dates', () => {
@@ -463,6 +463,11 @@ describe('dates', () => {
   it('rejects unknown rules', () => {
     expect(() => nextOccurrence('yearly', '2026-09-28')).toThrow();
     expect(() => nextOccurrence('monthly:0', '2026-01-31')).toThrow();
+  });
+  it('recurrenceText reads rules in Vietnamese', () => {
+    expect(recurrenceText('daily')).toBe('Hằng ngày');
+    expect(recurrenceText('weekly:1,3,7')).toBe('Hằng tuần: T2, T4, CN');
+    expect(recurrenceText('monthly:15')).toBe('Ngày 15 hằng tháng');
   });
 });
 
@@ -534,6 +539,16 @@ export function nextOccurrence(recurrence: string, from: string): string {
   }
   throw new Error(`Recurrence không hợp lệ: ${recurrence}`);
 }
+
+const WEEKDAYS = ['', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+
+/** Vietnamese text of a rule: 'Hằng ngày', 'Hằng tuần: T2, T4', 'Ngày 15 hằng tháng'. Unknown rules come back as-is. */
+export function recurrenceText(rule: string): string {
+  if (rule === 'daily') return 'Hằng ngày';
+  if (rule.startsWith('weekly:')) return `Hằng tuần: ${rule.slice(7).split(',').map((d) => WEEKDAYS[Number(d)] ?? d).join(', ')}`;
+  if (rule.startsWith('monthly:')) return `Ngày ${rule.slice(8)} hằng tháng`;
+  return rule;
+}
 ```
 
 **Step 5: Implement `src/shared/money.ts`**
@@ -553,7 +568,7 @@ export function formatMoney(amount: number, currency: string): string {
 **Step 6: Run to verify it passes**
 
 Run: `bun run test tests/dates.test.ts`
-Expected: PASS (10 tests).
+Expected: PASS (11 tests).
 
 **Step 7: Commit**
 
@@ -4539,7 +4554,8 @@ body {
 .empty-hint { margin: 20vh auto 0; text-align: center; color: var(--text-secondary); }
 
 .thumbs { display: flex; gap: 8px; flex-wrap: wrap; }
-.thumbs img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; cursor: zoom-in; }
+.thumb { padding: 0; border: 0; background: none; border-radius: 8px; cursor: zoom-in; }
+.thumb img { display: block; width: 72px; height: 72px; object-fit: cover; border-radius: 8px; }
 
 .confirm-card {
   display: flex;
@@ -4552,6 +4568,7 @@ body {
 }
 .confirm-title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
 .confirm-row { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; }
+.confirm-value { white-space: pre-wrap; }
 
 .sendbox { position: relative; padding: 12px 24px; border-top: 1px solid var(--border-base); }
 .sendbox-inner { display: flex; flex-direction: column; gap: 8px; max-width: 860px; margin: 0 auto; }
@@ -4999,11 +5016,28 @@ export function Thumbs({ ids }: { ids?: string[] | string | null }) {
     <>
       <div className='thumbs'>
         {list.map((id) => (
-          <img key={id} src={attUrl(id)} alt='' onClick={() => setOpen(id)} />
+          <button key={id} type='button' className='thumb' aria-label='Xem ảnh đính kèm' onClick={() => setOpen(id)}>
+            <img
+              src={attUrl(id)}
+              alt='Ảnh đính kèm'
+              onError={(e) => {
+                e.currentTarget.closest('button')!.style.display = 'none'; // file missing or not an image
+              }}
+            />
+          </button>
         ))}
       </div>
-      <AionModal visible={open !== null} onCancel={() => setOpen(null)} size='large' header={{ title: 'Ảnh' }} footer={null}>
-        {open && <img src={attUrl(open)} alt='' style={{ display: 'block', maxWidth: '100%', maxHeight: '70vh', margin: '0 auto' }} />}
+      <AionModal
+        visible={open !== null}
+        onCancel={() => setOpen(null)}
+        size='large'
+        style={{ height: 'auto' }}
+        header={{ title: 'Ảnh' }}
+        footer={null}
+      >
+        {open && (
+          <img src={attUrl(open)} alt='Ảnh đính kèm' style={{ display: 'block', maxWidth: '100%', maxHeight: '75vh', margin: '0 auto' }} />
+        )}
       </AionModal>
     </>
   );
@@ -5012,11 +5046,12 @@ export function Thumbs({ ids }: { ids?: string[] | string | null }) {
 
 **Step 2: `src/renderer/chat/ConfirmCard.tsx`**
 
-This is one generic card for all write tools (see the deviation table). Creates get editable fields. Updates and deletes show the current rows, with before → after for each patched field. Only fields the LLM filled appear (none can be added). Each editor follows the arg's original type, so clearing a number keeps a number field, and a cleared field is sent as omitted (zod then rejects a required one and the card stays pending). A write that failed on confirm is stored as `cancelled` with `result.error`, so the tag says "Thất bại" instead of "Đã hủy".
+This is one generic card for all write tools (see the deviation table). Creates get editable fields. Updates and deletes show the current rows, with before → after for each patched field. Only fields the LLM filled appear (none can be added). Each editor follows the arg's original type, so clearing a number keeps a number field, and a cleared field is sent as omitted (zod then rejects a required one and the card stays pending). A write that failed on confirm is stored as `cancelled` with `result.error`, so the tag says "Thất bại" instead of "Đã hủy". Once resolved, the card shows the stored `action.args`, not the local edits. Enum values, recurrence rules and dates read in Vietnamese; `kind` and `priority` are picked from a Select; long text fields use an auto-growing TextArea.
 
 ```tsx
-import { Alert, Button, Input, InputNumber, Space, Tag } from '@arco-design/web-react';
+import { Alert, Button, Input, InputNumber, Select, Space, Tag } from '@arco-design/web-react';
 import { useState } from 'react';
+import { parseLocalDate, recurrenceText } from '../../shared/dates';
 import { formatMoney } from '../../shared/money';
 import type { PendingAction } from '../../shared/types';
 import { Thumbs } from '../components/Thumbs';
@@ -5036,11 +5071,11 @@ const TITLES: Record<string, string> = {
   delete_expenses: 'Xóa khoản chi',
 };
 
-export const FIELD_LABELS: Record<string, string> = {
+const FIELD_LABELS: Record<string, string> = {
   title: 'Tiêu đề',
   notes: 'Ghi chú',
   category: 'Phân loại',
-  priority: 'Ưu tiên (1–3)',
+  priority: 'Ưu tiên',
   due_date: 'Ngày',
   due_time: 'Giờ',
   recurrence: 'Lặp lại',
@@ -5056,6 +5091,17 @@ export const FIELD_LABELS: Record<string, string> = {
   spent_at: 'Ngày chi',
 };
 
+/** Display names of enum values; `kind` and `priority` are picked from these on the create card. */
+const VALUE_LABELS: Record<string, Record<string, string>> = {
+  status: { todo: 'Chưa xong', done: 'Xong', cancelled: 'Đã hủy', dismissed: 'Bỏ qua' },
+  kind: { note: 'Ghi chú', journal: 'Nhật ký' },
+  category: { work: 'Công việc', personal: 'Cá nhân' },
+  priority: { 1: 'Cao', 2: 'Thường', 3: 'Thấp' },
+};
+const SELECTS = new Set(['kind', 'priority']);
+/** Single-line string fields; the others get an auto-growing textarea. */
+const SHORT = new Set(['due_date', 'due_time', 'remind_at', 'spent_at', 'currency', 'category', 'recurrence']);
+
 const STATUS = {
   pending: { color: 'arcoblue', text: 'Chờ xác nhận' },
   confirmed: { color: 'green', text: 'Đã thực hiện' },
@@ -5064,16 +5110,22 @@ const STATUS = {
 
 type Row = Record<string, unknown> & { id: number };
 
-const fmt = (v: unknown): string => {
+const fmt = (k: string, v: unknown): string => {
   if (v === null || v === undefined || v === '') return '—';
+  const s = String(v);
+  if (k === 'recurrence') return recurrenceText(s);
+  if (VALUE_LABELS[k]?.[s]) return VALUE_LABELS[k][s];
   // Stored instants are UTC ISO; LLM-given ones are local 'YYYY-MM-DDTHH:MM'. Both parse correctly.
-  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)) return new Date(v).toLocaleString('vi-VN');
-  return String(v);
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return new Date(s).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' });
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return parseLocalDate(s).toLocaleDateString('vi-VN');
+  return s;
 };
-const describe = (r: Row): string =>
-  r.amount != null
-    ? `${String(r.description ?? r.category)} · ${formatMoney(Number(r.amount), String(r.currency))}`
-    : String(r.title ?? r.message ?? String(r.body ?? '').slice(0, 60));
+const cut = (s: string, n = 60): string => (s.length > n ? `${s.slice(0, n)}…` : s);
+const describe = (r: Row): string => {
+  if (r.amount != null) return `${cut(String(r.description ?? r.category))} · ${formatMoney(Number(r.amount), String(r.currency))}`;
+  if (r.remind_at) return `${cut(String(r.message))} · ${fmt('remind_at', r.remind_at)}`;
+  return cut(String(r.title ?? r.body ?? ''));
+};
 
 export function ConfirmCard(props: {
   action: PendingAction;
@@ -5082,25 +5134,51 @@ export function ConfirmCard(props: {
   onResolve: (decision: 'confirm' | 'cancel') => Promise<void>;
 }) {
   const { action, args, onArgsChange, onResolve } = props;
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<'confirm' | 'cancel' | null>(null);
   const pending = action.status === 'pending';
+  const shown = pending ? args : action.args; // after resolution, what was actually stored
   const isCreate = action.tool_name.startsWith('create_');
   const before = (action.preview as { before?: Row[] } | null)?.before ?? [];
-  const patch = (args.patch ?? {}) as Record<string, unknown>;
+  const patch = (shown.patch ?? {}) as Record<string, unknown>;
   const error = (action.result as { error?: string } | null)?.error;
   const status = error ? { color: 'red', text: 'Thất bại' } : STATUS[action.status];
+  const currency = String(shown.currency ?? 'VND');
 
   const resolve = async (d: 'confirm' | 'cancel') => {
-    setBusy(true);
+    setBusy(d);
     try {
       await onResolve(d);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
   // Only fields the LLM filled are shown; the user can edit them but not add new ones.
   // The editor follows the original arg type, so a cleared number stays a number field; cleared = omitted.
+  const editor = (k: string, v: unknown, label: string) => {
+    const set = (x: unknown) => onArgsChange({ ...args, [k]: x === '' || x === null ? undefined : x });
+    if (SELECTS.has(k)) {
+      const options = Object.entries(VALUE_LABELS[k]).map(([value, text]) => ({
+        label: text,
+        value: typeof action.args[k] === 'number' ? Number(value) : value,
+      }));
+      return <Select aria-label={label} value={v as string | number | undefined} options={options} onChange={set} />;
+    }
+    if (typeof action.args[k] === 'number') {
+      return (
+        <Space>
+          <InputNumber aria-label={label} value={v as number | undefined} onChange={set} />
+          {k === 'amount' && typeof v === 'number' && <span className='muted'>{formatMoney(v, currency)}</span>}
+        </Space>
+      );
+    }
+    return SHORT.has(k) ? (
+      <Input aria-label={label} value={String(v ?? '')} onChange={set} />
+    ) : (
+      <Input.TextArea aria-label={label} autoSize={{ minRows: 1, maxRows: 6 }} value={String(v ?? '')} onChange={set} />
+    );
+  };
+
   return (
     <div className='confirm-card'>
       <div className='confirm-title'>
@@ -5109,25 +5187,21 @@ export function ConfirmCard(props: {
       </div>
 
       {isCreate &&
-        Object.entries(args)
+        Object.entries(shown)
           .filter(([k]) => k !== 'attachment_ids')
-          .map(([k, v]) => (
-            <div key={k} className='confirm-row'>
-              <span className='muted'>{FIELD_LABELS[k] ?? k}</span>
-              {!pending ? (
-                <span>{k === 'amount' ? formatMoney(Number(v), String(args.currency ?? 'VND')) : fmt(v)}</span>
-              ) : typeof action.args[k] === 'number' ? (
-                <Space>
-                  <InputNumber value={v as number | undefined} onChange={(n) => onArgsChange({ ...args, [k]: n ?? undefined })} />
-                  {k === 'amount' && typeof v === 'number' && (
-                    <span className='muted'>{formatMoney(v, String(args.currency ?? 'VND'))}</span>
-                  )}
-                </Space>
-              ) : (
-                <Input value={String(v ?? '')} onChange={(s) => onArgsChange({ ...args, [k]: s || undefined })} />
-              )}
-            </div>
-          ))}
+          .map(([k, v]) => {
+            const label = FIELD_LABELS[k] ?? k;
+            return (
+              <div key={k} className='confirm-row'>
+                <span className='muted'>{label}</span>
+                {pending ? (
+                  editor(k, v, label)
+                ) : (
+                  <span className='confirm-value'>{k === 'amount' ? formatMoney(Number(v), currency) : fmt(k, v)}</span>
+                )}
+              </div>
+            );
+          })}
 
       {!isCreate &&
         before.map((row) => (
@@ -5136,24 +5210,30 @@ export function ConfirmCard(props: {
               #{row.id} {describe(row)}
             </div>
             {Object.entries(patch).map(([k, v]) => (
-              <div key={k} className='muted'>
+              <div key={k} className='muted confirm-value'>
                 {FIELD_LABELS[k] ?? k}:{' '}
                 {k === 'amount'
                   ? `${formatMoney(Number(row[k]), String(row.currency))} → ${formatMoney(Number(v), String(patch.currency ?? row.currency))}`
-                  : `${fmt(row[k])} → ${fmt(v)}`}
+                  : `${fmt(k, row[k])} → ${v === null ? '(xóa)' : fmt(k, v)}`}
               </div>
             ))}
           </div>
         ))}
 
-      <Thumbs ids={args.attachment_ids as string[] | undefined} />
+      <Thumbs ids={shown.attachment_ids as string[] | undefined} />
       {error && <Alert type='error' content={error} />}
       {pending && (
         <Space>
-          <Button type='primary' loading={busy} onClick={() => void resolve('confirm')}>
+          <Button
+            type='primary'
+            status={action.tool_name.startsWith('delete_') ? 'danger' : undefined}
+            loading={busy === 'confirm'}
+            disabled={busy === 'cancel'}
+            onClick={() => void resolve('confirm')}
+          >
             Xác nhận
           </Button>
-          <Button disabled={busy} onClick={() => void resolve('cancel')}>
+          <Button loading={busy === 'cancel'} disabled={busy === 'confirm'} onClick={() => void resolve('cancel')}>
             Hủy
           </Button>
         </Space>
@@ -5565,7 +5645,7 @@ import { SettingsPageHeader } from '@aionui/ui';
 import { Button, Checkbox, Empty, Radio, Tag } from '@arco-design/web-react';
 import { Delete } from '@icon-park/react';
 import { useCallback, useEffect, useState } from 'react';
-import { toLocalDate } from '../../shared/dates';
+import { recurrenceText, toLocalDate } from '../../shared/dates';
 import type { TaskRow } from '../../shared/types';
 import { api } from '../api';
 import { Thumbs } from '../components/Thumbs';
@@ -5626,7 +5706,7 @@ export function TasksPage() {
                 <Checkbox checked={false} onChange={() => write('update_tasks', { ids: [t.id], patch: { status: 'done' } })} />
                 <div className='row-main'>
                   {t.title}
-                  {t.recurrence && <span className='muted'> · lặp {t.recurrence}</span>}
+                  {t.recurrence && <span className='muted'> · {recurrenceText(t.recurrence)}</span>}
                   {t.notes && <div className='muted'>{t.notes}</div>}
                   <Thumbs ids={t.attachment_ids} />
                 </div>

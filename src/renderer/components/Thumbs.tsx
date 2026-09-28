@@ -11,11 +11,28 @@ export function Thumbs({ ids }: { ids?: string[] | string | null }) {
     <>
       <div className='thumbs'>
         {list.map((id) => (
-          <img key={id} src={attUrl(id)} alt='' onClick={() => setOpen(id)} />
+          <button key={id} type='button' className='thumb' aria-label='Xem ảnh đính kèm' onClick={() => setOpen(id)}>
+            <img
+              src={attUrl(id)}
+              alt='Ảnh đính kèm'
+              onError={(e) => {
+                e.currentTarget.closest('button')!.style.display = 'none'; // file missing or not an image
+              }}
+            />
+          </button>
         ))}
       </div>
-      <AionModal visible={open !== null} onCancel={() => setOpen(null)} size='large' header={{ title: 'Ảnh' }} footer={null}>
-        {open && <img src={attUrl(open)} alt='' style={{ display: 'block', maxWidth: '100%', maxHeight: '70vh', margin: '0 auto' }} />}
+      <AionModal
+        visible={open !== null}
+        onCancel={() => setOpen(null)}
+        size='large'
+        style={{ height: 'auto' }}
+        header={{ title: 'Ảnh' }}
+        footer={null}
+      >
+        {open && (
+          <img src={attUrl(open)} alt='Ảnh đính kèm' style={{ display: 'block', maxWidth: '100%', maxHeight: '75vh', margin: '0 auto' }} />
+        )}
       </AionModal>
     </>
   );

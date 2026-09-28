@@ -49,3 +49,13 @@ export function nextOccurrence(recurrence: string, from: string): string {
   }
   throw new Error(`Recurrence không hợp lệ: ${recurrence}`);
 }
+
+const WEEKDAYS = ['', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+
+/** Vietnamese text of a rule: 'Hằng ngày', 'Hằng tuần: T2, T4', 'Ngày 15 hằng tháng'. Unknown rules come back as-is. */
+export function recurrenceText(rule: string): string {
+  if (rule === 'daily') return 'Hằng ngày';
+  if (rule.startsWith('weekly:')) return `Hằng tuần: ${rule.slice(7).split(',').map((d) => WEEKDAYS[Number(d)] ?? d).join(', ')}`;
+  if (rule.startsWith('monthly:')) return `Ngày ${rule.slice(8)} hằng tháng`;
+  return rule;
+}
