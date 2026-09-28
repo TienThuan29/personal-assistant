@@ -89,6 +89,12 @@ export function ReminderForm({ reminder, onClose }: { reminder: ReminderRow | nu
             format='DD/MM/YYYY HH:mm'
             allowClear={false}
             disabledDate={(d) => d.valueOf() < parseLocalDate(toLocalDate()).getTime()}
+            disabledTime={(d) => {
+              const now = new Date();
+              if (!d || toLocalDate(d.toDate()) !== toLocalDate(now)) return {};
+              const upTo = (n: number) => Array.from({ length: n }, (_, i) => i);
+              return { disabledHours: () => upTo(now.getHours()), disabledMinutes: () => (d.hour() === now.getHours() ? upTo(now.getMinutes() + 1) : []) };
+            }}
             style={{ width: '100%' }}
           />
         </Form.Item>

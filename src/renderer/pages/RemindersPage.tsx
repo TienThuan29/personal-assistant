@@ -3,23 +3,31 @@ import { Button, Empty, Radio, Space, Tag } from '@arco-design/web-react';
 import { Delete, Edit, Plus } from '@icon-park/react';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { parseLocalDate, toLocalDate, toLocalTime } from '../../shared/dates';
+import { addDays, parseLocalDate, toLocalDate, toLocalTime } from '../../shared/dates';
 import type { ReminderRow } from '../../shared/types';
 import { api } from '../api';
 import { Skeleton, useData } from '../useData';
 import { ReminderForm } from './ReminderForm';
 
 const STATUSES = ['pending', 'fired', 'dismissed'] as const;
+const HISTORY_DAYS = 90;
 
 export function RemindersPage() {
   const [status, setStatus] = useState('pending');
   const [editing, setEditing] = useState<ReminderRow | null>(); // undefined: closed, null: adding
-  // ponytail: list_reminders returns at most 200 (oldest first); page by from/to if a view ever holds more.
-  const read = useCallback(() => api.data.read<ReminderRow[]>('list_reminders', { status }), [status]);
+  // ponytail: list_reminders returns at most 200, oldest first. Pending lists everything; the other views only the last
+  // HISTORY_DAYS, newest first, so old history can't crowd out recent rows. Page by from/to if a view ever holds more than 200.
+  const read = useCallback(
+    () =>
+      status === 'pending'
+        ? api.data.read<ReminderRow[]>('list_reminders', { status })
+        : api.data.read<ReminderRow[]>('list_reminders', { status, from: addDays(toLocalDate(), -HISTORY_DAYS) }).then((rows) => rows.reverse()),
+    [status]
+  );
   const { data: reminders, loading, busy, write, remove, holders } = useData(read, []);
   const { t } = useTranslation(['pages', 'common']);
 
-  const groups = new Map<string, ReminderRow[]>(); // local date -> rows, in remind_at order
+  const groups = new Map<string, ReminderRow[]>(); // local date -> rows, in list order
   for (const r of reminders) {
     const day = toLocalDate(new Date(r.remind_at));
     groups.set(day, [...(groups.get(day) ?? []), r]);
@@ -56,7 +64,7 @@ export function RemindersPage() {
             <div key={r.id} className={r.status === 'pending' ? 'row' : 'row is-closed'}>
               <span className='muted'>{toLocalTime(new Date(r.remind_at))}</span>
               <div className='row-main'>
-                <button type='button' className='link' onClick={() => setEditing(r)}>
+                <button type='button' className='link' disabled={busy.includes(r.id)} onClick={() => setEditing(r)}>
                   {r.message}
                 </button>
               </div>
