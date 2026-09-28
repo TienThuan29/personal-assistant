@@ -54,6 +54,23 @@ body {
 .thumbs { display: flex; gap: 8px; flex-wrap: wrap; }
 .thumb { padding: 0; border: 0; background: none; border-radius: 8px; cursor: zoom-in; }
 .thumb img { display: block; width: 72px; height: 72px; object-fit: cover; border-radius: 8px; }
+.image-field { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; border-radius: 8px; outline: none; }
+.image-field:focus-visible { box-shadow: 0 0 0 2px rgba(var(--primary-6), 0.3); }
+.field-thumb { position: relative; }
+.field-thumb img { display: block; width: 72px; height: 72px; object-fit: cover; border-radius: 8px; transition: opacity 0.2s; }
+.field-thumb.is-removed img { opacity: 0.35; }
+.field-thumb button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  padding: 3px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(var(--gray-10), 0.6);
+  color: #fff;
+  cursor: pointer;
+}
 
 .confirm-card {
   display: flex;

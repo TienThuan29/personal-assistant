@@ -16,6 +16,13 @@ export const vi = {
     image: 'Ảnh',
     attachment: 'Ảnh đính kèm',
     viewAttachment: 'Xem ảnh đính kèm',
+    add: 'Thêm',
+    edit: 'Sửa',
+    discardChanges: 'Bỏ thay đổi?',
+    discard: 'Bỏ',
+    addImage: 'Thêm ảnh',
+    removeImage: 'Gỡ ảnh',
+    undoRemove: 'Giữ lại ảnh',
     // @aionui/ui UiProvider labels
     ui: {
       cancel: 'Hủy',
@@ -156,6 +163,14 @@ export const vi = {
     amount: 'Số tiền',
     image: 'Ảnh',
     deleteExpense: 'Xóa khoản chi: {{what}}',
+    addTask: 'Thêm task',
+    editTask: 'Sửa task',
+    addNote: 'Thêm ghi chú',
+    editNote: 'Sửa ghi chú',
+    addExpense: 'Thêm khoản chi',
+    editExpense: 'Sửa khoản chi',
+    addReminder: 'Thêm nhắc nhở',
+    editReminder: 'Sửa nhắc nhở',
   },
   settings: {
     title: 'Cài đặt',
