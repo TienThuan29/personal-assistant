@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { type Cipher, getSetting, readSecrets, setSetting, writeSecret } from '../src/main/settings';
+import { type Cipher, getSetting, llmConfigSchema, readSecrets, setSetting, writeSecret } from '../src/main/settings';
 import { tempDir, testDb } from './helpers';
 
 // Stand-in for Electron safeStorage: reversible, but not plaintext.
@@ -31,7 +31,19 @@ describe('settings', () => {
     const file = join(tempDir(), 'secrets.bin');
     writeFileSync(file, 'garbage');
     expect(readSecrets(file, cipher)).toEqual({});
+    writeFileSync(file, cipher.encrypt('null'));
+    expect(readSecrets(file, cipher)).toEqual({});
     writeSecret(file, cipher, 'azure', 'sk-new');
     expect(readSecrets(file, cipher)).toEqual({ azure: 'sk-new' });
+  });
+
+  it('validates the LLM config: https (or local http), trimmed, no trailing slash', () => {
+    const base = { provider: 'azure', model: 'gpt-4o', apiVersion: '2024-10-21' };
+    const ok = (endpoint: string, extra = {}) => llmConfigSchema.safeParse({ ...base, endpoint, ...extra });
+    expect(ok(' https://r.openai.azure.com/ ', { extra: 1 }).data).toEqual({ ...base, endpoint: 'https://r.openai.azure.com' });
+    expect(ok('http://localhost:4000/v1').data?.endpoint).toBe('http://localhost:4000/v1');
+    expect(ok('http://example.com').success).toBe(false);
+    expect(ok('javascript:alert(1)').success).toBe(false);
+    expect(ok('https://r.openai.azure.com', { model: '   ' }).success).toBe(false);
   });
 });

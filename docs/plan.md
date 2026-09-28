@@ -2535,7 +2535,7 @@ git commit -m "feat(tools): today overview and capped read-only SQL"
 ```ts
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { type Cipher, getSetting, readSecrets, setSetting, writeSecret } from '../src/main/settings';
+import { type Cipher, getSetting, llmConfigSchema, readSecrets, setSetting, writeSecret } from '../src/main/settings';
 import { tempDir, testDb } from './helpers';
 
 // Stand-in for Electron safeStorage: reversible, but not plaintext.
@@ -2566,8 +2566,20 @@ describe('settings', () => {
     const file = join(tempDir(), 'secrets.bin');
     writeFileSync(file, 'garbage');
     expect(readSecrets(file, cipher)).toEqual({});
+    writeFileSync(file, cipher.encrypt('null'));
+    expect(readSecrets(file, cipher)).toEqual({});
     writeSecret(file, cipher, 'azure', 'sk-new');
     expect(readSecrets(file, cipher)).toEqual({ azure: 'sk-new' });
+  });
+
+  it('validates the LLM config: https (or local http), trimmed, no trailing slash', () => {
+    const base = { provider: 'azure', model: 'gpt-4o', apiVersion: '2024-10-21' };
+    const ok = (endpoint: string, extra = {}) => llmConfigSchema.safeParse({ ...base, endpoint, ...extra });
+    expect(ok(' https://r.openai.azure.com/ ', { extra: 1 }).data).toEqual({ ...base, endpoint: 'https://r.openai.azure.com' });
+    expect(ok('http://localhost:4000/v1').data?.endpoint).toBe('http://localhost:4000/v1');
+    expect(ok('http://example.com').success).toBe(false);
+    expect(ok('javascript:alert(1)').success).toBe(false);
+    expect(ok('https://r.openai.azure.com', { model: '   ' }).success).toBe(false);
   });
 });
 ```
@@ -2585,11 +2597,23 @@ import { z } from 'zod/v4';
 import type { LlmConfig } from '../shared/types';
 import type { Db } from './db';
 
+/** The key is sent to this endpoint, so only https (or http to a local gateway). Trailing '/' dropped: the SDK appends '/openai'. */
+const endpoint = z
+  .string()
+  .trim()
+  .pipe(z.url())
+  .refine((u) => {
+    const { protocol, hostname } = new URL(u);
+    return protocol === 'https:' || (protocol === 'http:' && ['localhost', '127.0.0.1'].includes(hostname));
+  }, 'Endpoint phải dùng https')
+  .transform((u) => u.replace(/\/+$/, ''));
+
+/** Not an LLM tool schema, so it never goes through toJSONSchema. */
 export const llmConfigSchema = z.object({
   provider: z.enum(['azure', 'gateway']),
-  endpoint: z.url(),
-  model: z.string().min(1),
-  apiVersion: z.string().min(1),
+  endpoint,
+  model: z.string().trim().min(1),
+  apiVersion: z.string().trim().min(1),
 });
 
 export function getSetting<T>(db: Db, key: string, fallback: T): T {
@@ -2610,12 +2634,14 @@ type Secrets = Partial<Record<LlmConfig['provider'], string>>;
 
 /**
  * Secrets live in their own file, never in the DB, so query_readonly_sql can't leak them (design D14).
- * An unreadable file (corrupt, or encrypted under another Windows user) reads as empty: the user re-enters the key.
+ * An undecryptable file (corrupt, or encrypted under another Windows user) reads as empty: the user re-enters the key.
  */
 export function readSecrets(file: string, cipher: Cipher): Secrets {
   if (!existsSync(file)) return {};
+  const data = readFileSync(file); // outside the try: a transient I/O error must throw, not wipe the other key on the next write
   try {
-    return JSON.parse(cipher.decrypt(readFileSync(file))) as Secrets;
+    const v: unknown = JSON.parse(cipher.decrypt(data));
+    return typeof v === 'object' && v ? (v as Secrets) : {};
   } catch {
     return {};
   }
@@ -3674,7 +3700,8 @@ export function registerIpc(m: MainCtx): void {
     const parsed = llmConfigSchema.safeParse(s.llm);
     if (!parsed.success) throw new Error(`Cấu hình chưa hợp lệ: ${z.prettifyError(parsed.error)}`);
     setSetting(m.db, 'llm', parsed.data);
-    if (s.apiKey) writeSecret(m.secretsFile, m.cipher, parsed.data.provider, s.apiKey);
+    const key = s.apiKey?.trim();
+    if (key) writeSecret(m.secretsFile, m.cipher, parsed.data.provider, key);
     m.loginItem.set(!!s.openAtLogin);
   });
   ipcMain.handle('settings:test', async () => {

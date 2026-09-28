@@ -3,11 +3,23 @@ import { z } from 'zod/v4';
 import type { LlmConfig } from '../shared/types';
 import type { Db } from './db';
 
+/** The key is sent to this endpoint, so only https (or http to a local gateway). Trailing '/' dropped: the SDK appends '/openai'. */
+const endpoint = z
+  .string()
+  .trim()
+  .pipe(z.url())
+  .refine((u) => {
+    const { protocol, hostname } = new URL(u);
+    return protocol === 'https:' || (protocol === 'http:' && ['localhost', '127.0.0.1'].includes(hostname));
+  }, 'Endpoint phải dùng https')
+  .transform((u) => u.replace(/\/+$/, ''));
+
+/** Not an LLM tool schema, so it never goes through toJSONSchema. */
 export const llmConfigSchema = z.object({
   provider: z.enum(['azure', 'gateway']),
-  endpoint: z.url(),
-  model: z.string().min(1),
-  apiVersion: z.string().min(1),
+  endpoint,
+  model: z.string().trim().min(1),
+  apiVersion: z.string().trim().min(1),
 });
 
 export function getSetting<T>(db: Db, key: string, fallback: T): T {
@@ -28,12 +40,14 @@ type Secrets = Partial<Record<LlmConfig['provider'], string>>;
 
 /**
  * Secrets live in their own file, never in the DB, so query_readonly_sql can't leak them (design D14).
- * An unreadable file (corrupt, or encrypted under another Windows user) reads as empty: the user re-enters the key.
+ * An undecryptable file (corrupt, or encrypted under another Windows user) reads as empty: the user re-enters the key.
  */
 export function readSecrets(file: string, cipher: Cipher): Secrets {
   if (!existsSync(file)) return {};
+  const data = readFileSync(file); // outside the try: a transient I/O error must throw, not wipe the other key on the next write
   try {
-    return JSON.parse(cipher.decrypt(readFileSync(file))) as Secrets;
+    const v: unknown = JSON.parse(cipher.decrypt(data));
+    return typeof v === 'object' && v ? (v as Secrets) : {};
   } catch {
     return {};
   }
