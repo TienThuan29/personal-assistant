@@ -213,7 +213,7 @@ export const vi = {
     llmStopped: 'Đã dừng.',
     llmConnection: 'Không kết nối được tới LLM endpoint. Kiểm tra mạng/proxy và URL trong Cài đặt.',
     llmAuth: 'API key/token sai hoặc hết hạn. Kiểm tra trong Cài đặt.',
-    llmModelNotFound: 'Không tìm thấy model/deployment. Kiểm tra endpoint và tên model trong Cài đặt.',
+    llmModelNotFound: 'Không tìm thấy (404). Với LLM gateway, endpoint thường phải kết thúc bằng /v1 (vd https://…/v1); kiểm tra cả tên model/deployment trong Cài đặt.',
     llmContextLength: 'Hội thoại quá dài, hãy tạo hội thoại mới.',
     llmContentFilter: 'Yêu cầu bị bộ lọc nội dung của LLM chặn. Hãy diễn đạt lại.',
     llmRateLimit: 'LLM đang giới hạn tốc độ (429). Thử lại sau ít phút.',

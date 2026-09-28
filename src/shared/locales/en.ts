@@ -204,7 +204,7 @@ export const en: Resources = {
     llmStopped: 'Stopped.',
     llmConnection: 'Could not connect to the LLM endpoint. Check your network/proxy and the URL in Settings.',
     llmAuth: 'The API key/token is wrong or has expired. Check it in Settings.',
-    llmModelNotFound: 'Model/deployment not found. Check the endpoint and the model name in Settings.',
+    llmModelNotFound: 'Not found (404). For an LLM gateway the endpoint usually ends in /v1 (e.g. https://…/v1); also check the model/deployment name in Settings.',
     llmContextLength: 'This conversation is too long. Please start a new one.',
     llmContentFilter: "The request was blocked by the LLM's content filter. Try rephrasing it.",
     llmRateLimit: 'The LLM is rate limiting requests (429). Try again in a few minutes.',
