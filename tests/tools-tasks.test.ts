@@ -25,6 +25,13 @@ describe('task tools', () => {
     expect(ctx.db.prepare('SELECT DISTINCT category FROM tasks').all()).toEqual([{ category: 'Nhà' }]);
   });
 
+  it('keeps the built-in category keys even when a differently cased one exists', () => {
+    const ctx = testCtx();
+    callTool(ctx, 'create_task', { title: 'A', category: 'Personal' });
+    expect(callTool<TaskRow>(ctx, 'create_task', { title: 'B' }).category).toBe('personal');
+    expect(callTool<TaskRow>(ctx, 'create_task', { title: 'C', category: 'personal' }).category).toBe('personal');
+  });
+
   it('lists by date range and category', () => {
     const ctx = testCtx();
     callTool(ctx, 'create_task', { title: 'A', due_date: '2026-09-28', category: 'work' });

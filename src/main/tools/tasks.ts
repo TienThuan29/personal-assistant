@@ -23,6 +23,10 @@ const recurrence = z.string().regex(RECURRENCE_RE).describe("'daily' | 'weekly:1
 const priority = z.union([z.literal(1), z.literal(2), z.literal(3)]).describe('1 cao, 2 thường, 3 thấp');
 const category = z.string().trim().min(1).describe("'work' (công việc) | 'personal' (cá nhân) | category đã có");
 
+/** Built-in keys stay as they are (the UI maps them to labels); others snap to an existing spelling. */
+const taskCategory = (db: Db, c: string, exclude?: number[]): string =>
+  c === 'work' || c === 'personal' ? c : canonCategory(db, 'tasks', c, exclude);
+
 const getTask = (db: Db, id: number): TaskRow => getRows<TaskRow>(db, 'tasks', [id])[0];
 
 /** Next occurrence (after the due date or today, whichever is later); the rule moves to the new row so re-completing never spawns twice. */
@@ -91,7 +95,7 @@ export const taskTools = [
         .run({
           title: a.title,
           notes: a.notes ?? null,
-          category: canonCategory(db, 'tasks', a.category ?? 'personal'),
+          category: taskCategory(db, a.category ?? 'personal'),
           priority: a.priority ?? 2,
           due_date: a.due_date ?? null,
           due_time: a.due_time ?? null,
@@ -128,7 +132,7 @@ export const taskTools = [
     apply: (a, { db, now }) => {
       const before = requireRows<TaskRow>(db, 'tasks', a.ids);
       const { status } = a.patch;
-      const patch = a.patch.category ? { ...a.patch, category: canonCategory(db, 'tasks', a.patch.category, a.ids) } : a.patch;
+      const patch = a.patch.category ? { ...a.patch, category: taskCategory(db, a.patch.category, a.ids) } : a.patch;
       updateRows(db, 'tasks', a.ids, patch, status && status !== 'done' ? { completed_at: null } : {});
       if (status === 'done') {
         const stmt = db.prepare('UPDATE tasks SET completed_at = COALESCE(completed_at, ?) WHERE id = ?');
