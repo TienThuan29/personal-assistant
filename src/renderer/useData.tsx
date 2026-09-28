@@ -1,5 +1,6 @@
 import { Message, Modal } from '@arco-design/web-react';
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api, errorText } from './api';
 
 /**
@@ -8,6 +9,7 @@ import { api, errorText } from './api';
  * `read` must be memoized (useCallback): a new function reloads.
  */
 export function useData<T>(read: () => Promise<T>, initial: T, delay = 0) {
+  const { t } = useTranslation();
   const [data, setData] = useState(initial);
   const [busy, setBusy] = useState<number[]>([]);
   const [message, messageHolder] = Message.useMessage();
@@ -25,7 +27,7 @@ export function useData<T>(read: () => Promise<T>, initial: T, delay = 0) {
       );
     const t = setTimeout(load, delay);
     const off = api.data.onChanged(load);
-    window.addEventListener('focus', load); // also re-renders date-relative views (Hôm nay) after midnight
+    window.addEventListener('focus', load); // also re-renders date-relative views (Today) after midnight
     return () => {
       live = false;
       clearTimeout(t);
@@ -50,9 +52,9 @@ export function useData<T>(read: () => Promise<T>, initial: T, delay = 0) {
   /** Asks before deleting row `id` with `tool`; `what` names it in the dialog. */
   const remove = (id: number, tool: string, what: string) =>
     modal.confirm?.({
-      title: 'Xóa?',
+      title: t('deleteConfirm'),
       content: what,
-      okText: 'Xóa',
+      okText: t('delete'),
       okButtonProps: { status: 'danger' },
       onOk: () => write(id, tool, { ids: [id] }),
     });

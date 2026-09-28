@@ -1,10 +1,66 @@
 import { AionSelect, PreferenceRow, SectionCard, SettingsPageHeader } from '@aionui/ui';
-import { Alert, Button, Input, Space, Switch } from '@arco-design/web-react';
+import { Alert, Button, Input, Message, Select, Space, Switch } from '@arco-design/web-react';
 import { useEffect, useState } from 'react';
-import { DEFAULT_LLM, type LlmConfig, type SettingsView } from '../../shared/types';
-import { api, errorText } from '../api';
+import { useTranslation } from 'react-i18next';
+import { formatMoney } from '../../shared/money';
+import { DEFAULT_LLM, type LlmConfig, type SettingsView, type UiSettings } from '../../shared/types';
+import { api, errorText, useUiSettings } from '../api';
+
+const CURRENCIES = ['VND', 'USD', 'EUR', 'JPY'];
+const EXAMPLE_AMOUNT = 1_234_500; // minor units: 1.234.500 ₫ or $12,345.00
+
+/** Applied at once; main broadcasts ui:changed, which updates the language and the context (main.tsx). */
+function DisplayCard() {
+  const { t } = useTranslation('settings');
+  const ui = useUiSettings();
+  const [message, messageHolder] = Message.useMessage();
+  const setUi = (patch: Partial<UiSettings>) => void api.settings.setUi(patch).catch((e) => message.error?.(errorText(e)));
+  const example = (style: UiSettings['moneyStyle']) => formatMoney(EXAMPLE_AMOUNT, ui.defaultCurrency, style);
+  return (
+    <SectionCard title={t('display')}>
+      {messageHolder}
+      <PreferenceRow label={t('language')} description={t('languageDesc')}>
+        <AionSelect
+          aria-label={t('language')}
+          value={ui.language}
+          onChange={(language: UiSettings['language']) => setUi({ language })}
+          style={{ width: 380 }}
+          options={[
+            { label: t('langVi'), value: 'vi' },
+            { label: t('langEn'), value: 'en' },
+          ]}
+        />
+      </PreferenceRow>
+      <PreferenceRow label={t('moneyStyle')} description={t('moneyStyleDesc')}>
+        <AionSelect
+          aria-label={t('moneyStyle')}
+          value={ui.moneyStyle}
+          onChange={(moneyStyle: UiSettings['moneyStyle']) => setUi({ moneyStyle })}
+          style={{ width: 380 }}
+          options={[
+            { label: t('moneyVi', { example: example('vi') }), value: 'vi' },
+            { label: t('moneyIntl', { example: example('intl') }), value: 'intl' },
+          ]}
+        />
+      </PreferenceRow>
+      <PreferenceRow label={t('defaultCurrency')} description={t('defaultCurrencyDesc')}>
+        {/* allowCreate: type any other ISO code; main validates it and a bad one shows as a message. */}
+        <Select
+          aria-label={t('defaultCurrency')}
+          value={ui.defaultCurrency}
+          showSearch
+          allowCreate
+          onChange={(defaultCurrency: string) => defaultCurrency && setUi({ defaultCurrency })}
+          style={{ width: 380 }}
+          options={[...new Set([...CURRENCIES, ui.defaultCurrency])]}
+        />
+      </PreferenceRow>
+    </SectionCard>
+  );
+}
 
 export function SettingsPage() {
+  const { t } = useTranslation('settings');
   const [view, setView] = useState<SettingsView | null>(null);
   const [llm, setLlm] = useState<LlmConfig>(DEFAULT_LLM);
   const [apiKey, setApiKey] = useState('');
@@ -51,11 +107,12 @@ export function SettingsPage() {
   const keyLabel = azure ? 'API key' : 'Access token';
   return (
     <div className='page settings'>
-      <SettingsPageHeader title='Cài đặt' sticky={false} />
-      <SectionCard title='Mô hình AI'>
-        <PreferenceRow label='Nhà cung cấp' description='Cả hai đều dùng API tương thích OpenAI (tool calling + ảnh)'>
+      <SettingsPageHeader title={t('title')} sticky={false} />
+      <DisplayCard />
+      <SectionCard title={t('model')}>
+        <PreferenceRow label={t('provider')} description={t('providerDesc')}>
           <AionSelect
-            aria-label='Nhà cung cấp'
+            aria-label={t('provider')}
             value={llm.provider}
             onChange={(v: LlmConfig['provider']) => {
               set({ provider: v });
@@ -68,13 +125,13 @@ export function SettingsPage() {
             ]}
           />
         </PreferenceRow>
-        <PreferenceRow label='Endpoint' description={azure ? 'vd https://<resource>.openai.azure.com/' : 'Base URL, vd https://gateway.example.com/v1'}>
+        <PreferenceRow label='Endpoint' description={azure ? t('endpointAzure') : t('endpointGateway')}>
           <Input aria-label='Endpoint' placeholder='https://…' value={llm.endpoint} onChange={(v) => set({ endpoint: v })} style={{ width: 380 }} />
         </PreferenceRow>
-        <PreferenceRow label={azure ? 'Deployment' : 'Model'} description='Model phải hỗ trợ tool calling và đọc ảnh'>
+        <PreferenceRow label={azure ? 'Deployment' : 'Model'} description={t('modelDesc')}>
           <Input
             aria-label={azure ? 'Deployment' : 'Model'}
-            placeholder='vd gpt-4o'
+            placeholder={t('modelPlaceholder')}
             value={llm.model}
             onChange={(v) => set({ model: v })}
             style={{ width: 380 }}
@@ -87,21 +144,21 @@ export function SettingsPage() {
         )}
         <PreferenceRow
           label={keyLabel}
-          description={view.hasKey[llm.provider] ? 'Đã lưu (mã hóa bằng Windows). Để trống nếu không đổi.' : 'Chưa có'}
+          description={view.hasKey[llm.provider] ? t('keySaved') : t('keyMissing')}
         >
           <Input.Password
             aria-label={keyLabel}
-            placeholder={view.hasKey[llm.provider] ? '••• đã lưu' : undefined}
+            placeholder={view.hasKey[llm.provider] ? t('keySavedPlaceholder') : undefined}
             value={apiKey}
             onChange={setApiKey}
             style={{ width: 380 }}
           />
         </PreferenceRow>
       </SectionCard>
-      <SectionCard title='Hệ thống'>
-        <PreferenceRow label='Khởi động cùng Windows' description='Chạy ẩn ở khay hệ thống để nhắc nhở đúng giờ (chỉ bản đã đóng gói)'>
+      <SectionCard title={t('system')}>
+        <PreferenceRow label={t('openAtLogin')} description={t('openAtLoginDesc')}>
           <Switch
-            aria-label='Khởi động cùng Windows'
+            aria-label={t('openAtLogin')}
             checked={openAtLogin}
             onChange={(on: boolean) =>
               api.settings.setOpenAtLogin(on).then(setOpenAtLogin, (e) => setStatus({ type: 'error', text: errorText(e) }))
@@ -114,16 +171,16 @@ export function SettingsPage() {
           type='primary'
           loading={busy === 'save'}
           disabled={busy === 'test'}
-          onClick={run('save', async () => (await save(), 'Đã lưu'))}
+          onClick={run('save', async () => (await save(), t('saved')))}
         >
-          Lưu
+          {t('save')}
         </Button>
         <Button
           loading={busy === 'test'}
           disabled={busy === 'save'}
-          onClick={run('test', async () => (await save(), `Kết nối được. Model trả lời: ${await api.settings.test()}`))}
+          onClick={run('test', async () => (await save(), t('testOk', { reply: await api.settings.test() })))}
         >
-          Lưu và kiểm tra kết nối
+          {t('saveAndTest')}
         </Button>
       </Space>
       {status && <Alert type={status.type} content={status.text} />}

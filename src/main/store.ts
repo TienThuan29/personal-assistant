@@ -1,7 +1,6 @@
-import type { ChatMessage, ConversationRow, PendingAction, StoredMessage } from '../shared/types';
+import { type ChatMessage, type ConversationRow, DEFAULT_CONVERSATION_TITLE, type PendingAction, type StoredMessage } from '../shared/types';
 import { type Db, tx } from './db';
 
-const DEFAULT_TITLE = 'Hội thoại mới'; // must match the conversations.title default in migrations.ts
 const NOW_ISO = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
 
 /** Reuses the newest conversation without messages, so "new chat" clicks don't pile up empty ones. */
@@ -30,7 +29,7 @@ export function pruneEmptyConversations(db: Db): void {
 
 export function setTitleIfNew(db: Db, id: number, text: string): void {
   const title = [...text.normalize('NFC').replace(/\s+/g, ' ').trim()].slice(0, 40).join('') || 'Ảnh'; // code points: never splits an emoji
-  db.prepare('UPDATE conversations SET title = ? WHERE id = ? AND title = ?').run(title, id, DEFAULT_TITLE);
+  db.prepare('UPDATE conversations SET title = ? WHERE id = ? AND title = ?').run(title, id, DEFAULT_CONVERSATION_TITLE);
 }
 
 export function addMessage(db: Db, conversationId: number, m: StoredMessage): number {

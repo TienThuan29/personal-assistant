@@ -87,6 +87,23 @@ The existing code is the reference. These tasks give precise specs rather than f
    - default currency: an AutoComplete, or a Select with VND/USD/EUR/JPY plus custom input.
 5. Verify: `grep` finds no Vietnamese characters left in `src/renderer/**/*.tsx` except the locale files. Take screenshots of every page with language 'en' and with 'vi': set it through a throwaway script on the dev DB, then restore it.
 
+**As built (I2 follow-ups, before I3):**
+- `getUi` validates the merged row with `uiSettingsSchema`; an invalid row (hand-edited, corrupt, not an object) reads as `DEFAULT_UI`.
+- The prompt's default-currency line moved to the per-round facts at the end.
+- `recurrenceText` reads `common:`-prefixed keys, and its `t` is typed `TFunction<Namespace>`, so any namespace's `t` fits.
+- Tests: `formatMoney` "malformed codes" plus an `'XYZ'` case (a well-formed unknown code formats with 2 decimals), and `saveUi` ignores a `__proto__` key.
+
+**As built (I3 deviations):**
+- `main.tsx` top-level-awaits `api.settings.get()` (falls back to `DEFAULT_UI`), builds the instance with `createI18n`, and renders a `Root` that holds the `ui` state. Its `onUiChanged` handler is the only place that calls `changeLanguage` and updates the context. `UiContext` and `useUiSettings()` live in `renderer/api.ts`.
+- Components that need a second namespace use `useTranslation(['pages', 'common'])`, because i18next only types `ns:key` for namespace arrays. Dynamic key sets (ConfirmCard fields/values/titles, tool statuses, categories) are read with `returnObjects: true` and fall back to the raw key.
+- `DEFAULT_CONVERSATION_TITLE` moved to `shared/types.ts`; `store.ts` imports it, and the sider and the delete dialog show `chat:newChat` for it.
+- New keys: `common` (nav, category, appName, `ui` labels for `UiProvider`, weekdayLong, delete/image labels), `chat`, `pages`, `settings`. The language option names (`Tiếng Việt`, `English`) are the same in both locales. The provider names, "Endpoint", "API key", "Access token", "Model" and "Deployment" stay literal English.
+- Today's header is `t('common:weekdayLong.N')` + the vi-VN numeric date. Other dates keep `vi-VN`.
+- The window title (`document.title`) follows `common:appName`; `index.html` has an English placeholder.
+- ConfirmCard falls back to `defaultCurrency` (not `'VND'`) when a `create_expense` card has no currency, matching `create_expense`.
+- Display card: `AionSelect` for the language and the money style (the example amount is 1,234,500 minor units in the default currency), and an Arco `Select` with `showSearch allowCreate` for the currency (VND/USD/EUR/JPY plus the current value). Main validates the value, and an error shows as a Message.
+- Screenshots were taken with a copy of the dev DB in a scratch `--user-data-dir`, seeded with tasks, reminders, notes, expenses and a conversation with 4 cards. The language was set on that copy, so the real dev DB was never changed.
+
 ## Task I4: System strings (tray, toasts) and docs
 
 1. Tray menu labels, tooltip and reminder toast title/body come from the main instance.

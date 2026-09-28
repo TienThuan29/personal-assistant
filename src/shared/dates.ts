@@ -1,4 +1,4 @@
-import type { TFunction } from 'i18next';
+import type { Namespace, TFunction } from 'i18next';
 import { createI18n } from './i18n';
 
 const pad = (n: number): string => String(n).padStart(2, '0');
@@ -53,10 +53,10 @@ export function nextOccurrence(recurrence: string, from: string): string {
   throw new Error(`Recurrence không hợp lệ: ${recurrence}`);
 }
 
-let viT: TFunction<['common']> | undefined; // created on first use, so importing dates never builds an i18n instance
+let viT: TFunction<Namespace> | undefined; // created on first use, so importing dates never builds an i18n instance
 
 /** Text of a rule via `t` of any namespace (Vietnamese by default): 'Hằng ngày', 'Hằng tuần: T2, T4', 'Ngày 15 hằng tháng'. Unknown rules come back as-is. */
-export function recurrenceText(rule: string, t: TFunction<['common']> = (viT ??= createI18n('vi').t)): string {
+export function recurrenceText(rule: string, t: TFunction<Namespace> = (viT ??= createI18n('vi').t)): string {
   if (rule === 'daily') return t('common:recurDaily');
   if (rule.startsWith('weekly:')) {
     const days = rule.slice(7).split(',').map((d) => (/^[1-7]$/.test(d) ? t(`common:weekday.${d as '1'}`) : d));

@@ -2,6 +2,7 @@ import { AionModal, AionSearchInput, SettingsPageHeader } from '@aionui/ui';
 import { Button, Empty, Tag } from '@arco-design/web-react';
 import { Delete } from '@icon-park/react';
 import { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { NoteRow } from '../../shared/types';
 import { api } from '../api';
 import { Thumbs } from '../components/Thumbs';
@@ -13,6 +14,7 @@ const highlight = (s: string) => s.split(/[⟦⟧]/).map((part, i) => (i % 2 ? <
 const when = (iso: string) => new Date(iso).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' });
 
 export function NotesPage() {
+  const { t } = useTranslation('pages');
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<NoteRow | null>(null);
   const read = useCallback(() => api.data.read<NoteRow[]>('search_notes', { query: query.trim() || undefined, limit: 100 }), [query]);
@@ -23,16 +25,16 @@ export function NotesPage() {
   return (
     <div className='page'>
       {holders}
-      <SettingsPageHeader title='Ghi chú & nhật ký' sticky={false} description='Tìm không cần gõ dấu. Muốn thêm hoặc sửa, hãy nhắn cho trợ lý.' />
-      <AionSearchInput value={query} onChange={setQuery} placeholder='Tìm ghi chú…' style={{ marginTop: 12 }} />
-      {!notes.length && <Empty description={query.trim() ? 'Không tìm thấy ghi chú nào' : 'Chưa có ghi chú nào'} />}
+      <SettingsPageHeader title={t('notesTitle')} sticky={false} description={t('notesHint')} />
+      <AionSearchInput value={query} onChange={setQuery} placeholder={t('searchNotes')} style={{ marginTop: 12 }} />
+      {!notes.length && <Empty description={query.trim() ? t('noNotesFound') : t('noNotes')} />}
       {notes.map((n) => (
         <div key={n.id} className='row'>
           <div className='row-main'>
             <div>
-              {n.kind === 'journal' && <Tag color='purple'>Nhật ký</Tag>}{' '}
+              {n.kind === 'journal' && <Tag color='purple'>{t('journal')}</Tag>}{' '}
               <button type='button' className='link' onClick={() => openNote(n.id)}>
-                {n.title || 'Không tiêu đề'}
+                {n.title || t('untitled')}
               </button>
             </div>
             <div className='muted snippet' onClick={() => openNote(n.id)}>
@@ -46,7 +48,7 @@ export function NotesPage() {
             type='text'
             status='danger'
             icon={<Delete />}
-            aria-label={`Xóa ghi chú: ${n.title || 'Không tiêu đề'}`}
+            aria-label={t('deleteNote', { what: n.title || t('untitled') })}
             disabled={busy.includes(n.id)}
             onClick={() => remove(n.id, 'delete_notes', n.title || n.snippet?.replace(/[⟦⟧]/g, '') || '')}
           />
@@ -57,7 +59,7 @@ export function NotesPage() {
         onCancel={() => setOpen(null)}
         size='large'
         style={{ height: 'auto' }}
-        header={open?.title || 'Ghi chú'}
+        header={open?.title || t('note')}
         footer={null}
       >
         {open && (

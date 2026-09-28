@@ -2,10 +2,11 @@ import { SettingsPageHeader } from '@aionui/ui';
 import { Button, Checkbox, Empty } from '@arco-design/web-react';
 import { Delete } from '@icon-park/react';
 import { type ReactNode, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { addDays, parseLocalDate, toLocalDate } from '../../shared/dates';
 import { formatMoney } from '../../shared/money';
 import type { ReminderRow, TaskRow } from '../../shared/types';
-import { api } from '../api';
+import { api, useUiSettings } from '../api';
 import { useData } from '../useData';
 
 type Today = {
@@ -35,18 +36,20 @@ export function TodayPage() {
   }, []);
   // ponytail: tasks and reminders share one busy list keyed by id, so equal ids briefly disable each other
   const { data, busy, write, remove, holders } = useData(read, EMPTY);
+  const { t } = useTranslation(['pages', 'common']);
+  const { moneyStyle } = useUiSettings();
 
   const taskRows = (list: TaskRow[], overdue: boolean) =>
-    list.map((t) => (
-      <div key={t.id} className='row'>
+    list.map((task) => (
+      <div key={task.id} className='row'>
         <Checkbox
-          aria-label={`Hoàn thành: ${t.title}`}
-          checked={busy.includes(t.id)}
-          disabled={busy.includes(t.id)}
-          onChange={() => void write(t.id, 'update_tasks', { ids: [t.id], patch: { status: 'done' } })}
+          aria-label={t('complete', { title: task.title })}
+          checked={busy.includes(task.id)}
+          disabled={busy.includes(task.id)}
+          onChange={() => void write(task.id, 'update_tasks', { ids: [task.id], patch: { status: 'done' } })}
         />
-        <div className='row-main'>{t.title}</div>
-        <span className={overdue ? 'overdue' : 'muted'}>{overdue ? dateText(t.due_date!) : t.due_time}</span>
+        <div className='row-main'>{task.title}</div>
+        <span className={overdue ? 'overdue' : 'muted'}>{overdue ? dateText(task.due_date!) : task.due_time}</span>
       </div>
     ));
 
@@ -56,14 +59,14 @@ export function TodayPage() {
         <div className='row-main'>{r.message}</div>
         <span className='muted'>{withDate ? new Date(r.remind_at).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' }) : timeText(r.remind_at)}</span>
         <Button size='mini' disabled={busy.includes(r.id)} onClick={() => void write(r.id, 'update_reminders', { ids: [r.id], patch: { status: 'dismissed' } })}>
-          Bỏ qua
+          {t('dismiss')}
         </Button>
         <Button
           size='mini'
           type='text'
           status='danger'
           icon={<Delete />}
-          aria-label={`Xóa nhắc nhở: ${r.message}`}
+          aria-label={t('deleteReminder', { what: r.message })}
           disabled={busy.includes(r.id)}
           onClick={() => remove(r.id, 'delete_reminders', r.message)}
         />
@@ -71,22 +74,26 @@ export function TodayPage() {
     ));
 
   const sections: [string, ReactNode[]][] = [
-    ['Quá hạn', taskRows(data.overdue, true)],
-    ['Task hôm nay', taskRows(data.tasks_today, false)],
-    ['Nhắc nhở hôm nay', reminderRows(data.reminders_today, false)],
-    [`Nhắc nhở ${UPCOMING_DAYS} ngày tới`, reminderRows(data.upcoming, true)],
+    [t('overdue'), taskRows(data.overdue, true)],
+    [t('tasksToday'), taskRows(data.tasks_today, false)],
+    [t('remindersToday'), reminderRows(data.reminders_today, false)],
+    [t('remindersNext', { days: UPCOMING_DAYS }), reminderRows(data.upcoming, true)],
   ];
-  const spent = data.spent_today.length ? data.spent_today.map((s) => formatMoney(s.total, s.currency)).join(' + ') : '0';
+  const longDate = (date: string) => {
+    const d = parseLocalDate(date);
+    return `${t(`common:weekdayLong.${String(d.getDay() || 7) as '1'}`)}, ${d.toLocaleDateString('vi-VN')}`;
+  };
+  const spent = data.spent_today.length ? data.spent_today.map((s) => formatMoney(s.total, s.currency, moneyStyle)).join(' + ') : '0';
 
   return (
     <div className='page'>
       {holders}
       <SettingsPageHeader
-        title='Hôm nay'
+        title={t('common:nav.today')}
         sticky={false}
-        description={`${data.today ? parseLocalDate(data.today).toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'numeric', year: 'numeric' }) : ''} · Đã chi hôm nay: ${spent}`}
+        description={`${data.today ? longDate(data.today) : ''} · ${t('spentToday', { amount: spent })}`}
       />
-      {sections.every(([, rows]) => !rows.length) && <Empty description='Hôm nay không có việc hay nhắc nhở nào' />}
+      {sections.every(([, rows]) => !rows.length) && <Empty description={t('todayEmpty')} />}
       {sections
         .filter(([, rows]) => rows.length)
         .map(([title, rows]) => (

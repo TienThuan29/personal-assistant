@@ -2,24 +2,23 @@ import { FilePreview, SlashCommandMenu } from '@aionui/ui';
 import { Button, Input, Message } from '@arco-design/web-react';
 import { PauseOne, Pic, Send } from '@icon-park/react';
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ImageInput } from '../../shared/types';
 
 const ACCEPT = ['image/png', 'image/jpeg'];
 const MAX_BYTES = 20 * 1024 * 1024;
 const MAX_IMAGES = 10;
 
-/** Slash commands are just canned prompts. */
-const COMMANDS = [
-  { key: 'homnay', label: '/homnay', description: 'Tóm tắt hôm nay', prompt: 'Hôm nay tôi có những việc gì? Tóm tắt task hôm nay, task quá hạn, nhắc nhở và chi tiêu hôm nay.' },
-  { key: 'tuannay', label: '/tuannay', description: 'Task tuần này', prompt: 'Tuần này (thứ 2 đến chủ nhật) tôi có những task nào? Nhóm theo ngày.' },
-  { key: 'chitieu', label: '/chitieu', description: 'Chi tiêu tháng này', prompt: 'Tổng hợp chi tiêu tháng này theo từng danh mục và so với tháng trước.' },
-];
+/** Slash commands are just canned prompts; the names stay the same in every language. */
+const COMMANDS = ['homnay', 'tuannay', 'chitieu'] as const;
 
 type Picked = { file: File; url: string };
 
 type Props = { running: boolean; onSend: (text: string, images: ImageInput[]) => Promise<boolean>; onStop: () => void };
 
 export function SendBox({ running, onSend, onStop }: Props) {
+  const { t } = useTranslation('chat');
+  const commands = COMMANDS.map((key) => ({ key, label: `/${key}`, description: t(`cmd.${key}.description`), prompt: t(`cmd.${key}.prompt`) }));
   const [text, setText] = useState('');
   const [images, setImages] = useState<Picked[]>([]);
   const [active, setActive] = useState(0);
@@ -28,7 +27,7 @@ export function SendBox({ running, onSend, onStop }: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [message, messageHolder] = Message.useMessage();
 
-  const slash = /^\/\S*$/.test(text) && text !== dismissed ? COMMANDS.filter((c) => c.label.startsWith(text)) : [];
+  const slash = /^\/\S*$/.test(text) && text !== dismissed ? commands.filter((c) => c.label.startsWith(text)) : [];
   useEffect(() => setActive(0), [text]);
 
   // Revoke the previews still picked when the chat closes.
@@ -40,9 +39,9 @@ export function SendBox({ running, onSend, onStop }: Props) {
 
   const addFiles = (files: File[]) => {
     const ok = files.filter((f) => ACCEPT.includes(f.type) && f.size <= MAX_BYTES);
-    if (ok.length < files.length) message.warning?.('Chỉ nhận ảnh PNG/JPEG, tối đa 20MB');
+    if (ok.length < files.length) message.warning?.(t('imageRejected'));
     const room = Math.max(MAX_IMAGES - images.length, 0);
-    if (ok.length > room) message.warning?.(`Tối đa ${MAX_IMAGES} ảnh mỗi tin nhắn`);
+    if (ok.length > room) message.warning?.(t('tooManyImages', { max: MAX_IMAGES }));
     const added = ok.slice(0, room).map((file) => ({ file, url: URL.createObjectURL(file) }));
     if (added.length) setImages((prev) => [...prev, ...added]);
   };
@@ -65,7 +64,7 @@ export function SendBox({ running, onSend, onStop }: Props) {
       setText((t) => (t === typed ? '' : t)); // keep anything typed while sending
       setImages((prev) => prev.filter((i) => !sent.includes(i))); // keep any picked while sending
     } catch {
-      message.error?.('Không đọc được ảnh, hãy chọn lại');
+      message.error?.(t('imageReadFailed'));
     } finally {
       setSending(false);
     }
@@ -112,13 +111,13 @@ export function SendBox({ running, onSend, onStop }: Props) {
       {slash.length > 0 && (
         <div className='slash-menu'>
           <SlashCommandMenu
-            title='Lệnh nhanh'
-            hint='↑↓ chọn · Tab điền · Enter gửi · Esc đóng'
+            title={t('slashTitle')}
+            hint={t('slashHint')}
             items={slash}
             activeIndex={Math.min(active, slash.length - 1)}
             onHoverItem={setActive}
-            onSelectItem={(item) => void submit(COMMANDS.find((c) => c.key === item.key)!.prompt)}
-            emptyText='Không có lệnh'
+            onSelectItem={(item) => void submit(commands.find((c) => c.key === item.key)!.prompt)}
+            emptyText={t('slashEmpty')}
           />
         </div>
       )}
@@ -136,7 +135,7 @@ export function SendBox({ running, onSend, onStop }: Props) {
             setText(v);
             setDismissed(null);
           }}
-          aria-label='Tin nhắn cho trợ lý'
+          aria-label={t('inputLabel')}
           onKeyDown={onKeyDown}
           onPaste={(e) => {
             const files = Array.from(e.clipboardData.files);
@@ -146,11 +145,11 @@ export function SendBox({ running, onSend, onStop }: Props) {
             }
           }}
           autoSize={{ minRows: 2, maxRows: 8 }}
-          placeholder='Nhắn cho trợ lý… (Enter gửi, Shift+Enter xuống dòng, / xem lệnh nhanh, dán hoặc kéo ảnh vào đây)'
+          placeholder={t('placeholder')}
         />
         <div className='sendbox-actions'>
           <Button icon={<Pic />} onClick={() => fileInput.current?.click()}>
-            Ảnh
+            {t('attachImage')}
           </Button>
           <input
             ref={fileInput}
@@ -165,11 +164,11 @@ export function SendBox({ running, onSend, onStop }: Props) {
           />
           {running ? (
             <Button status='warning' icon={<PauseOne />} onClick={onStop}>
-              Dừng
+              {t('stop')}
             </Button>
           ) : (
             <Button type='primary' icon={<Send />} loading={sending} onClick={() => void submit()}>
-              Gửi
+              {t('send')}
             </Button>
           )}
         </div>

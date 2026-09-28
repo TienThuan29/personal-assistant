@@ -50,6 +50,8 @@ export type ExpenseRow = {
 export type ExpenseList = { items: ExpenseRow[]; totals: { currency: string; total: number }[] };
 
 export type ConversationRow = { id: number; title: string; updated_at: string };
+/** The conversations.title default in migrations.ts; the renderer shows it translated. */
+export const DEFAULT_CONVERSATION_TITLE = 'Hội thoại mới';
 
 export type ToolCall = { id: string; type: 'function'; function: { name: string; arguments: string } };
 export type UserMessage = { role: 'user'; content: string; attachment_ids?: string[] };

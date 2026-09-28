@@ -2,14 +2,12 @@ import { SettingsPageHeader } from '@aionui/ui';
 import { Button, Checkbox, Empty, Radio, Tag } from '@arco-design/web-react';
 import { Delete } from '@icon-park/react';
 import { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { parseLocalDate, recurrenceText, toLocalDate } from '../../shared/dates';
 import type { TaskRow } from '../../shared/types';
 import { api } from '../api';
 import { Thumbs } from '../components/Thumbs';
 import { useData } from '../useData';
-
-const CATEGORY_LABELS: Record<string, string> = { work: 'Công việc', personal: 'Cá nhân' };
-const PRIORITY_TAGS = { 1: <Tag color='red'>Ưu tiên cao</Tag>, 2: null, 3: <Tag>Ưu tiên thấp</Tag> };
 
 const dueText = (t: TaskRow) =>
   [t.due_date && parseLocalDate(t.due_date).toLocaleDateString('vi-VN'), t.due_time].filter(Boolean).join(' ');
@@ -18,68 +16,71 @@ export function TasksPage() {
   const [category, setCategory] = useState('all');
   const read = useCallback(() => api.data.read<TaskRow[]>('list_tasks', category === 'all' ? {} : { category }), [category]);
   const { data: tasks, busy, write, remove, holders } = useData(read, []);
+  const { t } = useTranslation(['pages', 'common']);
+  const categories = t('common:category', { returnObjects: true }) as Record<string, string>;
+  const priorityTags = { 1: <Tag color='red'>{t('priorityHigh')}</Tag>, 2: null, 3: <Tag>{t('priorityLow')}</Tag> };
 
   const today = toLocalDate();
-  const groups: [string, TaskRow[]][] = [
-    ['Quá hạn', tasks.filter((t) => t.due_date && t.due_date < today)],
-    ['Hôm nay', tasks.filter((t) => t.due_date === today)],
-    ['Sắp tới', tasks.filter((t) => t.due_date && t.due_date > today)],
-    ['Chưa có ngày', tasks.filter((t) => !t.due_date)],
-  ];
+  const groups = [
+    ['overdue', tasks.filter((x) => x.due_date && x.due_date < today)],
+    ['today', tasks.filter((x) => x.due_date === today)],
+    ['upcoming', tasks.filter((x) => x.due_date && x.due_date > today)],
+    ['noDate', tasks.filter((x) => !x.due_date)],
+  ] as const;
 
   return (
     <div className='page'>
       {holders}
       <SettingsPageHeader
-        title='Task'
+        title={t('common:nav.tasks')}
         sticky={false}
-        description='Tick để hoàn thành. Muốn thêm hoặc sửa, hãy nhắn cho trợ lý.'
+        description={t('tasksHint')}
         actions={
           <Radio.Group
             type='button'
             value={category}
             onChange={setCategory}
             options={[
-              { label: 'Tất cả', value: 'all' },
-              { label: 'Công việc', value: 'work' },
-              { label: 'Cá nhân', value: 'personal' },
+              { label: t('all'), value: 'all' },
+              { label: categories.work, value: 'work' },
+              { label: categories.personal, value: 'personal' },
             ]}
           />
         }
       />
-      {!tasks.length && <Empty description='Không có task nào' />}
+      {!tasks.length && <Empty description={t('noTasks')} />}
       {groups
         .filter(([, list]) => list.length)
-        .map(([title, list]) => (
-          <section key={title}>
+        .map(([group, list]) => (
+          <section key={group}>
             <div className='group-title'>
-              {title} ({list.length})
+              {t(group)} ({list.length})
             </div>
-            {list.map((t) => (
-              <div key={t.id} className='row'>
+            {list.map((task) => (
+              <div key={task.id} className='row'>
                 <Checkbox
-                  aria-label={`Hoàn thành: ${t.title}`}
-                  checked={busy.includes(t.id)}
-                  disabled={busy.includes(t.id)}
-                  onChange={() => void write(t.id, 'update_tasks', { ids: [t.id], patch: { status: 'done' } })}
+                  aria-label={t('complete', { title: task.title })}
+                  checked={busy.includes(task.id)}
+                  disabled={busy.includes(task.id)}
+                  onChange={() => void write(task.id, 'update_tasks', { ids: [task.id], patch: { status: 'done' } })}
                 />
                 <div className='row-main'>
-                  {t.title}
-                  {t.recurrence && <span className='muted'> · {recurrenceText(t.recurrence)}</span>}
-                  {t.notes && <div className='muted'>{t.notes}</div>}
-                  <Thumbs ids={t.attachment_ids} />
+                  {task.title}
+                  {task.recurrence && <span className='muted'> · {recurrenceText(task.recurrence, t)}</span>}
+                  {task.notes && <div className='muted'>{task.notes}</div>}
+                  <Thumbs ids={task.attachment_ids} />
                 </div>
-                <span className={title === 'Quá hạn' ? 'overdue' : 'muted'}>{dueText(t)}</span>
-                {PRIORITY_TAGS[t.priority]}
-                <Tag>{CATEGORY_LABELS[t.category] ?? t.category}</Tag>
+                <span className={group === 'overdue' ? 'overdue' : 'muted'}>{dueText(task)}</span>
+                {priorityTags[task.priority]}
+                <Tag>{categories[task.category] ?? task.category}</Tag>
                 <Button
                   size='mini'
                   type='text'
                   status='danger'
                   icon={<Delete />}
-                  aria-label={`Xóa task: ${t.title}`}
-                  disabled={busy.includes(t.id)}
-                  onClick={() => remove(t.id, 'delete_tasks', t.title)}
+                  aria-label={t('deleteTask', { what: task.title })}
+                  disabled={busy.includes(task.id)}
+                  onClick={() => remove(task.id, 'delete_tasks', task.title)}
                 />
               </div>
             ))}

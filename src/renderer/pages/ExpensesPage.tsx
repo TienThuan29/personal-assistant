@@ -2,10 +2,11 @@ import { SettingsPageHeader } from '@aionui/ui';
 import { Button, DatePicker, Space, Table, Tag } from '@arco-design/web-react';
 import { Delete } from '@icon-park/react';
 import { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { parseLocalDate, toLocalDate } from '../../shared/dates';
 import { formatMoney } from '../../shared/money';
 import type { ExpenseList, ExpenseRow } from '../../shared/types';
-import { api } from '../api';
+import { api, useUiSettings } from '../api';
 import { Thumbs } from '../components/Thumbs';
 import { useData } from '../useData';
 
@@ -15,6 +16,9 @@ const monthRange = (month: string) => {
 };
 
 export function ExpensesPage() {
+  const { t } = useTranslation(['pages', 'common']);
+  const { moneyStyle } = useUiSettings();
+  const money = (amount: number, currency: string) => formatMoney(amount, currency, moneyStyle);
   const [month, setMonth] = useState(() => toLocalDate().slice(0, 7));
   const read = useCallback(() => api.data.read<ExpenseList>('list_expenses', monthRange(month)), [month]);
   const { data, busy, remove, holders } = useData<ExpenseList>(read, { items: [], totals: [] });
@@ -26,11 +30,11 @@ export function ExpensesPage() {
   }
 
   const columns = [
-    { title: 'Ngày', dataIndex: 'spent_at', width: 110, render: (v: string) => parseLocalDate(v).toLocaleDateString('vi-VN') },
-    { title: 'Danh mục', dataIndex: 'category', width: 140 },
-    { title: 'Mô tả', dataIndex: 'description', render: (v: string | null) => v || '—' },
-    { title: 'Số tiền', dataIndex: 'amount', align: 'right' as const, render: (_: number, r: ExpenseRow) => formatMoney(r.amount, r.currency) },
-    { title: 'Ảnh', dataIndex: 'attachment_ids', render: (v: string | null) => <Thumbs ids={v} /> },
+    { title: t('date'), dataIndex: 'spent_at', width: 110, render: (v: string) => parseLocalDate(v).toLocaleDateString('vi-VN') },
+    { title: t('category'), dataIndex: 'category', width: 140 },
+    { title: t('description'), dataIndex: 'description', render: (v: string | null) => v || '—' },
+    { title: t('amount'), dataIndex: 'amount', align: 'right' as const, render: (_: number, r: ExpenseRow) => money(r.amount, r.currency) },
+    { title: t('image'), dataIndex: 'attachment_ids', render: (v: string | null) => <Thumbs ids={v} /> },
     {
       title: '',
       dataIndex: 'id',
@@ -41,9 +45,9 @@ export function ExpensesPage() {
           type='text'
           status='danger'
           icon={<Delete />}
-          aria-label={`Xóa khoản chi: ${r.description || r.category}`}
+          aria-label={t('deleteExpense', { what: r.description || r.category })}
           disabled={busy.includes(id)}
-          onClick={() => remove(id, 'delete_expenses', `${r.description || r.category}: ${formatMoney(r.amount, r.currency)}`)}
+          onClick={() => remove(id, 'delete_expenses', `${r.description || r.category}: ${money(r.amount, r.currency)}`)}
         />
       ),
     },
@@ -53,12 +57,12 @@ export function ExpensesPage() {
     <div className='page'>
       {holders}
       <SettingsPageHeader
-        title='Chi tiêu'
+        title={t('common:nav.expenses')}
         sticky={false}
-        description={data.totals.length ? `Tổng: ${data.totals.map((t) => formatMoney(t.total, t.currency)).join(' + ')}` : 'Chưa có khoản chi'}
+        description={data.totals.length ? t('total', { amount: data.totals.map((x) => money(x.total, x.currency)).join(' + ') }) : t('noExpenses')}
         actions={
           <DatePicker.MonthPicker
-            aria-label='Tháng'
+            aria-label={t('month')}
             format='MM/YYYY'
             value={`${month.slice(5)}/${month.slice(0, 4)}`}
             allowClear={false}
@@ -71,7 +75,7 @@ export function ExpensesPage() {
           .sort((a, b) => b.total - a.total)
           .map((v) => (
             <Tag key={`${v.category}|${v.currency}`}>
-              {v.category}: {formatMoney(v.total, v.currency)}
+              {v.category}: {money(v.total, v.currency)}
             </Tag>
           ))}
       </Space>

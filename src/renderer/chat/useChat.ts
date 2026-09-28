@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AgentEvent, ChatMessage, ImageInput, PendingAction } from '../../shared/types';
 import { api, errorText } from '../api';
 
-/** `turn`: the agent's turn failed (Thử lại helps). Otherwise an IPC call failed. */
+/** `turn`: the agent's turn failed (Retry helps). Otherwise an IPC call failed. */
 export type ChatError = { message: string; turn: boolean };
 
 /** Chat state for one conversation; main streams events, and the DB stays the source of truth (reload on each step). */

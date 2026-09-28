@@ -1,9 +1,11 @@
 import { AionScrollArea, SiderItem, UiProvider, WindowControls } from '@aionui/ui';
 import { Button, ConfigProvider, Message, Modal } from '@arco-design/web-react';
+import enUS from '@arco-design/web-react/es/locale/en-US';
 import viVN from '@arco-design/web-react/es/locale/vi-VN';
 import { CheckOne, Comment, Delete, Notes, Plus, SettingTwo, Sun, Wallet } from '@icon-park/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ConversationRow, Page } from '../shared/types';
+import { useTranslation } from 'react-i18next';
+import { type ConversationRow, DEFAULT_CONVERSATION_TITLE, type Page } from '../shared/types';
 import { api, errorText } from './api';
 import { ChatPage } from './chat/ChatPage';
 import { ExpensesPage } from './pages/ExpensesPage';
@@ -15,28 +17,14 @@ import { TodayPage } from './pages/TodayPage';
 type Route = { page: 'chat'; id: number } | { page: Exclude<Page, 'chat'> };
 
 const NAV = [
-  { page: 'today', name: 'Hôm nay', icon: <Sun /> },
-  { page: 'tasks', name: 'Task', icon: <CheckOne /> },
-  { page: 'notes', name: 'Ghi chú', icon: <Notes /> },
-  { page: 'expenses', name: 'Chi tiêu', icon: <Wallet /> },
+  { page: 'today', icon: <Sun /> },
+  { page: 'tasks', icon: <CheckOne /> },
+  { page: 'notes', icon: <Notes /> },
+  { page: 'expenses', icon: <Wallet /> },
 ] as const;
 
-const VI_LABELS = {
-  cancel: 'Hủy',
-  confirm: 'Xác nhận',
-  clear: 'Xóa',
-  close: 'Đóng',
-  back: 'Quay lại',
-  copy: 'Sao chép',
-  copySuccess: 'Đã sao chép',
-  copyFailed: 'Sao chép thất bại',
-  save: 'Lưu',
-  loading: 'Đang tải...',
-  processing: 'Đang xử lý...',
-};
-
 // Arco's vi-VN locale lacks the ColorPicker strings its Locale type requires; the app has no ColorPicker.
-const ARCO_LOCALE = { ...viVN, ColorPicker: {} };
+const ARCO_LOCALES = { vi: { ...viVN, ColorPicker: {} }, en: enUS };
 
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
@@ -57,7 +45,14 @@ function useSystemTheme(): 'light' | 'dark' {
 }
 
 export function App() {
+  const { t, i18n } = useTranslation(['common', 'chat']);
+  const lang = i18n.language === 'en' ? 'en' : 'vi';
   const theme = useSystemTheme();
+  /** The DB default title is Vietnamese; show it in the current language. User-set and auto titles stay as they are. */
+  const titleOf = (c: ConversationRow) => (c.title === DEFAULT_CONVERSATION_TITLE ? t('chat:newChat') : c.title);
+  useEffect(() => {
+    document.title = t('appName');
+  }, [t]);
   const [route, setRoute] = useState<Route | null>(null);
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [maximized, setMaximized] = useState(false);
@@ -104,8 +99,8 @@ export function App() {
 
   const removeConversation = (c: ConversationRow) =>
     modal.confirm?.({
-      title: 'Xóa hội thoại?',
-      content: c.title,
+      title: t('chat:deleteConversation'),
+      content: titleOf(c),
       okButtonProps: { status: 'danger' },
       onOk: async () => {
         try {
@@ -120,13 +115,13 @@ export function App() {
     });
 
   return (
-    <UiProvider theme={theme} locale='vi-VN' labels={VI_LABELS}>
-      <ConfigProvider locale={ARCO_LOCALE}>
+    <UiProvider theme={theme} locale={lang === 'en' ? 'en-US' : 'vi-VN'} labels={t('ui', { returnObjects: true })}>
+      <ConfigProvider locale={ARCO_LOCALES[lang]}>
         {modalHolder}
         {messageHolder}
         <div className='app'>
           <header className='titlebar'>
-            <span className='titlebar-title'>Trợ lý cá nhân</span>
+            <span className='titlebar-title'>{t('appName')}</span>
             <WindowControls
               isMaximized={maximized}
               onMinimize={() => void api.win.minimize()}
@@ -137,26 +132,26 @@ export function App() {
           <div className='app-body'>
             <aside className='sider'>
               <Button type='primary' long icon={<Plus />} onClick={() => void newChat()}>
-                Hội thoại mới
+                {t('chat:newChat')}
               </Button>
               {NAV.map((n) => (
-                <SiderItem key={n.page} icon={n.icon} name={n.name} selected={route?.page === n.page} onClick={() => setRoute({ page: n.page })} />
+                <SiderItem key={n.page} icon={n.icon} name={t(`nav.${n.page}`)} selected={route?.page === n.page} onClick={() => setRoute({ page: n.page })} />
               ))}
-              <div className='sider-label'>Hội thoại</div>
+              <div className='sider-label'>{t('chat:conversations')}</div>
               <AionScrollArea className='sider-list'>
                 {conversations.map((c) => (
                   <SiderItem
                     key={c.id}
                     icon={<Comment />}
-                    name={c.title}
+                    name={titleOf(c)}
                     selected={route?.page === 'chat' && route.id === c.id}
-                    menuItems={[{ key: 'delete', icon: <Delete />, label: 'Xóa', danger: true }]}
+                    menuItems={[{ key: 'delete', icon: <Delete />, label: t('delete'), danger: true }]}
                     onMenuAction={() => removeConversation(c)}
                     onClick={() => setRoute({ page: 'chat', id: c.id })}
                   />
                 ))}
               </AionScrollArea>
-              <SiderItem icon={<SettingTwo />} name='Cài đặt' selected={route?.page === 'settings'} onClick={() => setRoute({ page: 'settings' })} />
+              <SiderItem icon={<SettingTwo />} name={t('nav.settings')} selected={route?.page === 'settings'} onClick={() => setRoute({ page: 'settings' })} />
             </aside>
             <main className='content'>
               {route?.page === 'chat' && <ChatPage key={route.id} conversationId={route.id} />}
