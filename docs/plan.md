@@ -1603,7 +1603,9 @@ describe('reminder tools', () => {
   it('rejects past times and unknown tasks', () => {
     const ctx = testCtx();
     expect(() => callTool(ctx, 'create_reminder', { message: 'x', remind_at: '2026-09-28T08:00' })).toThrow(/đã qua/);
+    expect(() => callTool(ctx, 'create_reminder', { message: 'x', remind_at: '2026-09-28T09:00' })).toThrow(/đã qua/);
     expect(() => callTool(ctx, 'create_reminder', { message: 'x', remind_at: '2026-09-28T10:00', task_id: 42 })).toThrow(/#42/);
+    expect(callTool<ReminderRow[]>(ctx, 'list_reminders', { status: 'all' })).toEqual([]);
   });
 
   it('date-only bounds cover whole local days', () => {
@@ -1614,12 +1616,45 @@ describe('reminder tools', () => {
     expect(rows.map((r) => r.message)).toEqual(['A']);
   });
 
+  it('datetime bounds: from inclusive, to exclusive', () => {
+    const ctx = testCtx();
+    callTool(ctx, 'create_reminder', { message: 'A', remind_at: '2026-09-28T10:00' });
+    callTool(ctx, 'create_reminder', { message: 'B', remind_at: '2026-09-28T11:00' });
+    const rows = callTool<ReminderRow[]>(ctx, 'list_reminders', { from: '2026-09-28T10:00', to: '2026-09-28T11:00' });
+    expect(rows.map((r) => r.message)).toEqual(['A']);
+  });
+
+  it('lists pending by default, all statuses on request, sorted by time', () => {
+    const ctx = testCtx();
+    const b = callTool<ReminderRow>(ctx, 'create_reminder', { message: 'B', remind_at: '2026-09-28T12:00' });
+    callTool(ctx, 'create_reminder', { message: 'A', remind_at: '2026-09-28T10:00' });
+    callTool(ctx, 'update_reminders', { ids: [b.id], patch: { status: 'dismissed' } });
+    expect(callTool<ReminderRow[]>(ctx, 'list_reminders', {}).map((r) => r.message)).toEqual(['A']);
+    expect(callTool<ReminderRow[]>(ctx, 'list_reminders', { status: 'all' }).map((r) => r.message)).toEqual(['A', 'B']);
+  });
+
   it('rescheduling a fired reminder makes it pending again', () => {
     const ctx = testCtx();
     const r = callTool<ReminderRow>(ctx, 'create_reminder', { message: 'A', remind_at: '2026-09-28T10:00' });
     ctx.db.prepare("UPDATE reminders SET status = 'fired' WHERE id = ?").run(r.id);
     callTool(ctx, 'update_reminders', { ids: [r.id], patch: { remind_at: '2026-09-28T11:00' } });
     expect(callTool<ReminderRow[]>(ctx, 'list_reminders', {})[0]).toMatchObject({ id: r.id, status: 'pending' });
+  });
+
+  it('rejects rescheduling into the past, empty patches and unknown ids', () => {
+    const ctx = testCtx();
+    const r = callTool<ReminderRow>(ctx, 'create_reminder', { message: 'A', remind_at: '2026-09-28T10:00' });
+    expect(() => callTool(ctx, 'update_reminders', { ids: [r.id], patch: { remind_at: '2026-09-28T08:00' } })).toThrow(/đã qua/);
+    expect(() => callTool(ctx, 'update_reminders', { ids: [r.id], patch: {} })).toThrow(/rỗng/);
+    expect(() => callTool(ctx, 'update_reminders', { ids: [r.id, 99], patch: { message: 'B' } })).toThrow(/#99/);
+    expect(() => callTool(ctx, 'delete_reminders', { ids: [99] })).toThrow(/#99/);
+  });
+
+  it('deletes reminders', () => {
+    const ctx = testCtx();
+    const r = callTool<ReminderRow>(ctx, 'create_reminder', { message: 'A', remind_at: '2026-09-28T10:00' });
+    expect(callTool(ctx, 'delete_reminders', { ids: [r.id] })).toEqual({ deleted: [r.id] });
+    expect(callTool<ReminderRow[]>(ctx, 'list_reminders', { status: 'all' })).toEqual([]);
   });
 
   it('deleting a task deletes its reminders (FK cascade)', () => {
@@ -1645,6 +1680,9 @@ import type { ReminderRow } from '../../shared/types';
 import { deleteRows, getRows, ids, instant, readTool, requireRows, toInstant, updateRows, where, writeTool } from './common';
 
 const status = z.enum(['pending', 'fired', 'dismissed']);
+const remindAt = instant.describe(
+  'Thời điểm nhắc theo giờ máy, nên kèm giờ, vd 2026-09-29T09:00 (chỉ ngày = 00:00); phải ở tương lai'
+);
 
 function futureInstant(s: string, now: Date): string {
   const at = toInstant(s);
@@ -1655,8 +1693,15 @@ function futureInstant(s: string, now: Date): string {
 export const reminderTools = [
   readTool({
     name: 'list_reminders',
-    description: 'Liệt kê nhắc nhở trong khoảng thời gian (ngày hoặc thời điểm).',
-    schema: z.object({ from: instant.optional(), to: instant.optional(), status: z.enum(['pending', 'fired', 'dismissed', 'all']).default('pending') }),
+    description: 'Liệt kê nhắc nhở (tối đa 200, theo thời điểm nhắc tăng dần) trong khoảng thời gian, lọc theo trạng thái.',
+    schema: z.object({
+      from: instant.optional().describe('Từ (bao gồm): ngày YYYY-MM-DD = từ 00:00 ngày đó, hoặc thời điểm ISO 8601'),
+      to: instant.optional().describe('Đến: ngày YYYY-MM-DD = tính cả ngày đó; thời điểm ISO 8601 = không bao gồm thời điểm đó'),
+      status: z
+        .enum(['pending', 'fired', 'dismissed', 'all'])
+        .default('pending')
+        .describe('pending = chưa nhắc, fired = đã nhắc, dismissed = đã bỏ qua'),
+    }),
     run: (a, { db }) => {
       const w = where([
         ['status = :status', 'status', a.status === 'all' ? undefined : a.status],
@@ -1670,7 +1715,11 @@ export const reminderTools = [
   writeTool({
     name: 'create_reminder',
     description: 'Tạo nhắc nhở; app sẽ hiện thông báo Windows đúng giờ. Có thể gắn với một task.',
-    schema: z.object({ message: z.string().min(1), remind_at: instant, task_id: z.number().int().positive().optional() }),
+    schema: z.object({
+      message: z.string().min(1),
+      remind_at: remindAt,
+      task_id: z.number().int().positive().optional().describe('ID task liên quan; xóa task thì nhắc nhở bị xóa theo'),
+    }),
     apply: (a, { db, now }) => {
       const at = futureInstant(a.remind_at, now());
       if (a.task_id) requireRows(db, 'tasks', [a.task_id]);
@@ -1681,11 +1730,11 @@ export const reminderTools = [
 
   writeTool({
     name: 'update_reminders',
-    description: 'Sửa nhắc nhở: nội dung, thời điểm, hoặc status=dismissed để bỏ qua.',
+    description: 'Sửa nhắc nhở: nội dung, thời điểm (dời giờ thì nhắc lại, status về pending), hoặc status=dismissed để bỏ qua.',
     schema: z.object({
       ids,
       patch: z
-        .object({ message: z.string().min(1).optional(), remind_at: instant.optional(), status: status.optional() })
+        .object({ message: z.string().min(1).optional(), remind_at: remindAt.optional(), status: status.optional() })
         .refine((p) => Object.keys(p).length > 0, 'patch không được rỗng'),
     }),
     preview: (a, { db }) => ({ before: requireRows<ReminderRow>(db, 'reminders', a.ids) }),
