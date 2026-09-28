@@ -39,7 +39,7 @@ describe('reminder scheduler', () => {
     s.stop();
   });
 
-  it('re-arms at least hourly for far reminders', () => {
+  it('fires far reminders on time', () => {
     const { ctx, fired, s } = setup();
     callTool(ctx, 'create_reminder', { message: 'Far', remind_at: '2026-09-28T13:00' });
     s.refresh();
@@ -50,7 +50,31 @@ describe('reminder scheduler', () => {
     s.stop();
   });
 
-  it('a throwing notify neither re-fires nor stops the timer', () => {
+  it('re-checks at least hourly, so a wall-clock jump is caught', () => {
+    const { ctx, fired, s } = setup();
+    callTool(ctx, 'create_reminder', { message: 'Far', remind_at: '2026-09-28T13:00' });
+    s.refresh();
+    vi.setSystemTime(new Date(2026, 8, 28, 13, 0));
+    vi.advanceTimersByTime(HOUR);
+    expect(fired).toEqual([['Far']]);
+    s.stop();
+  });
+
+  it('reschedules when refreshed while armed', () => {
+    const { ctx, fired, s } = setup();
+    const r = callTool<ReminderRow>(ctx, 'create_reminder', { message: 'A', remind_at: '2026-09-28T09:30' });
+    s.refresh();
+    callTool(ctx, 'update_reminders', { ids: [r.id], patch: { remind_at: '2026-09-28T09:10' } });
+    s.refresh();
+    vi.advanceTimersByTime(10 * 60_000);
+    expect(fired).toEqual([['A']]);
+    vi.advanceTimersByTime(HOUR);
+    expect(fired).toEqual([['A']]);
+    s.stop();
+  });
+
+  it('a throwing notify is logged, never re-fires and keeps the timer', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const ctx = testCtx(() => new Date());
     const fired: string[] = [];
     const s = createScheduler({
@@ -64,9 +88,11 @@ describe('reminder scheduler', () => {
     callTool(ctx, 'create_reminder', { message: 'A', remind_at: '2026-09-28T09:01' });
     callTool(ctx, 'create_reminder', { message: 'B', remind_at: '2026-09-28T09:30' });
     vi.setSystemTime(new Date(2026, 8, 28, 9, 5));
-    expect(() => s.refresh()).toThrow('notification failed');
-    expect(() => vi.advanceTimersByTime(25 * 60_000)).toThrow('notification failed');
+    s.refresh();
+    vi.advanceTimersByTime(HOUR);
     expect(fired).toEqual(['A', 'B']);
+    expect(error).toHaveBeenCalledTimes(2);
+    error.mockRestore();
     s.stop();
   });
 });

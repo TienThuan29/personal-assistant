@@ -3852,7 +3852,7 @@ describe('reminder scheduler', () => {
     s.stop();
   });
 
-  it('re-arms at least hourly for far reminders', () => {
+  it('fires far reminders on time', () => {
     const { ctx, fired, s } = setup();
     callTool(ctx, 'create_reminder', { message: 'Far', remind_at: '2026-09-28T13:00' });
     s.refresh();
@@ -3863,7 +3863,31 @@ describe('reminder scheduler', () => {
     s.stop();
   });
 
-  it('a throwing notify neither re-fires nor stops the timer', () => {
+  it('re-checks at least hourly, so a wall-clock jump is caught', () => {
+    const { ctx, fired, s } = setup();
+    callTool(ctx, 'create_reminder', { message: 'Far', remind_at: '2026-09-28T13:00' });
+    s.refresh();
+    vi.setSystemTime(new Date(2026, 8, 28, 13, 0));
+    vi.advanceTimersByTime(HOUR);
+    expect(fired).toEqual([['Far']]);
+    s.stop();
+  });
+
+  it('reschedules when refreshed while armed', () => {
+    const { ctx, fired, s } = setup();
+    const r = callTool<ReminderRow>(ctx, 'create_reminder', { message: 'A', remind_at: '2026-09-28T09:30' });
+    s.refresh();
+    callTool(ctx, 'update_reminders', { ids: [r.id], patch: { remind_at: '2026-09-28T09:10' } });
+    s.refresh();
+    vi.advanceTimersByTime(10 * 60_000);
+    expect(fired).toEqual([['A']]);
+    vi.advanceTimersByTime(HOUR);
+    expect(fired).toEqual([['A']]);
+    s.stop();
+  });
+
+  it('a throwing notify is logged, never re-fires and keeps the timer', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const ctx = testCtx(() => new Date());
     const fired: string[] = [];
     const s = createScheduler({
@@ -3877,9 +3901,11 @@ describe('reminder scheduler', () => {
     callTool(ctx, 'create_reminder', { message: 'A', remind_at: '2026-09-28T09:01' });
     callTool(ctx, 'create_reminder', { message: 'B', remind_at: '2026-09-28T09:30' });
     vi.setSystemTime(new Date(2026, 8, 28, 9, 5));
-    expect(() => s.refresh()).toThrow('notification failed');
-    expect(() => vi.advanceTimersByTime(25 * 60_000)).toThrow('notification failed');
+    s.refresh();
+    vi.advanceTimersByTime(HOUR);
     expect(fired).toEqual(['A', 'B']);
+    expect(error).toHaveBeenCalledTimes(2);
+    error.mockRestore();
     s.stop();
   });
 });
@@ -3902,8 +3928,8 @@ const MAX_WAIT = 60 * 60 * 1000;
  * Fires due reminders (several at once = one grouped notification) and sleeps until the next one,
  * at most an hour at a time so clock changes and sleep/resume can't make it miss.
  * Call refresh() after any reminder write and on powerMonitor 'resume'.
- * Due rows are marked fired and the next timer armed before notify runs, so a throwing notify
- * never re-fires them or stops the scheduler, and notify may call refresh() itself.
+ * Due rows are marked fired and the next timer armed before notify runs, so a failed notification
+ * (logged, not thrown) never re-fires, and notify may call refresh() itself.
  */
 export function createScheduler(opts: { db: Db; now: () => Date; notify: (due: ReminderRow[]) => void }) {
   const { db, now, notify } = opts;
@@ -3921,7 +3947,12 @@ export function createScheduler(opts: { db: Db; now: () => Date; notify: (due: R
     });
     const { at } = db.prepare("SELECT MIN(remind_at) AS at FROM reminders WHERE status = 'pending'").get() as { at: string | null };
     if (at) timer = setTimeout(refresh, Math.min(Math.max(Date.parse(at) - now().getTime(), 0), MAX_WAIT));
-    if (due.length) notify(due);
+    if (!due.length) return;
+    try {
+      notify(due);
+    } catch (e) {
+      console.error('Reminder notification failed', e);
+    }
   }
 
   return { refresh, stop: () => clearTimeout(timer) };
@@ -3931,7 +3962,7 @@ export function createScheduler(opts: { db: Db; now: () => Date; notify: (due: R
 **Step 4: Run to verify it passes**
 
 Run: `bun run test tests/reminders.test.ts`
-Expected: PASS (4 tests).
+Expected: PASS (6 tests).
 
 **Step 5: Commit**
 
