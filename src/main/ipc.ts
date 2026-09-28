@@ -1,4 +1,4 @@
-import { ipcMain, nativeImage } from 'electron';
+import { ipcMain, nativeImage, net } from 'electron';
 import { DEFAULT_LLM, type ImageInput, type LlmConfig, type SettingsInput, type SettingsView } from '../shared/types';
 import { type AgentDeps, cancelOpenActions, resolveAction, runTurn } from './agent';
 import { newAttachmentId, saveAttachment } from './attachments';
@@ -65,7 +65,9 @@ export function registerIpc(m: MainCtx): void {
     emit: (e) => m.send('chat:event', e),
     llm: () => {
       const cfg = llmConfig();
-      return createLlm(cfg, readSecrets(m.secretsFile, m.cipher)[cfg.provider] ?? '');
+      // Chromium's network stack (net.fetch): trusts the Windows certificate store and uses the system proxy,
+      // so corporate TLS inspection works. Node's own fetch fails there with UNABLE_TO_GET_ISSUER_CERT_LOCALLY.
+      return createLlm(cfg, readSecrets(m.secretsFile, m.cipher)[cfg.provider] ?? '', { fetch: net.fetch as unknown as typeof fetch });
     },
   };
   const running = new Map<number, { ctl: AbortController; done: Promise<void> }>();

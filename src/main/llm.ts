@@ -73,6 +73,7 @@ export function describeLlmError(e: unknown): string {
     if (e.code === 'context_length_exceeded') return te('llmContextLength');
     if (e.code === 'content_filter') return te('llmContentFilter');
     if (e.status === 429) return te('llmRateLimit');
+    if (e.status === 400) return te('llmBadRequest', { message: e.message }); // e.g. a gateway that requires a model
     return te('llmError', { message: e.message }); // e.message already starts with the status
   }
   return errMsg(e);

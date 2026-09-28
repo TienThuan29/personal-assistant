@@ -79,6 +79,7 @@ describe('describeLlmError', () => {
     expect(describeLlmError(new APIError(401, undefined, 'Unauthorized', undefined))).toMatch(/Cài đặt/);
     expect(describeLlmError(new APIError(404, undefined, 'Not found', undefined))).toMatch(/model/);
     expect(describeLlmError(new APIConnectionError({ message: 'down' }))).toMatch(/kết nối/);
+    expect(describeLlmError(new APIError(400, undefined, 'Bad Request', undefined))).toMatch(/model/);
     const tooLong = APIError.generate(400, { error: { code: 'context_length_exceeded', message: 'too long' } }, undefined, new Headers());
     expect(describeLlmError(tooLong)).toMatch(/quá dài/);
     const filtered = APIError.generate(400, { error: { code: 'content_filter', message: 'blocked' } }, undefined, new Headers());

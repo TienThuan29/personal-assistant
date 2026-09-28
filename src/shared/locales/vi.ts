@@ -176,8 +176,8 @@ export const vi = {
     endpointGateway: 'Base URL, vd https://gateway.example.com/v1',
     modelDesc: 'Model phải hỗ trợ tool calling và đọc ảnh',
     modelPlaceholder: 'vd gpt-4o',
-    modelDescGateway: 'Không bắt buộc: bỏ trống để gateway tự chọn model (model cần hỗ trợ tool calling và đọc ảnh)',
-    modelOptional: 'Không bắt buộc',
+    modelDescGateway: 'Tùy gateway: nhiều gateway bắt buộc tên model (vd gpt-4o); chỉ bỏ trống nếu gateway tự chọn model. Model cần hỗ trợ tool calling và đọc ảnh',
+    modelOptional: 'vd gpt-4o (tùy gateway)',
     keySaved: 'Đã lưu (mã hóa bằng Windows). Để trống nếu không đổi.',
     keyMissing: 'Chưa có',
     keySavedPlaceholder: '••• đã lưu',
@@ -218,6 +218,7 @@ export const vi = {
     llmContentFilter: 'Yêu cầu bị bộ lọc nội dung của LLM chặn. Hãy diễn đạt lại.',
     llmRateLimit: 'LLM đang giới hạn tốc độ (429). Thử lại sau ít phút.',
     llmError: 'LLM trả lỗi: {{message}}',
+    llmBadRequest: 'LLM từ chối yêu cầu ({{message}}). Nếu ô Model đang trống, gateway có thể bắt buộc tên model: hãy nhập tên model trong Cài đặt.',
     // agent
     maxRounds: 'Mình dừng lại vì yêu cầu này đã dùng quá {{max}} bước. Bạn thử chia nhỏ yêu cầu nhé.',
     emptyReply: 'Mô hình không trả lời. Hãy thử lại.',
