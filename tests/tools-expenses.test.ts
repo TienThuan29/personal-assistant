@@ -10,6 +10,12 @@ describe('expense tools', () => {
     expect(e).toMatchObject({ amount: 45_000, currency: 'VND', spent_at: '2026-09-28' });
   });
 
+  it("defaults to the user's currency, but keeps an explicit one", () => {
+    const ctx = testCtx(undefined, { defaultCurrency: 'USD' });
+    expect(callTool<ExpenseRow>(ctx, 'create_expense', { amount: 1250, category: 'food' }).currency).toBe('USD');
+    expect(callTool<ExpenseRow>(ctx, 'create_expense', { amount: 5, category: 'food', currency: 'eur' }).currency).toBe('EUR');
+  });
+
   it('lists a range with totals per currency', () => {
     const ctx = testCtx();
     callTool(ctx, 'create_expense', { amount: 45_000, category: 'ăn uống', spent_at: '2026-09-01' });

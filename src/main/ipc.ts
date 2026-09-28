@@ -3,9 +3,9 @@ import { DEFAULT_LLM, type ImageInput, type LlmConfig, type SettingsInput, type 
 import { type AgentDeps, cancelOpenActions, resolveAction, runTurn } from './agent';
 import { newAttachmentId, saveAttachment } from './attachments';
 import { type Db, tx } from './db';
-import { i18n } from './i18n';
+import { i18n, setLanguage } from './i18n';
 import { collect, createLlm, describeLlmError } from './llm';
-import { type Cipher, getSetting, llmConfigSchema, readSecrets, setSetting, writeSecret } from './settings';
+import { type Cipher, getSetting, getUi, llmConfigSchema, readSecrets, saveUi, setSetting, writeSecret } from './settings';
 import {
   addMessage,
   createConversation,
@@ -17,7 +17,7 @@ import {
   setTitleIfNew,
 } from './store';
 import { findTool, parseArgs } from './tools';
-import { tr, UserError } from './tools/common';
+import { tr, UserError } from './errors';
 
 export type MainCtx = {
   db: Db;
@@ -57,7 +57,7 @@ function toJpeg(bytes: unknown): Buffer {
 
 export function registerIpc(m: MainCtx): void {
   const now = (): Date => new Date();
-  const ctx = { db: m.db, ro: m.ro, now };
+  const ctx = { db: m.db, ro: m.ro, now, settings: () => getUi(m.db) };
   const llmConfig = (): LlmConfig => getSetting(m.db, 'llm', DEFAULT_LLM);
   const deps: AgentDeps = {
     ...ctx,
@@ -153,7 +153,12 @@ export function registerIpc(m: MainCtx): void {
 
   ipcMain.handle('settings:get', (): SettingsView => {
     const secrets = readSecrets(m.secretsFile, m.cipher);
-    return { llm: llmConfig(), hasKey: { azure: !!secrets.azure, gateway: !!secrets.gateway }, openAtLogin: m.loginItem.get() };
+    return {
+      llm: llmConfig(),
+      hasKey: { azure: !!secrets.azure, gateway: !!secrets.gateway },
+      openAtLogin: m.loginItem.get(),
+      ui: getUi(m.db),
+    };
   });
   ipcMain.handle('settings:save', (_e, s: SettingsInput) => {
     const parsed = llmConfigSchema.safeParse(s?.llm);
@@ -167,6 +172,12 @@ export function registerIpc(m: MainCtx): void {
     if (typeof on !== 'boolean') throw new UserError('invalidValue');
     m.loginItem.set(on);
     return m.loginItem.get();
+  });
+  ipcMain.handle('settings:setUi', (_e, patch: unknown) => {
+    const ui = saveUi(m.db, patch);
+    setLanguage(ui.language);
+    m.send('ui:changed', ui);
+    return ui;
   });
   ipcMain.handle('settings:test', async () => {
     try {

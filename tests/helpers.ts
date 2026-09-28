@@ -7,7 +7,7 @@ import type { AgentDeps } from '../src/main/agent';
 import { openDb } from '../src/main/db';
 import type { Llm } from '../src/main/llm';
 import { findTool, parseArgs, type ToolCtx } from '../src/main/tools';
-import type { AgentEvent, AssistantMessage } from '../src/shared/types';
+import { type AgentEvent, type AssistantMessage, DEFAULT_UI, type UiSettings } from '../src/shared/types';
 
 export const tempDir = (): string => mkdtempSync(join(tmpdir(), 'pa-test-'));
 
@@ -23,9 +23,9 @@ export function testDb() {
 /** 2026-09-28 09:00 local, a Monday. */
 export const NOW = new Date(2026, 8, 28, 9, 0);
 
-export function testCtx(now: () => Date = () => NOW): ToolCtx & { dir: string } {
+export function testCtx(now: () => Date = () => NOW, ui: Partial<UiSettings> = {}): ToolCtx & { dir: string } {
   const { db, ro, dir } = testDb();
-  return { db, ro, now, dir };
+  return { db, ro, now, settings: () => ({ ...DEFAULT_UI, ...ui }), dir };
 }
 
 /** Parses args like the agent does, then runs (read) or applies (write) the tool. */
@@ -67,5 +67,5 @@ export const call = (id: string, name: string, args: object): AssistantMessage =
 export function testDeps(script: AssistantMessage[], llm: Llm = fakeLlm(script)): AgentDeps & { events: AgentEvent[] } {
   const { db, ro, dir } = testDb();
   const events: AgentEvent[] = [];
-  return { db, ro, attachmentsDir: join(dir, 'att'), now: () => NOW, llm: () => llm, emit: (e) => void events.push(e), events };
+  return { db, ro, attachmentsDir: join(dir, 'att'), now: () => NOW, settings: () => DEFAULT_UI, llm: () => llm, emit: (e) => void events.push(e), events };
 }

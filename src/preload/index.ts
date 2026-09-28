@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { Api } from '../shared/types';
+import type { Api, UiSettings } from '../shared/types';
 
 const invoke = (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args);
 const listen =
@@ -36,6 +36,7 @@ const api: Api = {
     save: (s) => invoke('settings:save', s),
     test: () => invoke('settings:test'),
     setOpenAtLogin: (on) => invoke('settings:setOpenAtLogin', on),
+    setUi: (patch) => invoke('settings:setUi', patch),
   },
   win: {
     minimize: () => invoke('win:minimize'),
@@ -45,6 +46,7 @@ const api: Api = {
     onMaximizedChange: listen<boolean>('win:maximized'),
   },
   onNavigate: listen('nav'),
+  onUiChanged: listen<UiSettings>('ui:changed'),
 };
 
 contextBridge.exposeInMainWorld('api', api);

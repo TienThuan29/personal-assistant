@@ -1,10 +1,12 @@
 import { z } from 'zod/v4';
 import { localDayRange, parseLocalDate, toLocalDate } from '../../shared/dates';
-import type { Resources } from '../../shared/locales/vi';
+import type { UiSettings } from '../../shared/types';
 import type { Db, Params } from '../db';
-import { i18n } from '../i18n';
+import { UserError } from '../errors';
 
-export type ToolCtx = { db: Db; ro: Db; now: () => Date };
+export { errMsg, type ErrorKey, te, tr, UserError } from '../errors';
+
+export type ToolCtx = { db: Db; ro: Db; now: () => Date; settings: () => UiSettings };
 
 type Base<S extends z.ZodType> = { name: string; description: string; schema: S };
 export type ReadTool<S extends z.ZodType = z.ZodType> = Base<S> & {
@@ -115,27 +117,3 @@ export function attachTo(db: Db, owner: OwnerType, ownerId: number, attachmentId
   const stmt = db.prepare("UPDATE attachments SET owner_type = ?, owner_id = ? WHERE id = ? AND owner_type = 'message'");
   for (const id of attachmentIdList) stmt.run(owner, ownerId, id);
 }
-
-// ---- errors ----
-export type ErrorKey = keyof Resources['errors'];
-type Translate = (key: string, params?: Record<string, unknown>) => string;
-const t = i18n.t as unknown as Translate; // static keys are checked by ErrorKey, dynamic ones by exists()
-
-/** A translated `errors` text in the main process's current language. */
-export const te = (key: ErrorKey, params?: Record<string, unknown>): string => t(`errors:${key}`, params);
-
-/** Translates 'errors:<key>' (e.g. a zod message); any other text passes through. */
-export const tr = (msg: string): string => (msg.startsWith('errors:') && i18n.exists(msg) ? t(msg) : msg);
-
-/** An error meant for the user. The message is translated at throw time (it crosses IPC as is); errMsg re-translates. */
-export class UserError extends Error {
-  constructor(
-    public key: ErrorKey,
-    public params?: Record<string, unknown>
-  ) {
-    super(te(key, params));
-  }
-}
-
-export const errMsg = (e: unknown): string =>
-  e instanceof UserError ? te(e.key, e.params) : e instanceof Error ? tr(e.message) : String(e);

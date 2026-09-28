@@ -1,7 +1,7 @@
 import OpenAI, { APIConnectionError, APIError, APIUserAbortError, AzureOpenAI } from 'openai';
 import type { ChatCompletionChunk, ChatCompletionFunctionTool, ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import type { AssistantMessage, LlmConfig, ToolCall } from '../shared/types';
-import { errMsg, te, UserError } from './tools/common';
+import { errMsg, te, UserError } from './errors';
 
 export type StreamParams = { messages: ChatCompletionMessageParam[]; tools?: ChatCompletionFunctionTool[]; signal?: AbortSignal };
 export type Llm = { stream: (p: StreamParams) => AsyncIterable<ChatCompletionChunk> };

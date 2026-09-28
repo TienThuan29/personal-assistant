@@ -61,6 +61,14 @@ The existing code is the reference. These tasks give precise specs rather than f
 7. `shared/dates.ts`: `recurrenceText(rule, t?)`, where the words come from `t`. Keep the Vietnamese default when there is no `t`, so existing tests still pass.
 8. Tests: setUi validation, create_expense default currency, prompt currency, formatMoney styles, recurrenceText in en.
 
+**As built (I2 deviations):**
+- `UserError`, `te`, `tr`, `errMsg` and `ErrorKey` moved to `src/main/errors.ts`, so `db.ts`, `llm.ts` and `settings.ts` no longer import `tools/`. `tools/common.ts` re-exports them.
+- `settings.ts` also exports `saveUi(db, patch)`: it rejects a non-object patch (`errors:invalidValue`), merges it over `getUi`, validates, strips unknown keys and saves. `settings:setUi` calls it, then `setLanguage` and broadcasts `ui:changed`. Invalid enum values use `errors:invalidValue`; the currency uses `errors:currencyFormat`.
+- `create_expense`'s `currency` is now optional instead of `.default('VND')`; `apply` falls back to `ctx.settings().defaultCurrency`.
+- `systemPrompt`'s `ui` defaults to `DEFAULT_UI`; the added rule is Vietnamese like the rest of the prompt.
+- `recurrenceText` reads `common:recurDaily`, `recurWeekly`, `recurMonthly` and `weekday.1`–`7`. Its default `t` is a `createI18n('vi')` instance built on first use.
+- The dev-run check used `electron-vite dev -- --user-data-dir=<scratch>`, because another dev instance held the single-instance lock.
+
 ## Task I3: Renderer i18n and the Display settings card
 
 1. `main.tsx`:

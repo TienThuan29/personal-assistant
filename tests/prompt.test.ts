@@ -1,4 +1,5 @@
 import { systemPrompt } from '../src/main/prompt';
+import { DEFAULT_UI } from '../src/shared/types';
 import { callTool, NOW, testCtx } from './helpers';
 
 it('states the current date, weekday and existing categories', () => {
@@ -10,6 +11,12 @@ it('states the current date, weekday and existing categories', () => {
   expect(p).toMatch(/^Ngày tới: .*T6 2026-10-02/m);
   expect(p).toContain('ăn uống');
   expect(p).toContain('work, personal'); // fallback while there are no tasks yet
+  expect(p).toContain('tiền tệ mặc định VND');
+});
+
+it("names the user's default currency", () => {
+  const p = systemPrompt(testCtx().db, NOW, { ...DEFAULT_UI, defaultCurrency: 'USD' });
+  expect(p).toContain('tiền tệ mặc định USD');
 });
 
 it('puts the per-round facts after the static rules', () => {

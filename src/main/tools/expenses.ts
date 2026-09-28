@@ -65,16 +65,16 @@ export const expenseTools = [
     description: 'Ghi một khoản chi (có thể đọc từ ảnh hóa đơn).',
     schema: z.object({
       amount,
-      currency: currency.default('VND'),
+      currency: currency.optional(), // omitted: the user's default currency
       category,
       description: z.string().optional(),
       spent_at: date.optional().describe('Ngày chi YYYY-MM-DD (luôn gửi, kể cả hôm nay)'),
       attachment_ids: attachmentIds,
     }),
-    apply: (a, { db, now }) => {
+    apply: (a, { db, now, settings }) => {
       const r = db
         .prepare('INSERT INTO expenses (amount, currency, category, description, spent_at) VALUES (?, ?, ?, ?, ?)')
-        .run(a.amount, a.currency, canonCategory(db, 'expenses', a.category), a.description ?? null, a.spent_at ?? toLocalDate(now()));
+        .run(a.amount, a.currency ?? settings().defaultCurrency, canonCategory(db, 'expenses', a.category), a.description ?? null, a.spent_at ?? toLocalDate(now()));
       const id = Number(r.lastInsertRowid);
       attachTo(db, 'expense', id, a.attachment_ids);
       return getRows<ExpenseRow>(db, 'expenses', [id])[0];

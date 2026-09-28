@@ -7,11 +7,12 @@ import { pathToFileURL } from 'node:url';
 import type { ReminderRow } from '../shared/types';
 import { attachmentFile, cleanupOrphans } from './attachments';
 import { backupDb, openDb } from './db';
+import { setLanguage } from './i18n';
 import { registerIpc } from './ipc';
 import { createScheduler } from './reminders';
-import type { Cipher } from './settings';
+import { type Cipher, getUi } from './settings';
 import { pruneEmptyConversations } from './store';
-import { errMsg, te, UserError } from './tools/common';
+import { errMsg, te, UserError } from './errors';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'att', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
@@ -133,6 +134,7 @@ async function start(): Promise<void> {
   mkdirSync(attachmentsDir, { recursive: true });
 
   const db = openDb(dbPath);
+  setLanguage(getUi(db).language);
   const ro = new DatabaseSync(dbPath, { readOnly: true });
   try {
     backupDb(db, join(dataDir, 'backups'), new Date());

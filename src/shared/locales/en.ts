@@ -3,6 +3,10 @@ import type { Resources } from './vi';
 export const en: Resources = {
   common: {
     empty: '(empty)',
+    recurDaily: 'Daily',
+    recurWeekly: 'Weekly: {{days}}',
+    recurMonthly: 'Day {{day}} of every month',
+    weekday: { '1': 'Mon', '2': 'Tue', '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat', '7': 'Sun' },
   },
   chat: {},
   pages: {},

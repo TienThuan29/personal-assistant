@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { type Cipher, getSetting, llmConfigSchema, readSecrets, setSetting, writeSecret } from '../src/main/settings';
+import { type Cipher, getSetting, getUi, llmConfigSchema, readSecrets, saveUi, setSetting, writeSecret } from '../src/main/settings';
+import { DEFAULT_UI } from '../src/shared/types';
 import { tr } from '../src/main/tools/common';
 import { tempDir, testDb } from './helpers';
 
@@ -52,5 +53,22 @@ describe('settings', () => {
   it('explains invalid fields in Vietnamese', () => {
     const r = llmConfigSchema.safeParse({ provider: 'azure', endpoint: '', model: ' ', apiVersion: '2024-10-21' });
     expect(r.error?.issues.map((i) => tr(i.message))).toEqual(['Endpoint chưa đúng dạng URL (vd https://…)', 'Chưa nhập model/deployment']);
+  });
+
+  it('merges UI settings over the defaults, normalizing the currency', () => {
+    const { db } = testDb();
+    expect(getUi(db)).toEqual(DEFAULT_UI);
+    expect(saveUi(db, { language: 'en' })).toEqual({ ...DEFAULT_UI, language: 'en' });
+    expect(saveUi(db, { defaultCurrency: ' usd ', extra: 1 })).toEqual({ language: 'en', moneyStyle: 'vi', defaultCurrency: 'USD' });
+    expect(getUi(db)).toEqual({ language: 'en', moneyStyle: 'vi', defaultCurrency: 'USD' });
+  });
+
+  it('rejects invalid UI settings and keeps the saved ones', () => {
+    const { db } = testDb();
+    expect(() => saveUi(db, { defaultCurrency: 'dollars' })).toThrow('Mã tiền tệ ISO 4217');
+    expect(() => saveUi(db, { language: 'fr' })).toThrow('Giá trị không hợp lệ');
+    expect(() => saveUi(db, { moneyStyle: 'us' })).toThrow('Giá trị không hợp lệ');
+    for (const bad of [null, 'en', ['en']]) expect(() => saveUi(db, bad)).toThrow('Giá trị không hợp lệ');
+    expect(getUi(db)).toEqual(DEFAULT_UI);
   });
 });

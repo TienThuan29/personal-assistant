@@ -2,6 +2,10 @@
 export const vi = {
   common: {
     empty: '(trống)',
+    recurDaily: 'Hằng ngày',
+    recurWeekly: 'Hằng tuần: {{days}}',
+    recurMonthly: 'Ngày {{day}} hằng tháng',
+    weekday: { '1': 'T2', '2': 'T3', '3': 'T4', '4': 'T5', '5': 'T6', '6': 'T7', '7': 'CN' }, // 1 = Monday … 7 = Sunday
   },
   chat: {},
   pages: {},

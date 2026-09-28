@@ -1,12 +1,12 @@
 import type { ChatCompletionContentPartImage, ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import type { AgentEvent, AssistantMessage, ChatMessage, ToolCall } from '../shared/types';
+import type { AgentEvent, AssistantMessage, ChatMessage, ToolCall, UiSettings } from '../shared/types';
 import { dataUrl } from './attachments';
 import { type Db, tx } from './db';
 import { collect, describeLlmError, type Llm } from './llm';
 import { systemPrompt } from './prompt';
 import { addMessage, createAction, finishAction, getAction, getMessages, listActions } from './store';
 import { findTool, parseArgs, toOpenAITools, type ToolCtx } from './tools';
-import { errMsg, te, UserError } from './tools/common';
+import { errMsg, te, UserError } from './errors';
 
 export const MAX_ROUNDS = 8;
 const HISTORY = 20; // ponytail: history window walks back to the last user message; unbounded within one long confirm/resume turn
@@ -16,11 +16,12 @@ export type AgentDeps = {
   ro: Db;
   attachmentsDir: string;
   now: () => Date;
+  settings: () => UiSettings;
   llm: () => Llm;
   emit: (e: AgentEvent) => void;
 };
 
-const ctxOf = (d: AgentDeps): ToolCtx => ({ db: d.db, ro: d.ro, now: d.now });
+const ctxOf = (d: AgentDeps): ToolCtx => ({ db: d.db, ro: d.ro, now: d.now, settings: d.settings });
 
 /** System prompt + roughly the last HISTORY messages, starting on a user message so tool replies never dangle. */
 export function buildLlmMessages(deps: AgentDeps, conversationId: number): ChatCompletionMessageParam[] {
@@ -29,7 +30,7 @@ export function buildLlmMessages(deps: AgentDeps, conversationId: number): ChatC
   while (start > 0 && all[start].role !== 'user') start--;
   const recent = all.slice(start);
   const lastUser = recent.map((m) => m.role).lastIndexOf('user');
-  return [{ role: 'system', content: systemPrompt(deps.db, deps.now()) }, ...recent.map((m, i) => toLlm(deps, m, i === lastUser))];
+  return [{ role: 'system', content: systemPrompt(deps.db, deps.now(), deps.settings()) }, ...recent.map((m, i) => toLlm(deps, m, i === lastUser))];
 }
 
 /** Images go only with the latest user message (token cost); older ones stay as [ảnh #id] labels. */

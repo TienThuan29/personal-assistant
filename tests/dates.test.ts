@@ -1,4 +1,5 @@
 import { addDays, localDayRange, nextOccurrence, recurrenceText, toLocalDate } from '../src/shared/dates';
+import { createI18n } from '../src/shared/i18n';
 import { formatMoney } from '../src/shared/money';
 
 describe('dates', () => {
@@ -35,12 +36,25 @@ describe('dates', () => {
     expect(recurrenceText('weekly:1,3,7')).toBe('Hằng tuần: T2, T4, CN');
     expect(recurrenceText('monthly:15')).toBe('Ngày 15 hằng tháng');
   });
+  it('recurrenceText reads rules in English with an English t', () => {
+    const { t } = createI18n('en');
+    expect(recurrenceText('daily', t)).toBe('Daily');
+    expect(recurrenceText('weekly:1,3,7', t)).toBe('Weekly: Mon, Wed, Sun');
+    expect(recurrenceText('monthly:15', t)).toBe('Day 15 of every month');
+    expect(recurrenceText('yearly', t)).toBe('yearly');
+  });
 });
 
 describe('money', () => {
   it('formats minor units', () => {
     expect(formatMoney(50_000, 'VND')).toContain('50.000');
     expect(formatMoney(1250, 'USD')).toContain('12,50');
+  });
+  it('formats in the vi or intl style', () => {
+    const nb = (s: string) => s.replace(/\s/g, ' '); // Intl uses non-breaking spaces
+    expect(nb(formatMoney(55_000, 'VND', 'vi'))).toBe('55.000 ₫');
+    expect(formatMoney(55_000, 'VND', 'intl')).toBe('₫55,000');
+    expect(formatMoney(1250, 'USD', 'intl')).toBe('$12.50');
   });
   it('falls back for unknown currencies', () => expect(formatMoney(5, 'XXXX')).toBe('5 XXXX'));
 });

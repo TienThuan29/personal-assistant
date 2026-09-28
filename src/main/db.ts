@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { toLocalDate } from '../shared/dates';
 import { MIGRATIONS } from './migrations';
-import { UserError } from './tools/common';
+import { UserError } from './errors';
 
 export type Db = DatabaseSync;
 export type Params = Record<string, SQLInputValue>;

@@ -1,7 +1,8 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { z } from 'zod/v4';
-import type { LlmConfig } from '../shared/types';
+import { DEFAULT_UI, type LlmConfig, type UiSettings } from '../shared/types';
 import type { Db } from './db';
+import { tr, UserError } from './errors';
 
 /** The key is sent to this endpoint, so only https (or http to a local gateway). Trailing '/' dropped: the SDK appends '/openai'. */
 const endpoint = z
@@ -21,6 +22,28 @@ export const llmConfigSchema = z.object({
   model: z.string().trim().min(1, 'errors:modelRequired'),
   apiVersion: z.string().trim().min(1, 'errors:apiVersionRequired'),
 });
+
+export const uiSettingsSchema = z.object({
+  language: z.enum(['vi', 'en'], { error: 'errors:invalidValue' }),
+  moneyStyle: z.enum(['vi', 'intl'], { error: 'errors:invalidValue' }),
+  defaultCurrency: z
+    .string({ error: 'errors:currencyFormat' })
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{3}$/, 'errors:currencyFormat'),
+});
+
+/** Stored values over the defaults (only saveUi writes them, so they are valid). */
+export const getUi = (db: Db): UiSettings => ({ ...DEFAULT_UI, ...getSetting<Partial<UiSettings>>(db, 'ui', {}) });
+
+/** Merges a patch from the renderer over the current settings, validates and saves. Throws the translated zod messages. */
+export function saveUi(db: Db, patch: unknown): UiSettings {
+  if (typeof patch !== 'object' || !patch || Array.isArray(patch)) throw new UserError('invalidValue');
+  const parsed = uiSettingsSchema.safeParse({ ...getUi(db), ...patch });
+  if (!parsed.success) throw new Error(parsed.error.issues.map((i) => tr(i.message)).join('; '));
+  setSetting(db, 'ui', parsed.data);
+  return parsed.data;
+}
 
 export function getSetting<T>(db: Db, key: string, fallback: T): T {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;

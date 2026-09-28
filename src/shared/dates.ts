@@ -1,3 +1,6 @@
+import type { TFunction } from 'i18next';
+import { createI18n } from './i18n';
+
 const pad = (n: number): string => String(n).padStart(2, '0');
 
 /** 'YYYY-MM-DD' in the machine's local time zone. */
@@ -50,12 +53,15 @@ export function nextOccurrence(recurrence: string, from: string): string {
   throw new Error(`Recurrence không hợp lệ: ${recurrence}`);
 }
 
-const WEEKDAYS = ['', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+let viT: TFunction | undefined; // created on first use, so importing dates never builds an i18n instance
 
-/** Vietnamese text of a rule: 'Hằng ngày', 'Hằng tuần: T2, T4', 'Ngày 15 hằng tháng'. Unknown rules come back as-is. */
-export function recurrenceText(rule: string): string {
-  if (rule === 'daily') return 'Hằng ngày';
-  if (rule.startsWith('weekly:')) return `Hằng tuần: ${rule.slice(7).split(',').map((d) => WEEKDAYS[Number(d)] ?? d).join(', ')}`;
-  if (rule.startsWith('monthly:')) return `Ngày ${rule.slice(8)} hằng tháng`;
+/** Text of a rule via `t` (Vietnamese by default): 'Hằng ngày', 'Hằng tuần: T2, T4', 'Ngày 15 hằng tháng'. Unknown rules come back as-is. */
+export function recurrenceText(rule: string, t: TFunction = (viT ??= createI18n('vi').t)): string {
+  if (rule === 'daily') return t('recurDaily');
+  if (rule.startsWith('weekly:')) {
+    const days = rule.slice(7).split(',').map((d) => (/^[1-7]$/.test(d) ? t(`weekday.${d as '1'}`) : d));
+    return t('recurWeekly', { days: days.join(', ') });
+  }
+  if (rule.startsWith('monthly:')) return t('recurMonthly', { day: rule.slice(8) });
   return rule;
 }

@@ -1,5 +1,7 @@
 // Types shared by main, preload and renderer. No runtime code except constants.
 
+import type { Lang } from './i18n';
+
 export type TaskRow = {
   id: number;
   title: string;
@@ -81,7 +83,11 @@ export type AgentEvent = { conversationId: number } & (
 export type LlmConfig = { provider: 'azure' | 'gateway'; endpoint: string; model: string; apiVersion: string };
 export const DEFAULT_LLM: LlmConfig = { provider: 'gateway', endpoint: '', model: '', apiVersion: '2024-10-21' };
 
-export type SettingsView = { llm: LlmConfig; hasKey: Record<LlmConfig['provider'], boolean>; openAtLogin: boolean };
+/** Display preferences, stored under the settings key 'ui'. `moneyStyle` 'vi' is "55.000 ₫", 'intl' is "₫55,000". */
+export type UiSettings = { language: Lang; moneyStyle: 'vi' | 'intl'; defaultCurrency: string };
+export const DEFAULT_UI: UiSettings = { language: 'vi', moneyStyle: 'vi', defaultCurrency: 'VND' };
+
+export type SettingsView = { llm: LlmConfig; hasKey: Record<LlmConfig['provider'], boolean>; openAtLogin: boolean; ui: UiSettings };
 export type SettingsInput = { llm: LlmConfig; apiKey?: string };
 
 export type ImageInput = { name: string; bytes: Uint8Array };
@@ -115,6 +121,8 @@ export type Api = {
     test(): Promise<string>;
     /** Applies at once (independent of the LLM config); resolves to the state now in effect. */
     setOpenAtLogin(on: boolean): Promise<boolean>;
+    /** Validates, saves and broadcasts `ui:changed`; resolves to the settings now in effect. */
+    setUi(patch: Partial<UiSettings>): Promise<UiSettings>;
   };
   win: {
     minimize(): Promise<void>;
@@ -124,4 +132,5 @@ export type Api = {
     onMaximizedChange(cb: (maximized: boolean) => void): () => void;
   };
   onNavigate(cb: (page: Page) => void): () => void;
+  onUiChanged(cb: (ui: UiSettings) => void): () => void;
 };
