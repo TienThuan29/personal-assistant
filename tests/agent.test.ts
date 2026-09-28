@@ -2,8 +2,9 @@ import { APIConnectionError } from 'openai';
 import { buildLlmMessages, cancelOpenActions, MAX_ROUNDS, resolveAction, runTurn } from '../src/main/agent';
 import { newAttachmentId, saveAttachment } from '../src/main/attachments';
 import type { Llm } from '../src/main/llm';
+import { tx } from '../src/main/db';
 import { addMessage, createConversation, getAction, getMessages, listActions } from '../src/main/store';
-import { call, chunk, say, testDeps } from './helpers';
+import { call, chunk, fakeLlm, say, testDeps } from './helpers';
 
 type Deps = ReturnType<typeof testDeps>;
 
@@ -103,6 +104,55 @@ describe('runTurn', () => {
     expect(listActions(deps.db, conv, 'pending')).toEqual([]);
   });
 
+  it('cancelOpenActions works inside an outer transaction', async () => {
+    const deps = testDeps([call('c1', 'create_task', { title: 'x' })]);
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    tx(deps.db, () => cancelOpenActions(deps, conv));
+    expect(listActions(deps.db, conv).map((a) => a.status)).toEqual(['cancelled']);
+    expect(toolResults(deps, conv)).toEqual([expect.objectContaining({ cancelled: true })]);
+  });
+
+  it('does not call the LLM while an action is pending', async () => {
+    const deps = testDeps([call('c1', 'create_task', { title: 'x' })]);
+    const conv = start(deps);
+    await runTurn(deps, conv); // parks; the script is now exhausted, so another LLM call would emit an error
+    deps.events.length = 0;
+    await runTurn(deps, conv);
+    expect(deps.events).toEqual([{ type: 'pending', conversationId: conv }]);
+  });
+
+  it('a parallel read and write: the read is answered now, the write after confirm, and the model sees both', async () => {
+    const seen: string[][] = [];
+    const inner = fakeLlm([
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          { id: 'r1', type: 'function', function: { name: 'list_tasks', arguments: '{}' } },
+          { id: 'w1', type: 'function', function: { name: 'create_task', arguments: '{"title":"x"}' } },
+        ],
+      },
+      say('Xong.'),
+    ]);
+    const spy: Llm = {
+      stream: (p) => {
+        seen.push(p.messages.flatMap((m) => (m.role === 'tool' ? [m.tool_call_id] : [])));
+        return inner.stream(p);
+      },
+    };
+    const deps = testDeps([], spy);
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    expect(toolResults(deps, conv)).toEqual([[]]);
+    const [action] = listActions(deps.db, conv, 'pending');
+    expect(action.tool_call_id).toBe('w1');
+    expect(resolveAction(deps, action.id, 'confirm')).toBe(true);
+    await runTurn(deps, conv);
+    expect(seen.at(-1)).toEqual(['r1', 'w1']);
+    expect(getMessages(deps.db, conv).at(-1)).toMatchObject({ role: 'assistant', content: 'Xong.' });
+  });
+
   it('LLM errors keep partial text and emit an error', async () => {
     const broken: Llm = {
       async *stream() {
@@ -168,6 +218,23 @@ function* fakeCall() {
 }
 
 describe('buildLlmMessages', () => {
+  it('the history window starts on a user message', () => {
+    const deps = testDeps([]);
+    const conv = createConversation(deps.db);
+    addMessage(deps.db, conv, { role: 'user', content: 'cũ' });
+    addMessage(deps.db, conv, say('ok'));
+    addMessage(deps.db, conv, { role: 'user', content: 'mới' });
+    for (let i = 0; i < 12; i++) {
+      addMessage(deps.db, conv, call(`c${i}`, 'list_tasks', {}));
+      addMessage(deps.db, conv, { role: 'tool', tool_call_id: `c${i}`, content: '[]' });
+    }
+    const all = getMessages(deps.db, conv);
+    expect(all[all.length - 20].role).toBe('assistant'); // the raw cut would start mid tool loop
+    const msgs = buildLlmMessages(deps, conv);
+    expect(msgs[1]).toEqual({ role: 'user', content: 'mới' });
+    expect(msgs).toHaveLength(1 + 25);
+  });
+
   it('sends images only with the latest user message; older ones become labels', () => {
     const deps = testDeps([]);
     const conv = createConversation(deps.db);

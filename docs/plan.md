@@ -646,6 +646,34 @@ describe('db', () => {
     ).toThrow('boom');
   });
 
+  it('nested tx joins the outer one: an inner throw undoes only the inner part unless it escapes', () => {
+    const { db } = testDb();
+    const titles = () => (db.prepare('SELECT title FROM tasks ORDER BY id').all() as { title: string }[]).map((r) => r.title);
+    const insert = (t: string) => db.prepare('INSERT INTO tasks (title) VALUES (?)').run(t);
+    tx(db, () => {
+      insert('outer');
+      tx(db, () => insert('inner'));
+      expect(() =>
+        tx(db, () => {
+          insert('caught');
+          throw new Error('boom');
+        })
+      ).toThrow('boom');
+    });
+    expect(titles()).toEqual(['outer', 'inner']);
+    expect(() =>
+      tx(db, () => {
+        insert('outer2');
+        tx(db, () => {
+          insert('inner2');
+          throw new Error('boom');
+        });
+      })
+    ).toThrow('boom');
+    expect(titles()).toEqual(['outer', 'inner']);
+    expect(db.isTransaction).toBe(false);
+  });
+
   it('backs up once per day and keeps the newest 7', () => {
     const { db } = testDb();
     const dir = join(tempDir(), 'backups');
@@ -801,14 +829,18 @@ export function openDb(path: string): Db {
   return db;
 }
 
+/**
+ * Runs fn in a transaction. A SAVEPOINT (not BEGIN) makes it nestable: outermost it acts as BEGIN/COMMIT,
+ * inside another tx a throw rolls back only this part, and the outer one decides the rest.
+ */
 export function tx<T>(db: Db, fn: () => T): T {
-  db.exec('BEGIN');
+  db.exec('SAVEPOINT tx');
   try {
     const result = fn();
-    db.exec('COMMIT');
+    db.exec('RELEASE tx');
     return result;
   } catch (e) {
-    if (db.isTransaction) db.exec('ROLLBACK');
+    if (db.isTransaction) db.exec('ROLLBACK TO tx; RELEASE tx');
     throw e;
   }
 }
@@ -844,7 +876,7 @@ export function backupDb(db: Db, dir: string, now: Date, keep = 7): void {
 **Step 6: Run to verify it passes**
 
 Run: `bun run test tests/db.test.ts`
-Expected: PASS (6 tests).
+Expected: PASS (7 tests).
 
 **Step 7: Commit**
 
@@ -3312,8 +3344,9 @@ import { APIConnectionError } from 'openai';
 import { buildLlmMessages, cancelOpenActions, MAX_ROUNDS, resolveAction, runTurn } from '../src/main/agent';
 import { newAttachmentId, saveAttachment } from '../src/main/attachments';
 import type { Llm } from '../src/main/llm';
+import { tx } from '../src/main/db';
 import { addMessage, createConversation, getAction, getMessages, listActions } from '../src/main/store';
-import { call, chunk, say, testDeps } from './helpers';
+import { call, chunk, fakeLlm, say, testDeps } from './helpers';
 
 type Deps = ReturnType<typeof testDeps>;
 
@@ -3413,6 +3446,55 @@ describe('runTurn', () => {
     expect(listActions(deps.db, conv, 'pending')).toEqual([]);
   });
 
+  it('cancelOpenActions works inside an outer transaction', async () => {
+    const deps = testDeps([call('c1', 'create_task', { title: 'x' })]);
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    tx(deps.db, () => cancelOpenActions(deps, conv));
+    expect(listActions(deps.db, conv).map((a) => a.status)).toEqual(['cancelled']);
+    expect(toolResults(deps, conv)).toEqual([expect.objectContaining({ cancelled: true })]);
+  });
+
+  it('does not call the LLM while an action is pending', async () => {
+    const deps = testDeps([call('c1', 'create_task', { title: 'x' })]);
+    const conv = start(deps);
+    await runTurn(deps, conv); // parks; the script is now exhausted, so another LLM call would emit an error
+    deps.events.length = 0;
+    await runTurn(deps, conv);
+    expect(deps.events).toEqual([{ type: 'pending', conversationId: conv }]);
+  });
+
+  it('a parallel read and write: the read is answered now, the write after confirm, and the model sees both', async () => {
+    const seen: string[][] = [];
+    const inner = fakeLlm([
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          { id: 'r1', type: 'function', function: { name: 'list_tasks', arguments: '{}' } },
+          { id: 'w1', type: 'function', function: { name: 'create_task', arguments: '{"title":"x"}' } },
+        ],
+      },
+      say('Xong.'),
+    ]);
+    const spy: Llm = {
+      stream: (p) => {
+        seen.push(p.messages.flatMap((m) => (m.role === 'tool' ? [m.tool_call_id] : [])));
+        return inner.stream(p);
+      },
+    };
+    const deps = testDeps([], spy);
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    expect(toolResults(deps, conv)).toEqual([[]]);
+    const [action] = listActions(deps.db, conv, 'pending');
+    expect(action.tool_call_id).toBe('w1');
+    expect(resolveAction(deps, action.id, 'confirm')).toBe(true);
+    await runTurn(deps, conv);
+    expect(seen.at(-1)).toEqual(['r1', 'w1']);
+    expect(getMessages(deps.db, conv).at(-1)).toMatchObject({ role: 'assistant', content: 'Xong.' });
+  });
+
   it('LLM errors keep partial text and emit an error', async () => {
     const broken: Llm = {
       async *stream() {
@@ -3478,6 +3560,23 @@ function* fakeCall() {
 }
 
 describe('buildLlmMessages', () => {
+  it('the history window starts on a user message', () => {
+    const deps = testDeps([]);
+    const conv = createConversation(deps.db);
+    addMessage(deps.db, conv, { role: 'user', content: 'cũ' });
+    addMessage(deps.db, conv, say('ok'));
+    addMessage(deps.db, conv, { role: 'user', content: 'mới' });
+    for (let i = 0; i < 12; i++) {
+      addMessage(deps.db, conv, call(`c${i}`, 'list_tasks', {}));
+      addMessage(deps.db, conv, { role: 'tool', tool_call_id: `c${i}`, content: '[]' });
+    }
+    const all = getMessages(deps.db, conv);
+    expect(all[all.length - 20].role).toBe('assistant'); // the raw cut would start mid tool loop
+    const msgs = buildLlmMessages(deps, conv);
+    expect(msgs[1]).toEqual({ role: 'user', content: 'mới' });
+    expect(msgs).toHaveLength(1 + 25);
+  });
+
   it('sends images only with the latest user message; older ones become labels', () => {
     const deps = testDeps([]);
     const conv = createConversation(deps.db);
@@ -3517,7 +3616,7 @@ import { findTool, parseArgs, toOpenAITools, type ToolCtx } from './tools';
 import { errMsg } from './tools/common';
 
 export const MAX_ROUNDS = 8;
-const HISTORY = 20;
+const HISTORY = 20; // ponytail: history window walks back to the last user message; unbounded within one long confirm/resume turn
 
 export type AgentDeps = {
   db: Db;
@@ -3557,6 +3656,10 @@ function toLlm(deps: AgentDeps, m: ChatMessage, withImages: boolean): ChatComple
 
 /** One user turn: stream, run read tools, loop. Returns early when write tools are parked for confirmation. */
 export async function runTurn(deps: AgentDeps, conversationId: number, signal?: AbortSignal): Promise<void> {
+  if (listActions(deps.db, conversationId, 'pending').length) {
+    deps.emit({ type: 'pending', conversationId }); // unanswered tool calls would make the API reject the request
+    return;
+  }
   const tools = toOpenAITools();
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const partial = { content: '' };
@@ -3580,15 +3683,19 @@ export async function runTurn(deps: AgentDeps, conversationId: number, signal?: 
       deps.emit({ type: 'error', conversationId, message: 'Mô hình không trả lời. Hãy thử lại.' });
       return;
     }
-    addMessage(deps.db, conversationId, reply);
+    const calls = reply.tool_calls ?? [];
+    // One transaction: a tool_calls message is never stored without its replies or parked actions.
+    const outcomes = tx(deps.db, () => {
+      addMessage(deps.db, conversationId, reply);
+      return calls.map((c) => handleCall(deps, conversationId, c));
+    });
     deps.emit({ type: 'saved', conversationId });
-    if (!reply.tool_calls?.length) {
+    calls.forEach((c, i) => outcomes[i] === 'ran' && deps.emit({ type: 'tool', conversationId, name: c.function.name }));
+    if (!calls.length) {
       deps.emit({ type: 'done', conversationId });
       return;
     }
-    let parked = false;
-    for (const c of reply.tool_calls) parked = handleCall(deps, conversationId, c) || parked;
-    if (parked) {
+    if (outcomes.includes('parked')) {
       deps.emit({ type: 'pending', conversationId });
       return;
     }
@@ -3600,40 +3707,39 @@ export async function runTurn(deps: AgentDeps, conversationId: number, signal?: 
   deps.emit({ type: 'done', conversationId });
 }
 
-/** Runs a read tool now, or parks a write tool as a pending action. Returns true when parked. */
-function handleCall(deps: AgentDeps, conversationId: number, c: ToolCall): boolean {
+/** Runs a read tool now ('ran'), parks a write tool as a pending action ('parked'), or answers with an error. */
+function handleCall(deps: AgentDeps, conversationId: number, c: ToolCall): 'ran' | 'parked' | 'error' {
   const respond = (result: unknown): void =>
     void addMessage(deps.db, conversationId, { role: 'tool', tool_call_id: c.id, content: JSON.stringify(result) });
   const tool = findTool(c.function.name);
   if (!tool) {
     respond({ error: `Không có tool ${c.function.name}` });
-    return false;
+    return 'error';
   }
   let args: unknown;
   try {
     args = parseArgs(tool, JSON.parse(c.function.arguments || '{}'));
   } catch (e) {
     respond({ error: `Tham số không hợp lệ: ${errMsg(e)}` });
-    return false;
+    return 'error';
   }
   if (tool.kind === 'read') {
-    deps.emit({ type: 'tool', conversationId, name: tool.name });
     try {
       respond(tool.run(args, ctxOf(deps)));
     } catch (e) {
       respond({ error: errMsg(e) });
     }
-    return false;
+    return 'ran';
   }
   let preview: unknown = null;
   try {
     preview = tool.preview?.(args, ctxOf(deps)) ?? null;
   } catch (e) {
     respond({ error: errMsg(e) }); // e.g. unknown ids: tell the model instead of showing a broken card
-    return false;
+    return 'error';
   }
   createAction(deps.db, { conversation_id: conversationId, tool_call_id: c.id, tool_name: tool.name, args, preview });
-  return true;
+  return 'parked';
 }
 
 /**
@@ -3682,7 +3788,7 @@ export function cancelOpenActions(deps: AgentDeps, conversationId: number): void
 **Step 5: Run to verify it passes**
 
 Run: `bun run test tests/agent.test.ts`
-Expected: PASS (14 tests).
+Expected: PASS (18 tests).
 
 Run: `bun run test && bun run typecheck`
 Expected: all PASS, typecheck exit 0.

@@ -18,14 +18,18 @@ export function openDb(path: string): Db {
   return db;
 }
 
+/**
+ * Runs fn in a transaction. A SAVEPOINT (not BEGIN) makes it nestable: outermost it acts as BEGIN/COMMIT,
+ * inside another tx a throw rolls back only this part, and the outer one decides the rest.
+ */
 export function tx<T>(db: Db, fn: () => T): T {
-  db.exec('BEGIN');
+  db.exec('SAVEPOINT tx');
   try {
     const result = fn();
-    db.exec('COMMIT');
+    db.exec('RELEASE tx');
     return result;
   } catch (e) {
-    if (db.isTransaction) db.exec('ROLLBACK');
+    if (db.isTransaction) db.exec('ROLLBACK TO tx; RELEASE tx');
     throw e;
   }
 }

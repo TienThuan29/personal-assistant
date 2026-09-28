@@ -9,7 +9,7 @@ import { findTool, parseArgs, toOpenAITools, type ToolCtx } from './tools';
 import { errMsg } from './tools/common';
 
 export const MAX_ROUNDS = 8;
-const HISTORY = 20;
+const HISTORY = 20; // ponytail: history window walks back to the last user message; unbounded within one long confirm/resume turn
 
 export type AgentDeps = {
   db: Db;
@@ -49,6 +49,10 @@ function toLlm(deps: AgentDeps, m: ChatMessage, withImages: boolean): ChatComple
 
 /** One user turn: stream, run read tools, loop. Returns early when write tools are parked for confirmation. */
 export async function runTurn(deps: AgentDeps, conversationId: number, signal?: AbortSignal): Promise<void> {
+  if (listActions(deps.db, conversationId, 'pending').length) {
+    deps.emit({ type: 'pending', conversationId }); // unanswered tool calls would make the API reject the request
+    return;
+  }
   const tools = toOpenAITools();
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const partial = { content: '' };
@@ -72,15 +76,19 @@ export async function runTurn(deps: AgentDeps, conversationId: number, signal?: 
       deps.emit({ type: 'error', conversationId, message: 'Mô hình không trả lời. Hãy thử lại.' });
       return;
     }
-    addMessage(deps.db, conversationId, reply);
+    const calls = reply.tool_calls ?? [];
+    // One transaction: a tool_calls message is never stored without its replies or parked actions.
+    const outcomes = tx(deps.db, () => {
+      addMessage(deps.db, conversationId, reply);
+      return calls.map((c) => handleCall(deps, conversationId, c));
+    });
     deps.emit({ type: 'saved', conversationId });
-    if (!reply.tool_calls?.length) {
+    calls.forEach((c, i) => outcomes[i] === 'ran' && deps.emit({ type: 'tool', conversationId, name: c.function.name }));
+    if (!calls.length) {
       deps.emit({ type: 'done', conversationId });
       return;
     }
-    let parked = false;
-    for (const c of reply.tool_calls) parked = handleCall(deps, conversationId, c) || parked;
-    if (parked) {
+    if (outcomes.includes('parked')) {
       deps.emit({ type: 'pending', conversationId });
       return;
     }
@@ -92,40 +100,39 @@ export async function runTurn(deps: AgentDeps, conversationId: number, signal?: 
   deps.emit({ type: 'done', conversationId });
 }
 
-/** Runs a read tool now, or parks a write tool as a pending action. Returns true when parked. */
-function handleCall(deps: AgentDeps, conversationId: number, c: ToolCall): boolean {
+/** Runs a read tool now ('ran'), parks a write tool as a pending action ('parked'), or answers with an error. */
+function handleCall(deps: AgentDeps, conversationId: number, c: ToolCall): 'ran' | 'parked' | 'error' {
   const respond = (result: unknown): void =>
     void addMessage(deps.db, conversationId, { role: 'tool', tool_call_id: c.id, content: JSON.stringify(result) });
   const tool = findTool(c.function.name);
   if (!tool) {
     respond({ error: `Không có tool ${c.function.name}` });
-    return false;
+    return 'error';
   }
   let args: unknown;
   try {
     args = parseArgs(tool, JSON.parse(c.function.arguments || '{}'));
   } catch (e) {
     respond({ error: `Tham số không hợp lệ: ${errMsg(e)}` });
-    return false;
+    return 'error';
   }
   if (tool.kind === 'read') {
-    deps.emit({ type: 'tool', conversationId, name: tool.name });
     try {
       respond(tool.run(args, ctxOf(deps)));
     } catch (e) {
       respond({ error: errMsg(e) });
     }
-    return false;
+    return 'ran';
   }
   let preview: unknown = null;
   try {
     preview = tool.preview?.(args, ctxOf(deps)) ?? null;
   } catch (e) {
     respond({ error: errMsg(e) }); // e.g. unknown ids: tell the model instead of showing a broken card
-    return false;
+    return 'error';
   }
   createAction(deps.db, { conversation_id: conversationId, tool_call_id: c.id, tool_name: tool.name, args, preview });
-  return true;
+  return 'parked';
 }
 
 /**

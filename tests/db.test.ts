@@ -46,6 +46,34 @@ describe('db', () => {
     ).toThrow('boom');
   });
 
+  it('nested tx joins the outer one: an inner throw undoes only the inner part unless it escapes', () => {
+    const { db } = testDb();
+    const titles = () => (db.prepare('SELECT title FROM tasks ORDER BY id').all() as { title: string }[]).map((r) => r.title);
+    const insert = (t: string) => db.prepare('INSERT INTO tasks (title) VALUES (?)').run(t);
+    tx(db, () => {
+      insert('outer');
+      tx(db, () => insert('inner'));
+      expect(() =>
+        tx(db, () => {
+          insert('caught');
+          throw new Error('boom');
+        })
+      ).toThrow('boom');
+    });
+    expect(titles()).toEqual(['outer', 'inner']);
+    expect(() =>
+      tx(db, () => {
+        insert('outer2');
+        tx(db, () => {
+          insert('inner2');
+          throw new Error('boom');
+        });
+      })
+    ).toThrow('boom');
+    expect(titles()).toEqual(['outer', 'inner']);
+    expect(db.isTransaction).toBe(false);
+  });
+
   it('backs up once per day and keeps the newest 7', () => {
     const { db } = testDb();
     const dir = join(tempDir(), 'backups');
