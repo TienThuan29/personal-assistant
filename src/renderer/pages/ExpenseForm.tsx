@@ -80,7 +80,15 @@ export function ExpenseForm({ expense, categories, onClose }: { expense: Expense
           <Form.Item
             field='amount'
             label={t('chat:field.amount')}
-            rules={[required, { validator: (v: number | undefined, cb) => cb(v && toMinor(v, currency) > 0 ? undefined : t('amountPositive')) }]}
+            rules={[
+              required,
+              {
+                validator: (v: number | undefined, cb) => {
+                  const minor = v == null ? null : toMinor(v, currency); // empty: only the required error
+                  cb(minor == null ? undefined : minor <= 0 ? t('amountPositive') : minor > 1e12 ? t('amountTooLarge') : undefined);
+                },
+              },
+            ]}
           >
             <InputNumber autoFocus min={0} precision={minorDigits(currency)} />
           </Form.Item>
@@ -94,7 +102,11 @@ export function ExpenseForm({ expense, categories, onClose }: { expense: Expense
           </Form.Item>
         </div>
         <div className='form-row'>
-          <Form.Item field='category' label={t('categoryColumn')} rules={[required]}>
+          <Form.Item
+            field='category'
+            label={t('categoryColumn')}
+            rules={[required, { validator: (v: string | undefined, cb) => cb(v && !v.trim() ? t('common:required') : undefined) }]}
+          >
             <AutoComplete data={[...new Set(categories)]} />
           </Form.Item>
           <Form.Item

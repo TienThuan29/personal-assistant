@@ -179,6 +179,7 @@ export const vi = {
     editNoteLabel: 'Sửa ghi chú: {{what}}',
     editExpenseLabel: 'Sửa khoản chi: {{what}}',
     amountPositive: 'Số tiền phải lớn hơn 0',
+    amountTooLarge: 'Số tiền quá lớn',
     addReminder: 'Thêm nhắc nhở',
     editReminder: 'Sửa nhắc nhở',
   },

@@ -70,7 +70,7 @@ export function NoteForm({ note, onClose }: { note: NoteRow | null; onClose: () 
           <Input />
         </Form.Item>
         <Form.Item field='body' label={t('chat:field.body')} rules={[{ required: true, message: t('common:required') }]}>
-          <Input.TextArea autoFocus autoSize={{ minRows: 8 }} />
+          <Input.TextArea autoFocus autoSize={{ minRows: 8, maxRows: 20 }} />
         </Form.Item>
         <Form.Item label={t('common:image')}>
           <ImageField

@@ -19,6 +19,10 @@ describe('money units', () => {
     expect(fromMinor(1250, 'USD')).toBe(12.5);
     expect(toMinor(0.29, 'USD')).toBe(29); // 0.29 * 100 is 28.999…
     expect(toMinor(1200, 'JPY')).toBe(1200);
+    expect(toMinor(12.345, 'KWD')).toBe(12345); // 3 digits
+    expect(toMinor(12.345, 'USD')).toBe(1235); // 12.345 * 100 is 1234.49…
+    expect(toMinor(1.005, 'USD')).toBe(101);
+    expect(toMinor(1e-7, 'USD')).toBe(0);
     expect(fromMinor(1200, 'JPY')).toBe(1200);
     expect(minorDigits('XXXX')).toBe(0);
     expect(formatMoney(1250, 'USD', 'intl')).toBe('$12.50');

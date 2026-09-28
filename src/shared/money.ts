@@ -7,8 +7,11 @@ export function minorDigits(currency: string): number {
   }
 }
 
-/** 12.5 USD → 1250 (cents). */
-export const toMinor = (major: number, currency: string): number => Math.round(major * 10 ** minorDigits(currency));
+/** 12.5 USD → 1250 (cents). Shifts the decimal exponent instead of multiplying, so 1.005 USD → 101 (1.005 * 100 is 100.49…). */
+export const toMinor = (major: number, currency: string): number => {
+  const [m, e = '0'] = String(major).split('e'); // String() may already use exponent notation (1e-7, 1e21)
+  return Math.round(Number(`${m}e${Number(e) + minorDigits(currency)}`));
+};
 export const fromMinor = (minor: number, currency: string): number => minor / 10 ** minorDigits(currency);
 
 /** Amounts are stored in the currency's minor unit (VND: đồng, USD: cent). style 'vi': "55.000 ₫", 'intl': "₫55,000". */

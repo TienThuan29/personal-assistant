@@ -173,6 +173,7 @@ export const en: Resources = {
     editNoteLabel: 'Edit note: {{what}}',
     editExpenseLabel: 'Edit expense: {{what}}',
     amountPositive: 'The amount must be greater than 0',
+    amountTooLarge: 'The amount is too large',
     addReminder: 'Add reminder',
     editReminder: 'Edit reminder',
   },

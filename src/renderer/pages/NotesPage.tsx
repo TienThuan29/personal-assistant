@@ -1,7 +1,7 @@
 import { AionSearchInput, SettingsPageHeader } from '@aionui/ui';
 import { Button, Empty, Tag } from '@arco-design/web-react';
 import { Delete, Edit, Plus } from '@icon-park/react';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { NoteRow } from '../../shared/types';
 import { api } from '../api';
@@ -21,8 +21,16 @@ export function NotesPage() {
   const read = useCallback(() => api.data.read<NoteRow[]>('search_notes', { query: query.trim() || undefined, limit: 100 }), [query]);
   const { data: notes, loading, busy, remove, fail, holders } = useData(read, [], query ? 250 : 0); // debounce typing
 
+  const opened = useRef(0); // bumped by every open, so a late get_notes reply can't replace a form opened after it
+  const open = (n: NoteRow | null | undefined) => {
+    opened.current++;
+    setEditing(n);
+  };
   // Search rows carry a snippet and the image ids, get_notes the full body.
-  const openNote = (n: NoteRow) => void api.data.read<NoteRow[]>('get_notes', { ids: [n.id] }).then((r) => r[0] && setEditing({ ...n, ...r[0] }), fail);
+  const openNote = (n: NoteRow) => {
+    const seq = ++opened.current;
+    void api.data.read<NoteRow[]>('get_notes', { ids: [n.id] }).then((r) => seq === opened.current && r[0] && open({ ...n, ...r[0] }), fail);
+  };
 
   return (
     <div className='page'>
@@ -32,7 +40,7 @@ export function NotesPage() {
         sticky={false}
         description={t('notesHint')}
         actions={
-          <Button type='primary' icon={<Plus />} onClick={() => setEditing(null)}>
+          <Button type='primary' icon={<Plus />} onClick={() => open(null)}>
             {t('common:add')}
           </Button>
         }
@@ -74,7 +82,7 @@ export function NotesPage() {
           />
         </div>
       ))}
-      {editing !== undefined && <NoteForm note={editing} onClose={() => setEditing(undefined)} />}
+      {editing !== undefined && <NoteForm key={editing?.id ?? 'new'} note={editing} onClose={() => open(undefined)} />}
     </div>
   );
 }
