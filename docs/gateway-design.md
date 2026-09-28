@@ -36,3 +36,26 @@ Người dùng cho biết LLM gateway là một phương thức kết nối riê
 - Unit test: parse khối tool_calls (thành công, nhiều call, JSON sai, text lẫn vào); chuyển lịch sử; migration cấu hình.
 - Agent loop với fake gateway LLM (chỉ trả text): đọc → thẻ xác nhận → xác nhận → chạy tiếp.
 - Chạy chẩn đoán với gateway thật sau khi làm xong (dùng token đã lưu, không in token).
+
+## As built
+
+**Commit 1 `feat(settings): per-provider LLM config` (G1–G3)**
+- `shared/types.ts`: `LlmSettings = { active, azure: {endpoint, model, apiVersion}, gateway: {endpoint, model} }` là dạng lưu dưới key `llm`. `LlmConfig` (phẳng, có `provider`) vẫn là đầu vào của `createLlm`; `activeLlm(settings)` trong `settings.ts` tạo ra nó (gateway có `apiVersion: ''`).
+- `settings.ts`: `llmSettingsSchema` thay `llmConfigSchema`. Cả hai provider đều được kiểm tra (https, model trông giống key bị từ chối ở cả hai), nhưng chỉ provider `active` bắt buộc đủ: endpoint, và với Azure thêm deployment + API version. Provider kia được để trống.
+- `getLlm(db)` migrate khi đọc: row cũ `{provider, endpoint, model, apiVersion}` thành `{active: provider, [provider]: {...}}`, phần còn lại là mặc định. Không ghi lại DB; lần Lưu tiếp theo ghi dạng mới. Row rác đọc ra mặc định.
+- IPC `settings:listModels(provider)`: chỉ nhận `'gateway'` (khác thì `errors:invalidValue`). Gọi `GET <endpoint>/models` qua OpenAI SDK với endpoint và token **đã lưu**, dùng `net.fetch` như LLM. Lỗi: `errors:modelsNeedConfig` (chưa lưu endpoint/token), `errors:modelsFailed` bọc `describeLlmError` (vd 404 gợi ý thêm `/v1`).
+- SettingsPage giữ `LlmSettings` trong state; đổi provider chỉ đổi `active` nên giá trị của từng bên được giữ. Model của gateway là Arco `Select` (`showSearch allowCreate allowClear`) cùng nút tải lại. Danh sách tự tải (không báo lỗi) khi gateway đang hiện, đã có token và endpoint đã lưu, và tải lại sau mỗi lần Lưu; nút tải lại thì báo lỗi bằng toast. `providerDesc` và `modelDescGateway` viết lại, không nhắc Foundry.
+
+**Commit 2 `feat(llm): gateway adapter with prompt-based tool calling` (G4–G9)**
+- `src/main/gateway.ts` (hàm thuần): `toolProtocol`, `parseToolCalls`, `visibleLength`, `toGatewayMessages`, `fromGateway`, `BAD_BLOCK`.
+- `createLlm`: với gateway, request đi qua `toGatewayMessages` và không gửi `tools`; stream trả về đi qua `fromGateway`. `Llm.textOnly = true` với gateway. Đường Azure không đổi.
+- G5: danh mục tool (tên, mô tả, `JSON.stringify` schema từ `toOpenAITools`) và giao thức được nối vào **cuối** system prompt (sau phần thông tin theo lượt; gateway không có prompt caching nên không ảnh hưởng). Id tự sinh `call_<8 hex>`. `arguments` có thể là object hoặc chuỗi JSON; một object đơn lẻ (không bọc mảng) cũng nhận.
+- G6: assistant có tool_calls → text (trim) + khối JSON dựng lại từ tool_calls; tool → `[Kết quả tool <name>]: <json>` (vẫn giữ `tool_call_id`, gateway thật chấp nhận); content rỗng thành `…`.
+- G7: `fromGateway` đẩy text lên UI ngay, trừ từ vị trí ```` ```tool_calls ```` trở đi, và giữ lại tạm phần đuôi có thể là đầu của fence. Text trước khối được lưu làm `content` của message; text sau khối bị bỏ.
+- G8: `buildLlmMessages(deps, conv, textOnly)`: không đính ảnh, nhãn thành `[ảnh #id] (mô hình này không xem được ảnh, chỉ thấy nhãn)`. `ChatPage` hiện toast `chat:gatewayNoImages` sau khi gửi tin có ảnh mà provider đang là gateway.
+- G9: JSON sai hoặc phần tử thiếu `name` → một call `invalid_tool_calls` giữ nguyên khối gốc; `handleCall` trả `errors:badToolBlock` cho model, lịch sử phát lại đúng khối gốc. Tool không tồn tại / tham số sai dùng lỗi sẵn có. Mọi thứ vẫn tính vào `MAX_ROUNDS`.
+- `collect` so `finish_reason` không phân biệt hoa thường (`"Stop"`, `"Length"`).
+
+**Kiểm thử**: `tests/gateway.test.ts` (parse, fence streaming ở nhiều cỡ chunk, chuyển lịch sử, agent loop qua `createLlm` + SSE giả: đọc → trả lời, ghi → thẻ → xác nhận → chạy tiếp, khối lỗi → tự sửa, ảnh), migration trong `tests/settings.test.ts`, `listModels` trong `tests/llm.test.ts`.
+
+**Chạy thật (2026-09-28)** bằng script Electron tạm (bản sao `Local State` + `secrets.bin` trong thư mục tạm, đã xóa; token không in ra): `gpt-5.1-02` trả khối `tool_calls` parse được (`get_today_overview`), rồi trả lời đúng từ kết quả tool; `create_task` → thẻ chờ → xác nhận → model báo đã lưu. Cấu hình đang lưu của người dùng có endpoint **không có `/v1`** (`GET /models` trả 404) và model `gpt-5.1` (gateway chỉ có `gpt-5.1-02`); cần sửa trong Cài đặt.

@@ -2,11 +2,16 @@ import OpenAI, { APIConnectionError, APIError, APIUserAbortError, AzureOpenAI } 
 import type { ChatCompletionChunk, ChatCompletionFunctionTool, ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import type { AssistantMessage, LlmConfig, ToolCall } from '../shared/types';
 import { errMsg, te, UserError } from './errors';
+import { fromGateway, toGatewayMessages } from './gateway';
 
 export type StreamParams = { messages: ChatCompletionMessageParam[]; tools?: ChatCompletionFunctionTool[]; signal?: AbortSignal };
-export type Llm = { stream: (p: StreamParams) => AsyncIterable<ChatCompletionChunk> };
+/** `textOnly`: the provider takes no images (the gateway, design G8). */
+export type Llm = { stream: (p: StreamParams) => AsyncIterable<ChatCompletionChunk>; textOnly?: boolean };
 
-/** One client for both providers; both speak OpenAI chat completions (design D2). `opts.fetch` is for tests. */
+/**
+ * One client for both providers; both speak OpenAI chat completions (design D2). The gateway ignores `tools`, so its
+ * requests and replies go through the prompt-based adapter in gateway.ts (G4). `opts.fetch` is Electron's net.fetch or a test stub.
+ */
 export function createLlm(cfg: LlmConfig, apiKey: string, opts: { fetch?: typeof fetch } = {}): Llm {
   if (!cfg.endpoint || !apiKey || (cfg.provider === 'azure' && (!cfg.model || !cfg.apiVersion)))
     throw new UserError('llmNotConfigured');
@@ -15,14 +20,16 @@ export function createLlm(cfg: LlmConfig, apiKey: string, opts: { fetch?: typeof
     cfg.provider === 'azure'
       ? new AzureOpenAI({ ...common, endpoint: cfg.endpoint, apiVersion: cfg.apiVersion, deployment: cfg.model })
       : new OpenAI({ ...common, baseURL: cfg.endpoint });
+  const gateway = cfg.provider === 'gateway';
   return {
+    textOnly: gateway,
     async *stream({ messages, tools, signal }) {
+      const params = gateway
+        ? { model: cfg.model, messages: toGatewayMessages(messages, tools), stream: true as const }
+        : { model: cfg.model, messages, tools: tools?.length ? tools : undefined, stream: true as const };
       // A gateway without a configured model chooses one itself: omit the field instead of sending "".
-      const params = { model: cfg.model, messages, tools: tools?.length ? tools : undefined, stream: true as const };
-      yield* await client.chat.completions.create(
-        (cfg.model ? params : { ...params, model: undefined }) as typeof params,
-        { signal }
-      );
+      const reply = await client.chat.completions.create((cfg.model ? params : { ...params, model: undefined }) as typeof params, { signal });
+      yield* gateway ? fromGateway(reply) : reply;
       signal?.throwIfAborted(); // the SDK's Stream ends silently on abort; surface it so the turn counts as stopped
     },
   };
@@ -48,7 +55,7 @@ export async function collect(
   for await (const c of stream) {
     const choice = c.choices[0]; // Azure sends content-filter chunks with empty `choices`
     if (!choice) continue;
-    if (choice.finish_reason) finish = choice.finish_reason;
+    if (choice.finish_reason) finish = choice.finish_reason.toLowerCase(); // the gateway sends "Stop"
     const delta = choice.delta;
     if (!delta) continue;
     if (delta.content) {

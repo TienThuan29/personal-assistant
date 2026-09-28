@@ -7,6 +7,7 @@ import { systemPrompt } from './prompt';
 import { addMessage, createAction, finishAction, getAction, getMessages, listActions } from './store';
 import { findTool, parseArgs, toOpenAITools, type ToolCtx } from './tools';
 import { errMsg, te, UserError } from './errors';
+import { BAD_BLOCK } from './gateway';
 
 export const MAX_ROUNDS = 8;
 const HISTORY = 20; // ponytail: history window walks back to the last user message; unbounded within one long confirm/resume turn
@@ -23,22 +24,26 @@ export type AgentDeps = {
 
 const ctxOf = (d: AgentDeps): ToolCtx => ({ db: d.db, ro: d.ro, now: d.now, settings: d.settings });
 
-/** System prompt + roughly the last HISTORY messages, starting on a user message so tool replies never dangle. */
-export function buildLlmMessages(deps: AgentDeps, conversationId: number): ChatCompletionMessageParam[] {
+/**
+ * System prompt + roughly the last HISTORY messages, starting on a user message so tool replies never dangle.
+ * `textOnly`: the provider can't see images (G8), so none are attached and the labels say so.
+ */
+export function buildLlmMessages(deps: AgentDeps, conversationId: number, textOnly = false): ChatCompletionMessageParam[] {
   const all = getMessages(deps.db, conversationId);
   let start = Math.max(0, all.length - HISTORY);
   while (start > 0 && all[start].role !== 'user') start--;
   const recent = all.slice(start);
   const lastUser = recent.map((m) => m.role).lastIndexOf('user');
-  return [{ role: 'system', content: systemPrompt(deps.db, deps.now(), deps.settings()) }, ...recent.map((m, i) => toLlm(deps, m, i === lastUser))];
+  return [{ role: 'system', content: systemPrompt(deps.db, deps.now(), deps.settings()) }, ...recent.map((m, i) => toLlm(deps, m, i === lastUser && !textOnly, textOnly))];
 }
 
 /** Images go only with the latest user message (token cost); older ones stay as [ảnh #id] labels. */
-function toLlm(deps: AgentDeps, m: ChatMessage, withImages: boolean): ChatCompletionMessageParam {
+function toLlm(deps: AgentDeps, m: ChatMessage, withImages: boolean, textOnly: boolean): ChatCompletionMessageParam {
   if (m.role === 'assistant') return { role: 'assistant', content: m.content, ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}) };
   if (m.role === 'tool') return { role: 'tool', tool_call_id: m.tool_call_id, content: m.content };
   const ids = m.attachment_ids ?? [];
-  const text = [m.content, ids.map((id) => `[ảnh #${id}]`).join(' ')].filter(Boolean).join('\n');
+  const labels = ids.map((id) => `[ảnh #${id}]`).join(' ') + (textOnly && ids.length ? ' (mô hình này không xem được ảnh, chỉ thấy nhãn)' : '');
+  const text = [m.content, labels].filter(Boolean).join('\n');
   const images: ChatCompletionContentPartImage[] = withImages
     ? ids.flatMap((id) => {
         const url = dataUrl(deps.db, deps.attachmentsDir, id);
@@ -59,7 +64,8 @@ export async function runTurn(deps: AgentDeps, conversationId: number, signal?: 
     const partial = { content: '' };
     let reply: AssistantMessage;
     try {
-      const stream = deps.llm().stream({ messages: buildLlmMessages(deps, conversationId), tools, signal });
+      const llm = deps.llm();
+      const stream = llm.stream({ messages: buildLlmMessages(deps, conversationId, llm.textOnly), tools, signal });
       reply = await collect(stream, (delta) => deps.emit({ type: 'text', conversationId, delta }), partial);
     } catch (e) {
       if (partial.content) addMessage(deps.db, conversationId, { role: 'assistant', content: `${partial.content}\n\n_${te('interrupted')}_` });
@@ -105,6 +111,10 @@ export async function runTurn(deps: AgentDeps, conversationId: number, signal?: 
 function handleCall(deps: AgentDeps, conversationId: number, messageId: number, c: ToolCall): 'ran' | 'parked' | 'error' {
   const respond = (result: unknown): void =>
     void addMessage(deps.db, conversationId, { role: 'tool', tool_call_id: c.id, content: JSON.stringify(result) });
+  if (c.function.name === BAD_BLOCK) {
+    respond({ error: te('badToolBlock') }); // a gateway reply whose tool_calls block didn't parse (G9)
+    return 'error';
+  }
   const tool = findTool(c.function.name);
   if (!tool) {
     respond({ error: te('unknownTool', { name: c.function.name }) });
