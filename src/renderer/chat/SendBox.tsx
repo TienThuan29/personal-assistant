@@ -56,12 +56,13 @@ export function SendBox({ running, onSend, onStop }: Props) {
   const submit = async (value = text) => {
     if (running || sending || (!value.trim() && !images.length)) return;
     setSending(true);
+    const typed = text;
     try {
       const sent = images;
       const payload = await Promise.all(sent.map(async ({ file }) => ({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) })));
       if (!(await onSend(value.trim(), payload))) return;
       sent.forEach((i) => URL.revokeObjectURL(i.url));
-      setText('');
+      setText((t) => (t === typed ? '' : t)); // keep anything typed while sending
       setImages((prev) => prev.filter((i) => !sent.includes(i))); // keep any picked while sending
     } catch {
       message.error?.('Không đọc được ảnh, hãy chọn lại');
@@ -131,7 +132,10 @@ export function SendBox({ running, onSend, onStop }: Props) {
         )}
         <Input.TextArea
           value={text}
-          onChange={setText}
+          onChange={(v) => {
+            setText(v);
+            setDismissed(null);
+          }}
           aria-label='Tin nhắn cho trợ lý'
           onKeyDown={onKeyDown}
           onPaste={(e) => {

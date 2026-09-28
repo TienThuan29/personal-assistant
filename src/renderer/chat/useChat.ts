@@ -24,8 +24,11 @@ export function useChat(conversationId: number) {
     return a;
   }, [conversationId]);
 
+  /** Reload without awaiting; a failure shows as a call error. */
+  const refresh = useCallback(() => reload().catch((e: unknown) => setError({ message: errorText(e), turn: false })), [reload]);
+
   useEffect(() => {
-    void reload();
+    void refresh();
     const s = seq.current;
     void api.chat.running(conversationId).then((r) => seq.current === s && setRunning(r)); // a turn left running elsewhere
     return api.chat.onEvent((e) => {
@@ -52,9 +55,9 @@ export function useChat(conversationId: number) {
       // Drop the streamed text only once the saved message is on screen, so it doesn't flash away and back.
       const n = streamed.current;
       streamed.current = 0;
-      void reload().finally(() => setStreaming((s) => s.slice(n)));
+      void refresh().finally(() => setStreaming((s) => s.slice(n)));
     });
-  }, [conversationId, reload]);
+  }, [conversationId, refresh]);
 
   /** Runs an IPC call; false (with a call error shown) if it threw. */
   const guard = useCallback(async (fn: () => Promise<unknown>): Promise<boolean> => {
@@ -81,7 +84,7 @@ export function useChat(conversationId: number) {
       last.current = null;
       await api.chat.send(conversationId, text, images);
       if (!ended()) setRunning(true);
-      void reload(); // shows the user's message before the first event
+      void refresh(); // shows the user's message before the first event
     });
   const stop = () => void api.chat.stop(conversationId);
   const retry = () =>

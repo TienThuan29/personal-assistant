@@ -95,7 +95,7 @@ export function MessageList({ chat }: { chat: ChatState }) {
 
   return (
     <div ref={ref} className='messages'>
-      <div className='msg-list'>
+      <div className='msg-list' aria-live='polite'>
         {!chat.messages.length && !chat.running && (
           <div className='empty-hint'>
             Hỏi “Hôm nay tôi có việc gì?”, nhờ ghi task, ghi chú, khoản chi (kèm ảnh cũng được),
@@ -105,7 +105,7 @@ export function MessageList({ chat }: { chat: ChatState }) {
         )}
         {chat.messages.map((m) => <MessageRow key={m.id} m={m} actions={chat.actions} resolve={chat.resolve} />)}
         {chat.streaming && (
-          <div className='msg-assistant' aria-live='polite'>
+          <div className='msg-assistant'>
             <Markdown>{chat.streaming}</Markdown>
           </div>
         )}

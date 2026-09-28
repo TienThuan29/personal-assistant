@@ -5321,8 +5321,11 @@ export function useChat(conversationId: number) {
     return a;
   }, [conversationId]);
 
+  /** Reload without awaiting; a failure shows as a call error. */
+  const refresh = useCallback(() => reload().catch((e: unknown) => setError({ message: errorText(e), turn: false })), [reload]);
+
   useEffect(() => {
-    void reload();
+    void refresh();
     const s = seq.current;
     void api.chat.running(conversationId).then((r) => seq.current === s && setRunning(r)); // a turn left running elsewhere
     return api.chat.onEvent((e) => {
@@ -5349,9 +5352,9 @@ export function useChat(conversationId: number) {
       // Drop the streamed text only once the saved message is on screen, so it doesn't flash away and back.
       const n = streamed.current;
       streamed.current = 0;
-      void reload().finally(() => setStreaming((s) => s.slice(n)));
+      void refresh().finally(() => setStreaming((s) => s.slice(n)));
     });
-  }, [conversationId, reload]);
+  }, [conversationId, refresh]);
 
   /** Runs an IPC call; false (with a call error shown) if it threw. */
   const guard = useCallback(async (fn: () => Promise<unknown>): Promise<boolean> => {
@@ -5378,7 +5381,7 @@ export function useChat(conversationId: number) {
       last.current = null;
       await api.chat.send(conversationId, text, images);
       if (!ended()) setRunning(true);
-      void reload(); // shows the user's message before the first event
+      void refresh(); // shows the user's message before the first event
     });
   const stop = () => void api.chat.stop(conversationId);
   const retry = () =>
@@ -5513,7 +5516,7 @@ export function MessageList({ chat }: { chat: ChatState }) {
 
   return (
     <div ref={ref} className='messages'>
-      <div className='msg-list'>
+      <div className='msg-list' aria-live='polite'>
         {!chat.messages.length && !chat.running && (
           <div className='empty-hint'>
             Hỏi “Hôm nay tôi có việc gì?”, nhờ ghi task, ghi chú, khoản chi (kèm ảnh cũng được),
@@ -5523,7 +5526,7 @@ export function MessageList({ chat }: { chat: ChatState }) {
         )}
         {chat.messages.map((m) => <MessageRow key={m.id} m={m} actions={chat.actions} resolve={chat.resolve} />)}
         {chat.streaming && (
-          <div className='msg-assistant' aria-live='polite'>
+          <div className='msg-assistant'>
             <Markdown>{chat.streaming}</Markdown>
           </div>
         )}
@@ -5610,12 +5613,13 @@ export function SendBox({ running, onSend, onStop }: Props) {
   const submit = async (value = text) => {
     if (running || sending || (!value.trim() && !images.length)) return;
     setSending(true);
+    const typed = text;
     try {
       const sent = images;
       const payload = await Promise.all(sent.map(async ({ file }) => ({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) })));
       if (!(await onSend(value.trim(), payload))) return;
       sent.forEach((i) => URL.revokeObjectURL(i.url));
-      setText('');
+      setText((t) => (t === typed ? '' : t)); // keep anything typed while sending
       setImages((prev) => prev.filter((i) => !sent.includes(i))); // keep any picked while sending
     } catch {
       message.error?.('Không đọc được ảnh, hãy chọn lại');
@@ -5685,7 +5689,10 @@ export function SendBox({ running, onSend, onStop }: Props) {
         )}
         <Input.TextArea
           value={text}
-          onChange={setText}
+          onChange={(v) => {
+            setText(v);
+            setDismissed(null);
+          }}
           aria-label='Tin nhắn cho trợ lý'
           onKeyDown={onKeyDown}
           onPaste={(e) => {
