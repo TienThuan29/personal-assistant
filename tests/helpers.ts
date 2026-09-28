@@ -3,10 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { ChatCompletionChunk } from 'openai/resources/chat/completions';
+import type { AgentDeps } from '../src/main/agent';
 import { openDb } from '../src/main/db';
 import type { Llm } from '../src/main/llm';
 import { findTool, parseArgs, type ToolCtx } from '../src/main/tools';
-import type { AssistantMessage } from '../src/shared/types';
+import type { AgentEvent, AssistantMessage } from '../src/shared/types';
 
 export const tempDir = (): string => mkdtempSync(join(tmpdir(), 'pa-test-'));
 
@@ -62,3 +63,9 @@ export const call = (id: string, name: string, args: object): AssistantMessage =
   content: null,
   tool_calls: [{ id, type: 'function', function: { name, arguments: JSON.stringify(args) } }],
 });
+
+export function testDeps(script: AssistantMessage[], llm: Llm = fakeLlm(script)): AgentDeps & { events: AgentEvent[] } {
+  const { db, ro, dir } = testDb();
+  const events: AgentEvent[] = [];
+  return { db, ro, attachmentsDir: join(dir, 'att'), now: () => NOW, llm: () => llm, emit: (e) => void events.push(e), events };
+}

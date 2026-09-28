@@ -3354,6 +3354,7 @@ describe('runTurn', () => {
     expect(resolveAction(deps, action.id, 'confirm')).toBe(true);
     await runTurn(deps, conv);
     expect(count(deps, 'tasks')).toBe(1);
+    expect(getAction(deps.db, action.id)).toMatchObject({ status: 'confirmed', result: { title: 'Mua sữa' } });
     expect(toolResults(deps, conv)[0]).toMatchObject({ ok: true });
     expect(getMessages(deps.db, conv).at(-1)).toMatchObject({ role: 'assistant', content: 'Đã tạo task.' });
   });
@@ -3367,6 +3368,7 @@ describe('runTurn', () => {
     expect(getAction(deps.db, action.id)?.status).toBe('pending');
     resolveAction(deps, action.id, 'confirm', { title: 'Mua bánh' });
     expect(deps.db.prepare('SELECT title FROM tasks').get()).toEqual({ title: 'Mua bánh' });
+    expect(() => resolveAction(deps, action.id, 'confirm')).toThrow(/đã được xử lý/);
   });
 
   it('cancel tells the model', async () => {
@@ -3424,7 +3426,56 @@ describe('runTurn', () => {
     expect(getMessages(deps.db, conv).at(-1)).toMatchObject({ role: 'assistant', content: expect.stringContaining('Đang tra') });
     expect(deps.events.at(-1)).toMatchObject({ type: 'error', message: expect.stringMatching(/kết nối/) });
   });
+
+  it('an empty reply is not saved and emits an error', async () => {
+    const deps = testDeps([{ role: 'assistant', content: null }]);
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    expect(getMessages(deps.db, conv).map((m) => m.role)).toEqual(['user']);
+    expect(deps.events.at(-1)).toMatchObject({ type: 'error', message: expect.stringMatching(/không trả lời/) });
+  });
+
+  it('stop mid-stream saves the partial text, ends with done and parks nothing', async () => {
+    const ac = new AbortController();
+    const stopped: Llm = {
+      async *stream({ signal }) {
+        yield chunk({ content: 'Để mình' });
+        ac.abort();
+        signal?.throwIfAborted();
+        yield* fakeCall();
+      },
+    };
+    const deps = testDeps([], stopped);
+    const conv = start(deps);
+    await runTurn(deps, conv, ac.signal);
+    expect(getMessages(deps.db, conv).at(-1)).toMatchObject({ role: 'assistant', content: expect.stringContaining('Để mình') });
+    expect(listActions(deps.db, conv)).toEqual([]);
+    expect(deps.events.at(-1)).toMatchObject({ type: 'done' });
+  });
+
+  it('stop landing at the end of the stream keeps the text but runs no tool calls', async () => {
+    const ac = new AbortController();
+    const stopped: Llm = {
+      async *stream() {
+        yield chunk({ content: 'Tạo nhé' });
+        yield* fakeCall();
+        ac.abort();
+      },
+    };
+    const deps = testDeps([], stopped);
+    const conv = start(deps);
+    await runTurn(deps, conv, ac.signal);
+    expect(getMessages(deps.db, conv).at(-1)).toEqual(expect.objectContaining({ role: 'assistant', content: 'Tạo nhé' }));
+    expect(getMessages(deps.db, conv).at(-1)).not.toHaveProperty('tool_calls');
+    expect(listActions(deps.db, conv)).toEqual([]);
+    expect(deps.events.at(-1)).toMatchObject({ type: 'done' });
+  });
 });
+
+/** Chunks of one create_task call. */
+function* fakeCall() {
+  yield chunk({ tool_calls: [{ index: 0, id: 'c1', type: 'function', function: { name: 'create_task', arguments: '{"title":"x"}' } }] });
+}
 
 describe('buildLlmMessages', () => {
   it('sends images only with the latest user message; older ones become labels', () => {
@@ -3518,6 +3569,17 @@ export async function runTurn(deps: AgentDeps, conversationId: number, signal?: 
       deps.emit(signal?.aborted ? { type: 'done', conversationId } : { type: 'error', conversationId, message: describeLlmError(e) });
       return;
     }
+    if (signal?.aborted) {
+      // Stop landed right as the stream ended: keep the text, drop the tool calls the user never saw run.
+      if (reply.content) addMessage(deps.db, conversationId, { role: 'assistant', content: reply.content });
+      deps.emit({ type: 'done', conversationId });
+      return;
+    }
+    if (!reply.content && !reply.tool_calls?.length) {
+      // An empty assistant message is invalid to replay to the API, so it is not saved.
+      deps.emit({ type: 'error', conversationId, message: 'Mô hình không trả lời. Hãy thử lại.' });
+      return;
+    }
     addMessage(deps.db, conversationId, reply);
     deps.emit({ type: 'saved', conversationId });
     if (!reply.tool_calls?.length) {
@@ -3586,19 +3648,26 @@ export function resolveAction(deps: AgentDeps, actionId: number, decision: 'conf
     void addMessage(deps.db, action.conversation_id, { role: 'tool', tool_call_id: action.tool_call_id, content: JSON.stringify(content) });
 
   if (decision === 'cancel') {
-    finishAction(deps.db, actionId, 'cancelled', action.args, null);
-    respond({ cancelled: true, message: 'Người dùng đã hủy thao tác này' });
+    tx(deps.db, () => {
+      finishAction(deps.db, actionId, 'cancelled', action.args, null);
+      respond({ cancelled: true, message: 'Người dùng đã hủy thao tác này' });
+    });
   } else {
     const tool = findTool(action.tool_name);
     if (tool?.kind !== 'write') throw new Error(`Không có tool ghi ${action.tool_name}`);
     const args = parseArgs(tool, editedArgs ?? action.args);
     try {
-      const result = tx(deps.db, () => tool.apply(args, ctxOf(deps)));
-      finishAction(deps.db, actionId, 'confirmed', args, result);
-      respond({ ok: true, result, ...(editedArgs ? { note: 'Người dùng đã chỉnh sửa trước khi xác nhận' } : {}) });
+      // One transaction: a committed write is always recorded as confirmed and answered, so a crash can't re-apply it.
+      tx(deps.db, () => {
+        const result = tool.apply(args, ctxOf(deps));
+        finishAction(deps.db, actionId, 'confirmed', args, result);
+        respond({ ok: true, result, ...(editedArgs ? { note: 'Người dùng đã chỉnh sửa trước khi xác nhận' } : {}) });
+      });
     } catch (e) {
-      finishAction(deps.db, actionId, 'cancelled', args, { error: errMsg(e) });
-      respond({ error: errMsg(e) });
+      tx(deps.db, () => {
+        finishAction(deps.db, actionId, 'cancelled', args, { error: errMsg(e) });
+        respond({ error: errMsg(e) });
+      });
     }
   }
   return listActions(deps.db, action.conversation_id, 'pending').length === 0;
@@ -3613,7 +3682,7 @@ export function cancelOpenActions(deps: AgentDeps, conversationId: number): void
 **Step 5: Run to verify it passes**
 
 Run: `bun run test tests/agent.test.ts`
-Expected: PASS (11 tests).
+Expected: PASS (14 tests).
 
 Run: `bun run test && bun run typecheck`
 Expected: all PASS, typecheck exit 0.
