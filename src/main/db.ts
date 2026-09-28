@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { toLocalDate } from '../shared/dates';
 import { MIGRATIONS } from './migrations';
+import { UserError } from './tools/common';
 
 export type Db = DatabaseSync;
 export type Params = Record<string, SQLInputValue>;
@@ -36,7 +37,7 @@ export function tx<T>(db: Db, fn: () => T): T {
 
 function migrate(db: Db): void {
   const { user_version } = db.prepare('PRAGMA user_version').get() as { user_version: number };
-  if (user_version > MIGRATIONS.length) throw new Error('Cơ sở dữ liệu được tạo bởi phiên bản mới hơn của ứng dụng');
+  if (user_version > MIGRATIONS.length) throw new UserError('dbTooNew');
   for (let v = user_version; v < MIGRATIONS.length; v++) {
     tx(db, () => {
       db.exec(MIGRATIONS[v]);

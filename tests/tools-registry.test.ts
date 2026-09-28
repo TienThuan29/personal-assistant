@@ -1,6 +1,6 @@
 import { TOOLS, toOpenAITools } from '../src/main/tools';
 import { z } from 'zod/v4';
-import { date, instant, toInstant } from '../src/main/tools/common';
+import { date, instant, toInstant, tr } from '../src/main/tools/common';
 
 describe('tool registry', () => {
   it('has unique, API-safe names', () => {
@@ -32,7 +32,7 @@ describe('instant schema', () => {
       expect(instant.safeParse(s).success).toBe(true);
     }
     for (const s of ['9', 'abc 2026', '2026-02-30T09:00']) expect(instant.safeParse(s).success).toBe(false);
-    expect(z.prettifyError(instant.safeParse('9').error!)).toContain('Cần ngày YYYY-MM-DD hoặc thời điểm ISO 8601');
+    expect(tr(instant.safeParse('9').error!.issues[0].message)).toContain('Cần ngày YYYY-MM-DD hoặc thời điểm ISO 8601');
   });
 
   it('exports as JSON Schema', () => {

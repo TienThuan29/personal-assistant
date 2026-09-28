@@ -1,14 +1,14 @@
 import { z } from 'zod/v4';
 import type { ReminderRow } from '../../shared/types';
-import { deleteRows, getRows, ids, instant, readTool, requireRows, toInstant, updateRows, where, writeTool } from './common';
+import { deleteRows, getRows, ids, instant, readTool, requireRows, toInstant, updateRows, UserError, where, writeTool } from './common';
 
 const remindAt = z.iso
-  .datetime({ local: true, offset: true, error: 'Cần thời điểm có giờ, vd 2026-09-29T09:00' })
+  .datetime({ local: true, offset: true, error: 'errors:remindAtFormat' })
   .describe('Thời điểm nhắc theo giờ máy, vd 2026-09-29T09:00; phải ở tương lai');
 
 function futureInstant(s: string, now: Date): string {
   const at = toInstant(s);
-  if (Date.parse(at) <= now.getTime()) throw new Error('Thời điểm nhắc đã qua');
+  if (Date.parse(at) <= now.getTime()) throw new UserError('reminderPast');
   return at;
 }
 
@@ -58,7 +58,7 @@ export const reminderTools = [
       ids,
       patch: z
         .object({ message: z.string().min(1).optional(), remind_at: remindAt.optional(), status: z.literal('dismissed').optional() })
-        .refine((p) => Object.keys(p).length > 0, 'patch không được rỗng'),
+        .refine((p) => Object.keys(p).length > 0, 'errors:emptyPatch'),
     }),
     preview: (a, { db }) => ({ before: requireRows<ReminderRow>(db, 'reminders', a.ids) }),
     apply: (a, { db, now }) => {

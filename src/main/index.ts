@@ -11,7 +11,7 @@ import { registerIpc } from './ipc';
 import { createScheduler } from './reminders';
 import type { Cipher } from './settings';
 import { pruneEmptyConversations } from './store';
-import { errMsg } from './tools/common';
+import { errMsg, te, UserError } from './tools/common';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'att', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
@@ -37,7 +37,7 @@ const loginItem = {
 
 const cipher: Cipher = {
   encrypt: (s) => {
-    if (!safeStorage.isEncryptionAvailable()) throw new Error('Hệ điều hành không hỗ trợ mã hóa (safeStorage)');
+    if (!safeStorage.isEncryptionAvailable()) throw new UserError('noEncryption');
     return safeStorage.encryptString(s);
   },
   decrypt: (b) => safeStorage.decryptString(b),
@@ -211,7 +211,7 @@ if (!app.requestSingleInstanceLock()) {
     .then(start)
     .catch((e) => {
       // e.g. a DB from a newer app version: say why instead of lingering as an invisible process
-      dialog.showErrorBox('Không khởi động được Trợ lý', errMsg(e));
+      dialog.showErrorBox(te('startupFailed'), errMsg(e));
       app.exit(1);
     });
 }

@@ -92,7 +92,7 @@ export const noteTools = [
       ids,
       patch: z
         .object({ kind: kind.optional(), title: z.string().nullable().optional(), body: z.string().min(1).optional() })
-        .refine((p) => Object.keys(p).length > 0, 'patch không được rỗng'),
+        .refine((p) => Object.keys(p).length > 0, 'errors:emptyPatch'),
     }),
     preview: (a, { db }) => ({ before: requireRows<NoteRow>(db, 'notes', a.ids) }),
     apply: (a, { db, now }) => {

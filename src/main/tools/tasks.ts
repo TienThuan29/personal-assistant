@@ -126,7 +126,7 @@ export const taskTools = [
           status: z.enum(['todo', 'done', 'cancelled']).optional(),
           recurrence: recurrence.nullable().optional(),
         })
-        .refine((p) => Object.keys(p).length > 0, 'patch không được rỗng'),
+        .refine((p) => Object.keys(p).length > 0, 'errors:emptyPatch'),
     }),
     preview: (a, { db }) => ({ before: requireRows<TaskRow>(db, 'tasks', a.ids) }),
     apply: (a, { db, now }) => {

@@ -1,6 +1,8 @@
 import { z } from 'zod/v4';
 import { localDayRange, parseLocalDate, toLocalDate } from '../../shared/dates';
+import type { Resources } from '../../shared/locales/vi';
 import type { Db, Params } from '../db';
+import { i18n } from '../i18n';
 
 export type ToolCtx = { db: Db; ro: Db; now: () => Date };
 
@@ -24,12 +26,12 @@ export const writeTool = <S extends z.ZodType>(t: Omit<WriteTool<S>, 'kind'>): T
 // ---- shared schemas ----
 export const date = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Định dạng YYYY-MM-DD')
-  .refine((s) => toLocalDate(parseLocalDate(s)) === s, 'Ngày không tồn tại'); // rejects e.g. 2026-02-30
-export const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Định dạng HH:MM');
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'errors:dateFormat')
+  .refine((s) => toLocalDate(parseLocalDate(s)) === s, 'errors:dateInvalid'); // rejects e.g. 2026-02-30
+export const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'errors:timeFormat');
 export const instant = z
   .union([date, z.iso.datetime({ local: true, offset: true })], {
-    error: 'Cần ngày YYYY-MM-DD hoặc thời điểm ISO 8601, vd 2026-09-29T09:00',
+    error: 'errors:instantFormat',
   })
   .describe('Ngày YYYY-MM-DD hoặc thời điểm ISO 8601 theo giờ máy, vd 2026-09-29T09:00');
 export const ids = z.array(z.number().int().positive()).min(1).describe('ID lấy từ kết quả tool');
@@ -76,14 +78,14 @@ export function requireRows<T>(db: Db, table: string, idList: number[]): T[] {
   const rows = getRows<T & { id: number }>(db, table, idList);
   const found = new Set(rows.map((r) => r.id));
   const missing = [...new Set(idList)].filter((id) => !found.has(id));
-  if (missing.length) throw new Error(`Không tìm thấy ${table} #${missing.join(', #')}`);
+  if (missing.length) throw new UserError('notFound', { table, ids: missing.join(', #') });
   return rows;
 }
 
 /** UPDATE by id. Column names come from a zod-parsed patch, so unknown keys were already stripped; undefined values are skipped. */
 export function updateRows(db: Db, table: string, idList: number[], patch: Record<string, unknown>, extra: Params = {}): void {
   const values = { ...(Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) as Params), ...extra };
-  if (!Object.keys(values).length) throw new Error('patch không được rỗng');
+  if (!Object.keys(values).length) throw new UserError('emptyPatch');
   const set = Object.keys(values).map((k) => `${k} = :${k}`).join(', ');
   const stmt = db.prepare(`UPDATE ${table} SET ${set} WHERE id = :id`);
   for (const id of idList) stmt.run({ ...values, id });
@@ -114,4 +116,26 @@ export function attachTo(db: Db, owner: OwnerType, ownerId: number, attachmentId
   for (const id of attachmentIdList) stmt.run(owner, ownerId, id);
 }
 
-export const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+// ---- errors ----
+export type ErrorKey = keyof Resources['errors'];
+type Translate = (key: string, params?: Record<string, unknown>) => string;
+const t = i18n.t as unknown as Translate; // static keys are checked by ErrorKey, dynamic ones by exists()
+
+/** A translated `errors` text in the main process's current language. */
+export const te = (key: ErrorKey, params?: Record<string, unknown>): string => t(`errors:${key}`, params);
+
+/** Translates 'errors:<key>' (e.g. a zod message); any other text passes through. */
+export const tr = (msg: string): string => (msg.startsWith('errors:') && i18n.exists(msg) ? t(msg) : msg);
+
+/** An error meant for the user. The message is translated at throw time (it crosses IPC as is); errMsg re-translates. */
+export class UserError extends Error {
+  constructor(
+    public key: ErrorKey,
+    public params?: Record<string, unknown>
+  ) {
+    super(te(key, params));
+  }
+}
+
+export const errMsg = (e: unknown): string =>
+  e instanceof UserError ? te(e.key, e.params) : e instanceof Error ? tr(e.message) : String(e);

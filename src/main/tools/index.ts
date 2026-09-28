@@ -1,6 +1,6 @@
 import type { ChatCompletionFunctionTool } from 'openai/resources/chat/completions';
 import { z } from 'zod/v4';
-import type { Tool } from './common';
+import { type Tool, tr } from './common';
 import { expenseTools } from './expenses';
 import { noteTools } from './notes';
 import { overviewTools } from './overview';
@@ -17,7 +17,10 @@ export const findTool = (name: string): Tool | undefined => TOOLS.find((t) => t.
 /** Validates LLM (or UI) args against the tool's schema; the error text goes back to the model. */
 export function parseArgs(tool: Tool, raw: unknown): unknown {
   const r = tool.schema.safeParse(raw);
-  if (!r.success) throw new Error(z.prettifyError(r.error));
+  if (!r.success) {
+    for (const issue of r.error.issues) issue.message = tr(issue.message); // schema messages are 'errors:' keys
+    throw new Error(z.prettifyError(r.error));
+  }
   return r.data;
 }
 

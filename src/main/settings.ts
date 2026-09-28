@@ -7,19 +7,19 @@ import type { Db } from './db';
 const endpoint = z
   .string()
   .trim()
-  .pipe(z.url({ abort: true, error: 'Endpoint chưa đúng dạng URL (vd https://…)' })) // abort: otherwise the refine below still runs, and new URL() throws
+  .pipe(z.url({ abort: true, error: 'errors:endpointUrl' })) // abort: otherwise the refine below still runs, and new URL() throws
   .refine((u) => {
     const { protocol, hostname } = new URL(u);
     return protocol === 'https:' || (protocol === 'http:' && ['localhost', '127.0.0.1'].includes(hostname));
-  }, 'Endpoint phải dùng https')
+  }, 'errors:endpointHttps')
   .transform((u) => u.replace(/\/+$/, ''));
 
 /** Not an LLM tool schema, so it never goes through toJSONSchema. */
 export const llmConfigSchema = z.object({
   provider: z.enum(['azure', 'gateway']),
   endpoint,
-  model: z.string().trim().min(1, 'Chưa nhập model/deployment'),
-  apiVersion: z.string().trim().min(1, 'Chưa nhập API version'),
+  model: z.string().trim().min(1, 'errors:modelRequired'),
+  apiVersion: z.string().trim().min(1, 'errors:apiVersionRequired'),
 });
 
 export function getSetting<T>(db: Db, key: string, fallback: T): T {

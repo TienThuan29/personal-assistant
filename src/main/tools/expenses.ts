@@ -27,7 +27,7 @@ const currency = z
   .string()
   .trim()
   .toUpperCase()
-  .regex(/^[A-Z]{3}$/, 'Mã tiền tệ ISO 4217 gồm 3 chữ cái, vd VND, USD')
+  .regex(/^[A-Z]{3}$/, 'errors:currencyFormat')
   .describe('Mã ISO 4217, vd VND, USD');
 const category = z
   .string()
@@ -94,7 +94,7 @@ export const expenseTools = [
           description: z.string().nullable().optional(),
           spent_at: date.optional(),
         })
-        .refine((p) => Object.keys(p).length > 0, 'patch không được rỗng'),
+        .refine((p) => Object.keys(p).length > 0, 'errors:emptyPatch'),
     }),
     preview: (a, { db }) => ({ before: requireRows<ExpenseRow>(db, 'expenses', a.ids) }),
     apply: (a, { db }) => {

@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Cipher, getSetting, llmConfigSchema, readSecrets, setSetting, writeSecret } from '../src/main/settings';
+import { tr } from '../src/main/tools/common';
 import { tempDir, testDb } from './helpers';
 
 // Stand-in for Electron safeStorage: reversible, but not plaintext.
@@ -50,6 +51,6 @@ describe('settings', () => {
 
   it('explains invalid fields in Vietnamese', () => {
     const r = llmConfigSchema.safeParse({ provider: 'azure', endpoint: '', model: ' ', apiVersion: '2024-10-21' });
-    expect(r.error?.issues.map((i) => i.message)).toEqual(['Endpoint chưa đúng dạng URL (vd https://…)', 'Chưa nhập model/deployment']);
+    expect(r.error?.issues.map((i) => tr(i.message))).toEqual(['Endpoint chưa đúng dạng URL (vd https://…)', 'Chưa nhập model/deployment']);
   });
 });

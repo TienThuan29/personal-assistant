@@ -39,6 +39,13 @@ The existing code is the reference. These tasks give precise specs rather than f
    - Update the existing tests that assert Vietnamese error substrings; they should still pass with language 'vi'.
    - Add one test that `setLanguage('en')` makes a past-reminder error English. Reset to 'vi' afterwards.
 
+**As built (I1 deviations):**
+- i18next 26 renamed `initImmediate` to `initAsync`; `createI18n` passes `initAsync: false`.
+- `UserError` also translates its message at throw time, because IPC errors reach the renderer as `message` only. `errMsg` re-translates it in the current language.
+- `tools/common.ts` adds `te(key, params)` (translate an `errors` key) and `tr(msg)` (translate `'errors:<key>'`, pass other text through). `parseArgs` and `settings:save` translate zod issues with `tr`; `parseArgs` still prints them with `z.prettifyError`.
+- Also moved to `errors`: `db.ts` "newer version", the `safeStorage` error and the startup error-box title in `index.ts`. `settings:test`'s `(trống)` is `common:empty`.
+- Unchanged, because only the LLM reads them: the tool results "Người dùng đã hủy thao tác này" and "…đã chỉnh sửa trước khi xác nhận", the `[ảnh #id]` labels and the settings test prompt. zod's built-in messages (e.g. "Invalid input") stay English in both languages.
+
 ## Task I2: UI settings, money style, default currency
 
 1. `src/shared/types.ts`:

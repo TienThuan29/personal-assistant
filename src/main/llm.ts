@@ -1,6 +1,7 @@
 import OpenAI, { APIConnectionError, APIError, APIUserAbortError, AzureOpenAI } from 'openai';
 import type { ChatCompletionChunk, ChatCompletionFunctionTool, ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import type { AssistantMessage, LlmConfig, ToolCall } from '../shared/types';
+import { errMsg, te, UserError } from './tools/common';
 
 export type StreamParams = { messages: ChatCompletionMessageParam[]; tools?: ChatCompletionFunctionTool[]; signal?: AbortSignal };
 export type Llm = { stream: (p: StreamParams) => AsyncIterable<ChatCompletionChunk> };
@@ -8,7 +9,7 @@ export type Llm = { stream: (p: StreamParams) => AsyncIterable<ChatCompletionChu
 /** One client for both providers; both speak OpenAI chat completions (design D2). `opts.fetch` is for tests. */
 export function createLlm(cfg: LlmConfig, apiKey: string, opts: { fetch?: typeof fetch } = {}): Llm {
   if (!cfg.endpoint || !cfg.model || !apiKey || (cfg.provider === 'azure' && !cfg.apiVersion))
-    throw new Error('Chưa cấu hình LLM. Mở Cài đặt để nhập endpoint, model và key.');
+    throw new UserError('llmNotConfigured');
   const common = { apiKey, maxRetries: 2, timeout: 60_000, fetch: opts.fetch };
   const client =
     cfg.provider === 'azure'
@@ -52,7 +53,7 @@ export async function collect(
     }
   }
   if (finish === 'length' || finish === 'content_filter')
-    throw new Error('Câu trả lời bị cắt (vượt giới hạn độ dài hoặc bị bộ lọc nội dung chặn). Thử lại hoặc chia nhỏ yêu cầu.');
+    throw new UserError('llmTruncated');
   const toolCalls = calls.filter(Boolean);
   toolCalls.forEach((tc, i) => {
     tc.id ||= `call_${Date.now()}_${i}`;
@@ -62,15 +63,15 @@ export async function collect(
 }
 
 export function describeLlmError(e: unknown): string {
-  if (e instanceof APIUserAbortError) return 'Đã dừng.';
-  if (e instanceof APIConnectionError) return 'Không kết nối được tới LLM endpoint. Kiểm tra mạng/proxy và URL trong Cài đặt.';
+  if (e instanceof APIUserAbortError) return te('llmStopped');
+  if (e instanceof APIConnectionError) return te('llmConnection');
   if (e instanceof APIError) {
-    if (e.status === 401 || e.status === 403) return 'API key/token sai hoặc hết hạn. Kiểm tra trong Cài đặt.';
-    if (e.status === 404) return 'Không tìm thấy model/deployment. Kiểm tra endpoint và tên model trong Cài đặt.';
-    if (e.code === 'context_length_exceeded') return 'Hội thoại quá dài, hãy tạo hội thoại mới.';
-    if (e.code === 'content_filter') return 'Yêu cầu bị bộ lọc nội dung của LLM chặn. Hãy diễn đạt lại.';
-    if (e.status === 429) return 'LLM đang giới hạn tốc độ (429). Thử lại sau ít phút.';
-    return `LLM trả lỗi: ${e.message}`; // e.message already starts with the status
+    if (e.status === 401 || e.status === 403) return te('llmAuth');
+    if (e.status === 404) return te('llmModelNotFound');
+    if (e.code === 'context_length_exceeded') return te('llmContextLength');
+    if (e.code === 'content_filter') return te('llmContentFilter');
+    if (e.status === 429) return te('llmRateLimit');
+    return te('llmError', { message: e.message }); // e.message already starts with the status
   }
-  return e instanceof Error ? e.message : String(e);
+  return errMsg(e);
 }

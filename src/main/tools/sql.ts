@@ -1,5 +1,5 @@
 import { z } from 'zod/v4';
-import { readTool } from './common';
+import { readTool, UserError } from './common';
 
 const MAX_ROWS = 200;
 const MAX_CELL = 500;
@@ -22,7 +22,7 @@ export const sqlTools = [
     schema: z.object({ sql: z.string().min(1).describe('Một câu SELECT hoặc WITH ... SELECT') }),
     run: (a, { ro }) => {
       const sql = a.sql.trim().replace(/;\s*$/, '');
-      if (!/^(select|with)\b/i.test(sql)) throw new Error('Chỉ chấp nhận SELECT hoặc WITH');
+      if (!/^(select|with)\b/i.test(sql)) throw new UserError('sqlSelectOnly');
       // The connection is opened readOnly; the wrapper also rejects WITH … DELETE and caps the row count.
       // The newline keeps a trailing `-- comment` from swallowing the closing parenthesis.
       // prepare() ignores everything after the first ';', so `...); SELECT (1` drops the LIMIT: iterate() still stops at the cap.

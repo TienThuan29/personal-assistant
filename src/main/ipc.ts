@@ -3,6 +3,7 @@ import { DEFAULT_LLM, type ImageInput, type LlmConfig, type SettingsInput, type 
 import { type AgentDeps, cancelOpenActions, resolveAction, runTurn } from './agent';
 import { newAttachmentId, saveAttachment } from './attachments';
 import { type Db, tx } from './db';
+import { i18n } from './i18n';
 import { collect, createLlm, describeLlmError } from './llm';
 import { type Cipher, getSetting, llmConfigSchema, readSecrets, setSetting, writeSecret } from './settings';
 import {
@@ -16,6 +17,7 @@ import {
   setTitleIfNew,
 } from './store';
 import { findTool, parseArgs } from './tools';
+import { tr, UserError } from './tools/common';
 
 export type MainCtx = {
   db: Db;
@@ -38,15 +40,15 @@ const MAX_SIDE = 1568;
 
 /** Ids come from the renderer: reject anything but a positive integer (node:sqlite would throw on undefined anyway). */
 function id(v: unknown): number {
-  if (typeof v !== 'number' || !Number.isSafeInteger(v) || v <= 0) throw new Error('ID không hợp lệ');
+  if (typeof v !== 'number' || !Number.isSafeInteger(v) || v <= 0) throw new UserError('invalidId');
   return v;
 }
 
 /** PNG/JPEG → JPEG with the longest side ≤ 1568px (vision models downscale to about that anyway). */
 function toJpeg(bytes: unknown): Buffer {
-  if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_IMAGE_BYTES) throw new Error('Ảnh không hợp lệ hoặc lớn hơn 20MB');
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_IMAGE_BYTES) throw new UserError('invalidImage', { mb: MAX_IMAGE_BYTES / 1024 / 1024 });
   let img = nativeImage.createFromBuffer(Buffer.from(bytes));
-  if (img.isEmpty()) throw new Error('Chỉ hỗ trợ ảnh PNG hoặc JPEG');
+  if (img.isEmpty()) throw new UserError('imageType');
   const { width, height } = img.getSize();
   const scale = Math.min(1, MAX_SIDE / Math.max(width, height));
   if (scale < 1) img = img.resize({ width: Math.round(width * scale), height: Math.round(height * scale), quality: 'good' });
@@ -99,9 +101,9 @@ export function registerIpc(m: MainCtx): void {
   ipcMain.handle('chat:actions', (_e, convId: unknown) => listActions(m.db, id(convId)));
   ipcMain.handle('chat:send', async (_e, convId: unknown, text: unknown, images: ImageInput[]) => {
     const cid = id(convId);
-    if (typeof text !== 'string' || text.length > MAX_TEXT) throw new Error('Tin nhắn không hợp lệ');
-    if (!Array.isArray(images) || images.length > MAX_IMAGES) throw new Error(`Tối đa ${MAX_IMAGES} ảnh mỗi tin nhắn`);
-    if (!text.trim() && !images.length) throw new Error('Tin nhắn trống');
+    if (typeof text !== 'string' || text.length > MAX_TEXT) throw new UserError('invalidMessage');
+    if (!Array.isArray(images) || images.length > MAX_IMAGES) throw new UserError('tooManyImages', { max: MAX_IMAGES });
+    if (!text.trim() && !images.length) throw new UserError('emptyMessage');
     const jpegs = images.map((img) => toJpeg(img?.bytes)); // validate everything before saving anything
     const attachmentIds = jpegs.map(() => newAttachmentId());
     await stopTurn(cid);
@@ -125,7 +127,7 @@ export function registerIpc(m: MainCtx): void {
     startTurn(cid);
   });
   ipcMain.handle('chat:resolve', async (_e, actionId: unknown, decision: unknown, args?: unknown) => {
-    if (decision !== 'confirm' && decision !== 'cancel') throw new Error('Quyết định không hợp lệ');
+    if (decision !== 'confirm' && decision !== 'cancel') throw new UserError('invalidDecision');
     const action = getAction(m.db, id(actionId));
     const last = resolveAction(deps, id(actionId), decision, args);
     if (decision === 'confirm') m.onDataChanged();
@@ -137,12 +139,12 @@ export function registerIpc(m: MainCtx): void {
 
   ipcMain.handle('data:read', (_e, name: unknown, args: unknown) => {
     const tool = typeof name === 'string' ? findTool(name) : undefined;
-    if (tool?.kind !== 'read') throw new Error(`Không cho phép: ${String(name)}`);
+    if (tool?.kind !== 'read') throw new UserError('notAllowed', { name: String(name) });
     return tool.run(parseArgs(tool, args), ctx);
   });
   ipcMain.handle('data:write', (_e, name: unknown, args: unknown) => {
     const tool = typeof name === 'string' ? findTool(name) : undefined;
-    if (tool?.kind !== 'write' || !UI_WRITES.has(tool.name)) throw new Error(`Không cho phép: ${String(name)}`);
+    if (tool?.kind !== 'write' || !UI_WRITES.has(tool.name)) throw new UserError('notAllowed', { name: String(name) });
     const parsed = parseArgs(tool, args);
     const result = tx(m.db, () => tool.apply(parsed, ctx));
     m.onDataChanged();
@@ -155,21 +157,21 @@ export function registerIpc(m: MainCtx): void {
   });
   ipcMain.handle('settings:save', (_e, s: SettingsInput) => {
     const parsed = llmConfigSchema.safeParse(s?.llm);
-    if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join('; '));
-    if (s.apiKey !== undefined && typeof s.apiKey !== 'string') throw new Error('API key không hợp lệ');
+    if (!parsed.success) throw new Error(parsed.error.issues.map((i) => tr(i.message)).join('; '));
+    if (s.apiKey !== undefined && typeof s.apiKey !== 'string') throw new UserError('invalidApiKey');
     setSetting(m.db, 'llm', parsed.data);
     const key = s.apiKey?.trim();
     if (key) writeSecret(m.secretsFile, m.cipher, parsed.data.provider, key);
   });
   ipcMain.handle('settings:setOpenAtLogin', (_e, on: unknown) => {
-    if (typeof on !== 'boolean') throw new Error('Giá trị không hợp lệ');
+    if (typeof on !== 'boolean') throw new UserError('invalidValue');
     m.loginItem.set(on);
     return m.loginItem.get();
   });
   ipcMain.handle('settings:test', async () => {
     try {
       const reply = await collect(deps.llm().stream({ messages: [{ role: 'user', content: 'Trả lời đúng một từ: OK' }] }), () => {});
-      return reply.content ?? '(trống)';
+      return reply.content ?? i18n.t('common:empty');
     } catch (e) {
       throw new Error(describeLlmError(e));
     }

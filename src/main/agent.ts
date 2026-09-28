@@ -6,7 +6,7 @@ import { collect, describeLlmError, type Llm } from './llm';
 import { systemPrompt } from './prompt';
 import { addMessage, createAction, finishAction, getAction, getMessages, listActions } from './store';
 import { findTool, parseArgs, toOpenAITools, type ToolCtx } from './tools';
-import { errMsg } from './tools/common';
+import { errMsg, te, UserError } from './tools/common';
 
 export const MAX_ROUNDS = 8;
 const HISTORY = 20; // ponytail: history window walks back to the last user message; unbounded within one long confirm/resume turn
@@ -61,7 +61,7 @@ export async function runTurn(deps: AgentDeps, conversationId: number, signal?: 
       const stream = deps.llm().stream({ messages: buildLlmMessages(deps, conversationId), tools, signal });
       reply = await collect(stream, (delta) => deps.emit({ type: 'text', conversationId, delta }), partial);
     } catch (e) {
-      if (partial.content) addMessage(deps.db, conversationId, { role: 'assistant', content: `${partial.content}\n\n_(bị gián đoạn)_` });
+      if (partial.content) addMessage(deps.db, conversationId, { role: 'assistant', content: `${partial.content}\n\n_${te('interrupted')}_` });
       deps.emit(signal?.aborted ? { type: 'done', conversationId } : { type: 'error', conversationId, message: describeLlmError(e) });
       return;
     }
@@ -73,7 +73,7 @@ export async function runTurn(deps: AgentDeps, conversationId: number, signal?: 
     }
     if (!reply.content && !reply.tool_calls?.length) {
       // An empty assistant message is invalid to replay to the API, so it is not saved.
-      deps.emit({ type: 'error', conversationId, message: 'Mô hình không trả lời. Hãy thử lại.' });
+      deps.emit({ type: 'error', conversationId, message: te('emptyReply') });
       return;
     }
     const calls = reply.tool_calls ?? [];
@@ -95,7 +95,7 @@ export async function runTurn(deps: AgentDeps, conversationId: number, signal?: 
   }
   addMessage(deps.db, conversationId, {
     role: 'assistant',
-    content: `Mình dừng lại vì yêu cầu này đã dùng quá ${MAX_ROUNDS} bước. Bạn thử chia nhỏ yêu cầu nhé.`,
+    content: te('maxRounds', { max: MAX_ROUNDS }),
   });
   deps.emit({ type: 'done', conversationId });
 }
@@ -106,14 +106,14 @@ function handleCall(deps: AgentDeps, conversationId: number, messageId: number, 
     void addMessage(deps.db, conversationId, { role: 'tool', tool_call_id: c.id, content: JSON.stringify(result) });
   const tool = findTool(c.function.name);
   if (!tool) {
-    respond({ error: `Không có tool ${c.function.name}` });
+    respond({ error: te('unknownTool', { name: c.function.name }) });
     return 'error';
   }
   let args: unknown;
   try {
     args = parseArgs(tool, JSON.parse(c.function.arguments || '{}'));
   } catch (e) {
-    respond({ error: `Tham số không hợp lệ: ${errMsg(e)}` });
+    respond({ error: te('invalidArgs', { error: errMsg(e) }) });
     return 'error';
   }
   if (tool.kind === 'read') {
@@ -142,7 +142,7 @@ function handleCall(deps: AgentDeps, conversationId: number, messageId: number, 
  */
 export function resolveAction(deps: AgentDeps, actionId: number, decision: 'confirm' | 'cancel', editedArgs?: unknown): boolean {
   const action = getAction(deps.db, actionId);
-  if (!action || action.status !== 'pending') throw new Error('Thao tác này đã được xử lý');
+  if (!action || action.status !== 'pending') throw new UserError('actionResolved');
   const respond = (content: unknown): void =>
     void addMessage(deps.db, action.conversation_id, { role: 'tool', tool_call_id: action.tool_call_id, content: JSON.stringify(content) });
 
@@ -153,7 +153,7 @@ export function resolveAction(deps: AgentDeps, actionId: number, decision: 'conf
     });
   } else {
     const tool = findTool(action.tool_name);
-    if (tool?.kind !== 'write') throw new Error(`Không có tool ghi ${action.tool_name}`);
+    if (tool?.kind !== 'write') throw new UserError('unknownWriteTool', { name: action.tool_name });
     const args = parseArgs(tool, editedArgs ?? action.args);
     try {
       // One transaction: a committed write is always recorded as confirmed and answered, so a crash can't re-apply it.
