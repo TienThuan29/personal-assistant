@@ -24,7 +24,7 @@ export function NotesPage() {
     <div className='page'>
       {holders}
       <SettingsPageHeader title='Ghi chú & nhật ký' sticky={false} description='Tìm không cần gõ dấu. Muốn thêm hoặc sửa, hãy nhắn cho trợ lý.' />
-      <AionSearchInput value={query} onChange={setQuery} placeholder='Tìm ghi chú…' />
+      <AionSearchInput value={query} onChange={setQuery} placeholder='Tìm ghi chú…' style={{ marginTop: 12 }} />
       {!notes.length && <Empty description={query.trim() ? 'Không tìm thấy ghi chú nào' : 'Chưa có ghi chú nào'} />}
       {notes.map((n) => (
         <div key={n.id} className='row'>

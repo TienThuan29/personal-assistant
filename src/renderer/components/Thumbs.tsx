@@ -27,7 +27,7 @@ export function Thumbs({ ids }: { ids?: string[] | string | null }) {
         onCancel={() => setOpen(null)}
         size='large'
         style={{ height: 'auto' }}
-        header={{ title: 'Ảnh' }}
+        header='Ảnh'
         footer={null}
       >
         {open && (

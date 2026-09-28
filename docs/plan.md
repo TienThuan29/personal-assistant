@@ -5043,7 +5043,7 @@ export function Thumbs({ ids }: { ids?: string[] | string | null }) {
         onCancel={() => setOpen(null)}
         size='large'
         style={{ height: 'auto' }}
-        header={{ title: 'Ảnh' }}
+        header='Ảnh'
         footer={null}
       >
         {open && (
@@ -5785,7 +5785,7 @@ git commit -m "feat(ui): streaming chat with confirm cards, images and slash com
 
 **Step 1: `useData.tsx`**
 
-Loads on mount and on every `data:changed`, drops stale responses, shows read/write errors as a message, blocks a second write on a row while one is in flight, and asks before deleting.
+Loads on mount, on every `data:changed` and on window focus (so "Hôm nay" is right after midnight), drops stale responses, shows read/write errors as a message, blocks a second write on a row while one is in flight, and asks before deleting.
 
 ```tsx
 import { Message, Modal } from '@arco-design/web-react';
@@ -5793,7 +5793,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, errorText } from './api';
 
 /**
- * Data page plumbing: runs `read` (after `delay` ms) and again on every data:changed, keeps only the latest
+ * Data page plumbing: runs `read` (after `delay` ms) and again on every data:changed and window focus, keeps only the latest
  * result, and runs row writes one at a time per row, showing failures as a message.
  * `read` must be memoized (useCallback): a new function reloads.
  */
@@ -5815,10 +5815,12 @@ export function useData<T>(read: () => Promise<T>, initial: T, delay = 0) {
       );
     const t = setTimeout(load, delay);
     const off = api.data.onChanged(load);
+    window.addEventListener('focus', load); // also re-renders date-relative views (Hôm nay) after midnight
     return () => {
       live = false;
       clearTimeout(t);
       off();
+      window.removeEventListener('focus', load);
     };
   }, [read, delay]);
 
@@ -6010,7 +6012,7 @@ export function NotesPage() {
     <div className='page'>
       {holders}
       <SettingsPageHeader title='Ghi chú & nhật ký' sticky={false} description='Tìm không cần gõ dấu. Muốn thêm hoặc sửa, hãy nhắn cho trợ lý.' />
-      <AionSearchInput value={query} onChange={setQuery} placeholder='Tìm ghi chú…' />
+      <AionSearchInput value={query} onChange={setQuery} placeholder='Tìm ghi chú…' style={{ marginTop: 12 }} />
       {!notes.length && <Empty description={query.trim() ? 'Không tìm thấy ghi chú nào' : 'Chưa có ghi chú nào'} />}
       {notes.map((n) => (
         <div key={n.id} className='row'>
@@ -6091,7 +6093,7 @@ export function ExpensesPage() {
   const columns = [
     { title: 'Ngày', dataIndex: 'spent_at', width: 110, render: (v: string) => parseLocalDate(v).toLocaleDateString('vi-VN') },
     { title: 'Danh mục', dataIndex: 'category', width: 140 },
-    { title: 'Mô tả', dataIndex: 'description', render: (v: string | null) => v ?? '—' },
+    { title: 'Mô tả', dataIndex: 'description', render: (v: string | null) => v || '—' },
     { title: 'Số tiền', dataIndex: 'amount', align: 'right' as const, render: (_: number, r: ExpenseRow) => formatMoney(r.amount, r.currency) },
     { title: 'Ảnh', dataIndex: 'attachment_ids', render: (v: string | null) => <Thumbs ids={v} /> },
     {
@@ -6104,9 +6106,9 @@ export function ExpensesPage() {
           type='text'
           status='danger'
           icon={<Delete />}
-          aria-label={`Xóa khoản chi: ${r.description ?? r.category}`}
+          aria-label={`Xóa khoản chi: ${r.description || r.category}`}
           disabled={busy.includes(id)}
-          onClick={() => remove(id, 'delete_expenses', `${r.description ?? r.category}: ${formatMoney(r.amount, r.currency)}`)}
+          onClick={() => remove(id, 'delete_expenses', `${r.description || r.category}: ${formatMoney(r.amount, r.currency)}`)}
         />
       ),
     },

@@ -28,7 +28,7 @@ export function ExpensesPage() {
   const columns = [
     { title: 'Ngày', dataIndex: 'spent_at', width: 110, render: (v: string) => parseLocalDate(v).toLocaleDateString('vi-VN') },
     { title: 'Danh mục', dataIndex: 'category', width: 140 },
-    { title: 'Mô tả', dataIndex: 'description', render: (v: string | null) => v ?? '—' },
+    { title: 'Mô tả', dataIndex: 'description', render: (v: string | null) => v || '—' },
     { title: 'Số tiền', dataIndex: 'amount', align: 'right' as const, render: (_: number, r: ExpenseRow) => formatMoney(r.amount, r.currency) },
     { title: 'Ảnh', dataIndex: 'attachment_ids', render: (v: string | null) => <Thumbs ids={v} /> },
     {
@@ -41,9 +41,9 @@ export function ExpensesPage() {
           type='text'
           status='danger'
           icon={<Delete />}
-          aria-label={`Xóa khoản chi: ${r.description ?? r.category}`}
+          aria-label={`Xóa khoản chi: ${r.description || r.category}`}
           disabled={busy.includes(id)}
-          onClick={() => remove(id, 'delete_expenses', `${r.description ?? r.category}: ${formatMoney(r.amount, r.currency)}`)}
+          onClick={() => remove(id, 'delete_expenses', `${r.description || r.category}: ${formatMoney(r.amount, r.currency)}`)}
         />
       ),
     },

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, errorText } from './api';
 
 /**
- * Data page plumbing: runs `read` (after `delay` ms) and again on every data:changed, keeps only the latest
+ * Data page plumbing: runs `read` (after `delay` ms) and again on every data:changed and window focus, keeps only the latest
  * result, and runs row writes one at a time per row, showing failures as a message.
  * `read` must be memoized (useCallback): a new function reloads.
  */
@@ -25,10 +25,12 @@ export function useData<T>(read: () => Promise<T>, initial: T, delay = 0) {
       );
     const t = setTimeout(load, delay);
     const off = api.data.onChanged(load);
+    window.addEventListener('focus', load); // also re-renders date-relative views (Hôm nay) after midnight
     return () => {
       live = false;
       clearTimeout(t);
       off();
+      window.removeEventListener('focus', load);
     };
   }, [read, delay]);
 
