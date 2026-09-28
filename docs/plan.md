@@ -2719,7 +2719,7 @@ export const call = (id: string, name: string, args: object): AssistantMessage =
 import { APIConnectionError, APIError } from 'openai';
 import type { ChatCompletionChunk } from 'openai/resources/chat/completions';
 import { collect, createLlm, describeLlmError } from '../src/main/llm';
-import { DEFAULT_LLM } from '../src/shared/types';
+import { DEFAULT_LLM, type LlmConfig } from '../src/shared/types';
 import { call, chunk, fakeLlm } from './helpers';
 
 describe('collect', () => {
@@ -2743,6 +2743,39 @@ describe('collect', () => {
     expect(msg.tool_calls?.[0].id).toMatch(/^call_/);
   });
 
+  it('keeps interleaved parallel tool calls apart and defaults empty args to {}', async () => {
+    async function* parallel() {
+      yield chunk({ tool_calls: [{ index: 0, id: 'a', function: { name: 'list_tasks', arguments: '' } }] });
+      yield chunk({ tool_calls: [{ index: 1, id: 'b', function: { name: 'search_notes', arguments: '{"q":' } }] });
+      yield chunk({ tool_calls: [{ index: 0, function: { arguments: '' } }] });
+      yield chunk({ tool_calls: [{ index: 1, function: { arguments: '"x"}' } }] });
+    }
+    const msg = await collect(parallel(), () => {});
+    expect(msg.tool_calls?.map((t) => [t.id, t.function.name, t.function.arguments])).toEqual([
+      ['a', 'list_tasks', '{}'],
+      ['b', 'search_notes', '{"q":"x"}'],
+    ]);
+  });
+
+  it('appends an index-less tool-call delta to the last call', async () => {
+    async function* noIndex() {
+      yield chunk({ tool_calls: [{ id: 'a', function: { name: 'list_tasks', arguments: '{"status":' } }] });
+      yield chunk({ tool_calls: [{ function: { arguments: '"todo"}' } }] });
+    }
+    const msg = await collect(noIndex(), () => {});
+    expect(msg.tool_calls).toEqual([{ id: 'a', type: 'function', function: { name: 'list_tasks', arguments: '{"status":"todo"}' } }]);
+  });
+
+  it.each(['length', 'content_filter'])('rejects a reply cut off by finish_reason %s, keeping partial text', async (reason) => {
+    const partial = { content: '' };
+    async function* cut() {
+      yield chunk({ content: 'Một nửa' });
+      yield { ...chunk({}), choices: [{ index: 0, delta: {}, finish_reason: reason }] } as unknown as ChatCompletionChunk;
+    }
+    await expect(collect(cut(), () => {}, partial)).rejects.toThrow(/bị cắt/);
+    expect(partial.content).toBe('Một nửa');
+  });
+
   it('returns an empty message when the stream has nothing', async () => {
     async function* empty() {}
     expect(await collect(empty(), () => {})).toEqual({ role: 'assistant', content: null });
@@ -2764,11 +2797,67 @@ describe('describeLlmError', () => {
     expect(describeLlmError(new APIError(401, undefined, 'Unauthorized', undefined))).toMatch(/Cài đặt/);
     expect(describeLlmError(new APIError(404, undefined, 'Not found', undefined))).toMatch(/model/);
     expect(describeLlmError(new APIConnectionError({ message: 'down' }))).toMatch(/kết nối/);
+    const tooLong = APIError.generate(400, { error: { code: 'context_length_exceeded', message: 'too long' } }, undefined, new Headers());
+    expect(describeLlmError(tooLong)).toMatch(/quá dài/);
+    const filtered = APIError.generate(400, { error: { code: 'content_filter', message: 'blocked' } }, undefined, new Headers());
+    expect(describeLlmError(filtered)).toMatch(/bộ lọc/);
+    expect(describeLlmError(APIError.generate(500, { error: { message: 'boom' } }, undefined, new Headers()))).toBe('LLM trả lỗi: 500 boom');
   });
 });
 
-it('createLlm refuses an unconfigured provider', () => {
-  expect(() => createLlm(DEFAULT_LLM, '')).toThrow(/Cài đặt/);
+describe('createLlm', () => {
+  const gateway: LlmConfig = { provider: 'gateway', endpoint: 'https://gw.example/v1', model: 'm', apiVersion: '' };
+
+  it('refuses an unconfigured provider, incl. Azure without apiVersion', () => {
+    expect(() => createLlm(DEFAULT_LLM, '')).toThrow(/Cài đặt/);
+    expect(() => createLlm({ provider: 'azure', endpoint: 'https://x', model: 'm', apiVersion: '' }, 'k')).toThrow(/Cài đặt/);
+  });
+
+  const sse = (text: string) => `data: ${JSON.stringify(chunk({ content: text }))}\n\n`;
+  const DONE = 'data: [DONE]\n\n';
+
+  /** Stub fetch that records requests and streams SSE parts; `hang` keeps the body open until the request aborts. */
+  function stubFetch(parts: string[], hang = false) {
+    const seen: { url: string; headers: Headers }[] = [];
+    const f = (async (url: string | URL | Request, init?: RequestInit) => {
+      seen.push({ url: String(url), headers: new Headers(init?.headers) });
+      const body = new ReadableStream<Uint8Array>({
+        start(ctl) {
+          for (const p of parts) ctl.enqueue(new TextEncoder().encode(p));
+          if (!hang) return ctl.close();
+          init?.signal?.addEventListener('abort', () => ctl.error(new DOMException('aborted', 'AbortError')));
+        },
+      });
+      return new Response(body, { headers: { 'content-type': 'text/event-stream' } });
+    }) as typeof fetch;
+    return { f, seen };
+  }
+
+  it('Azure hits the deployment URL with an api-key header', async () => {
+    const { f, seen } = stubFetch([sse('chào'), DONE]);
+    const cfg: LlmConfig = { provider: 'azure', endpoint: 'https://r.openai.azure.com', model: 'gpt-4o', apiVersion: '2024-10-21' };
+    const msg = await collect(createLlm(cfg, 'k1', { fetch: f }).stream({ messages: [] }), () => {});
+    expect(msg.content).toBe('chào');
+    expect(seen[0].url).toBe('https://r.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-10-21');
+    expect(seen[0].headers.get('api-key')).toBe('k1');
+  });
+
+  it('gateway hits <baseURL>/chat/completions with a bearer token', async () => {
+    const { f, seen } = stubFetch([sse('ok'), DONE]);
+    const msg = await collect(createLlm(gateway, 'tok', { fetch: f }).stream({ messages: [] }), () => {});
+    expect(msg.content).toBe('ok');
+    expect(seen[0].url).toBe('https://gw.example/v1/chat/completions');
+    expect(seen[0].headers.get('authorization')).toBe('Bearer tok');
+  });
+
+  it('rejects when aborted mid-stream instead of ending silently', async () => {
+    const { f } = stubFetch([sse('Đang')], true);
+    const ac = new AbortController();
+    const partial = { content: '' };
+    const run = collect(createLlm(gateway, 'tok', { fetch: f }).stream({ messages: [], signal: ac.signal }), () => ac.abort(), partial);
+    await expect(run).rejects.toThrow();
+    expect(partial.content).toBe('Đang');
+  });
 });
 ```
 
@@ -2787,46 +2876,59 @@ import type { AssistantMessage, LlmConfig, ToolCall } from '../shared/types';
 export type StreamParams = { messages: ChatCompletionMessageParam[]; tools?: ChatCompletionFunctionTool[]; signal?: AbortSignal };
 export type Llm = { stream: (p: StreamParams) => AsyncIterable<ChatCompletionChunk> };
 
-/** One client for both providers; both speak OpenAI chat completions (design D2). */
-export function createLlm(cfg: LlmConfig, apiKey: string): Llm {
-  if (!cfg.endpoint || !cfg.model || !apiKey) throw new Error('Chưa cấu hình LLM. Mở Cài đặt để nhập endpoint, model và key.');
+/** One client for both providers; both speak OpenAI chat completions (design D2). `opts.fetch` is for tests. */
+export function createLlm(cfg: LlmConfig, apiKey: string, opts: { fetch?: typeof fetch } = {}): Llm {
+  if (!cfg.endpoint || !cfg.model || !apiKey || (cfg.provider === 'azure' && !cfg.apiVersion))
+    throw new Error('Chưa cấu hình LLM. Mở Cài đặt để nhập endpoint, model và key.');
+  const common = { apiKey, maxRetries: 2, timeout: 60_000, fetch: opts.fetch };
   const client =
     cfg.provider === 'azure'
-      ? new AzureOpenAI({ endpoint: cfg.endpoint, apiKey, apiVersion: cfg.apiVersion, deployment: cfg.model, maxRetries: 2 })
-      : new OpenAI({ baseURL: cfg.endpoint, apiKey, maxRetries: 2 });
+      ? new AzureOpenAI({ ...common, endpoint: cfg.endpoint, apiVersion: cfg.apiVersion, deployment: cfg.model })
+      : new OpenAI({ ...common, baseURL: cfg.endpoint });
   return {
     async *stream({ messages, tools, signal }) {
       yield* await client.chat.completions.create(
         { model: cfg.model, messages, tools: tools?.length ? tools : undefined, stream: true },
         { signal }
       );
+      signal?.throwIfAborted(); // the SDK's Stream ends silently on abort; surface it so the turn counts as stopped
     },
   };
 }
 
-/** Accumulates a streamed reply. `partial` keeps the text so far if the stream breaks. */
+/** Accumulates a streamed reply. `partial` keeps the text so far if the stream breaks or is cut off. */
 export async function collect(
   stream: AsyncIterable<ChatCompletionChunk>,
   onText: (delta: string) => void,
   partial: { content: string } = { content: '' }
 ): Promise<AssistantMessage> {
   const calls: ToolCall[] = [];
+  let finish: string | null = null;
   for await (const c of stream) {
-    const delta = c.choices[0]?.delta; // Azure sends content-filter chunks with empty `choices`
+    const choice = c.choices[0]; // Azure sends content-filter chunks with empty `choices`
+    if (!choice) continue;
+    if (choice.finish_reason) finish = choice.finish_reason;
+    const delta = choice.delta;
     if (!delta) continue;
     if (delta.content) {
       partial.content += delta.content;
       onText(delta.content);
     }
     for (const tc of delta.tool_calls ?? []) {
-      const acc = (calls[tc.index] ??= { id: '', type: 'function', function: { name: '', arguments: '' } });
+      const i = tc.index ?? Math.max(0, calls.length - 1); // some providers omit index
+      const acc = (calls[i] ??= { id: '', type: 'function', function: { name: '', arguments: '' } });
       if (tc.id) acc.id = tc.id;
       if (tc.function?.name) acc.function.name = tc.function.name; // assign like the SDK does: some providers repeat it
       if (tc.function?.arguments) acc.function.arguments += tc.function.arguments;
     }
   }
+  if (finish === 'length' || finish === 'content_filter')
+    throw new Error('Câu trả lời bị cắt (vượt giới hạn độ dài hoặc bị bộ lọc nội dung chặn). Thử lại hoặc chia nhỏ yêu cầu.');
   const toolCalls = calls.filter(Boolean);
-  toolCalls.forEach((tc, i) => (tc.id ||= `call_${Date.now()}_${i}`));
+  toolCalls.forEach((tc, i) => {
+    tc.id ||= `call_${Date.now()}_${i}`;
+    tc.function.arguments ||= '{}';
+  });
   return { role: 'assistant', content: partial.content || null, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) };
 }
 
@@ -2836,8 +2938,10 @@ export function describeLlmError(e: unknown): string {
   if (e instanceof APIError) {
     if (e.status === 401 || e.status === 403) return 'API key/token sai hoặc hết hạn. Kiểm tra trong Cài đặt.';
     if (e.status === 404) return 'Không tìm thấy model/deployment. Kiểm tra endpoint và tên model trong Cài đặt.';
+    if (e.code === 'context_length_exceeded') return 'Hội thoại quá dài, hãy tạo hội thoại mới.';
+    if (e.code === 'content_filter') return 'Yêu cầu bị bộ lọc nội dung của LLM chặn. Hãy diễn đạt lại.';
     if (e.status === 429) return 'LLM đang giới hạn tốc độ (429). Thử lại sau ít phút.';
-    return `LLM trả lỗi ${e.status ?? ''}: ${e.message}`;
+    return `LLM trả lỗi: ${e.message}`; // e.message already starts with the status
   }
   return e instanceof Error ? e.message : String(e);
 }
