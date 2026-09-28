@@ -28,9 +28,8 @@ export const date = z
   .refine((s) => toLocalDate(parseLocalDate(s)) === s, 'Ngày không tồn tại'); // rejects e.g. 2026-02-30
 export const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Định dạng HH:MM');
 export const instant = z
-  .string()
-  .refine((s) => !Number.isNaN(Date.parse(s)), 'Thời điểm không hợp lệ')
-  .describe('ISO 8601 theo giờ máy, vd 2026-09-29T09:00');
+  .union([date, z.iso.datetime({ local: true, offset: true })])
+  .describe('Ngày YYYY-MM-DD hoặc thời điểm ISO 8601 theo giờ máy, vd 2026-09-29T09:00');
 export const ids = z.array(z.number().int().positive()).min(1);
 export const attachmentIds = z
   .array(z.string())
@@ -39,7 +38,7 @@ export const attachmentIds = z
 
 /** Instant → UTC ISO. A bare date means local midnight ('start') or the next local midnight ('end'). */
 export function toInstant(s: string, edge: 'start' | 'end' = 'start'): string {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return localDayRange(s)[edge];
+  if (date.safeParse(s).success) return localDayRange(s)[edge];
   return new Date(s).toISOString(); // 'YYYY-MM-DDTHH:MM' without offset parses as local time
 }
 
@@ -52,7 +51,7 @@ export const attachmentsCol = (owner: OwnerType, idExpr: string): string =>
   `(SELECT group_concat(a.id) FROM attachments a WHERE a.owner_type = '${owner}' AND a.owner_id = ${idExpr}) AS attachment_ids`;
 
 /** WHERE clause from optional conditions; a condition is skipped when its value is undefined. */
-export function where(conds: [sql: string, key: string, value: Params[string] | undefined][]): {
+export function where(conds: [sql: string, key: string, value: Exclude<Params[string], null> | undefined][]): {
   sql: string;
   params: Params;
 } {
@@ -79,9 +78,9 @@ export function requireRows<T>(db: Db, table: string, idList: number[]): T[] {
   return rows;
 }
 
-/** UPDATE by id. Column names come from a zod-parsed patch, so unknown keys were already stripped. */
+/** UPDATE by id. Column names come from a zod-parsed patch, so unknown keys were already stripped; undefined values are skipped. */
 export function updateRows(db: Db, table: string, idList: number[], patch: Record<string, unknown>, extra: Params = {}): void {
-  const values = { ...(patch as Params), ...extra };
+  const values = { ...(Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) as Params), ...extra };
   const set = Object.keys(values).map((k) => `${k} = :${k}`).join(', ');
   const stmt = db.prepare(`UPDATE ${table} SET ${set} WHERE id = :id`);
   for (const id of idList) stmt.run({ ...values, id });

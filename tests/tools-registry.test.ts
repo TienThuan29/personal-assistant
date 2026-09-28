@@ -1,5 +1,6 @@
 import { TOOLS, toOpenAITools } from '../src/main/tools';
-import { date } from '../src/main/tools/common';
+import { z } from 'zod/v4';
+import { date, instant, toInstant } from '../src/main/tools/common';
 
 describe('tool registry', () => {
   it('has unique, API-safe names', () => {
@@ -22,5 +23,26 @@ describe('date schema', () => {
     expect(date.safeParse('2026-02-30').success).toBe(false);
     expect(date.safeParse('2026-02-28').success).toBe(true);
     expect(date.safeParse('28/09/2026').success).toBe(false);
+  });
+});
+
+describe('instant schema', () => {
+  it('accepts dates and ISO datetimes, rejects loose strings', () => {
+    for (const s of ['2026-09-29', '2026-09-29T09:00', '2026-09-29T09:00:00Z', '2026-09-29T09:00+07:00']) {
+      expect(instant.safeParse(s).success).toBe(true);
+    }
+    for (const s of ['9', 'abc 2026', '2026-02-30T09:00']) expect(instant.safeParse(s).success).toBe(false);
+  });
+
+  it('exports as JSON Schema', () => {
+    expect(() => z.toJSONSchema(z.object({ at: instant }), { io: 'input' })).not.toThrow();
+  });
+});
+
+describe('toInstant', () => {
+  it('maps a bare date to local midnight and a local time to UTC', () => {
+    expect(toInstant('2026-09-28')).toBe(new Date(2026, 8, 28).toISOString());
+    expect(toInstant('2026-09-28', 'end')).toBe(new Date(2026, 8, 29).toISOString());
+    expect(toInstant('2026-09-28T15:00')).toBe(new Date(2026, 8, 28, 15, 0).toISOString());
   });
 });
