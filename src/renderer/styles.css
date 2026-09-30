@@ -250,9 +250,9 @@ body {
 .row-actions { opacity: 0; transition: opacity 0.15s; }
 .list-row:is(:hover, :focus-within) .row-actions { opacity: 1; }
 /* Note cards (U16): the title button's ::after covers the card, so a click anywhere opens the note;
-   actions and thumbnails sit above it. The outline shows for keyboard focus on the title only. */
-.note-open::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
-.note-card .thumbs { position: relative; z-index: 1; } /* .row-actions: absolute z-1 in NotesPage */
+   actions and thumbnail buttons sit above it. The outline shows for keyboard focus on the title only. */
+.note-open::after { content: ''; position: absolute; inset: 0; border-radius: 14px; } /* rounded-card */
+.note-card .thumb { position: relative; z-index: 1; } /* .row-actions: absolute z-1 in NotesPage */
 .note-card:has(.note-open:focus-visible) { outline: 2px solid var(--accent); }
 .note-card .note-open:focus-visible { outline: 0; }
 .note-card:is(:hover, :focus-within) .row-actions { opacity: 1; }
@@ -292,7 +292,7 @@ mark { background: rgb(var(--warning-2)); color: inherit; border-radius: 2px; }
 
 .page, .chat { animation: rise 0.45s var(--ease-out) both; }
 /* sibling-index() staggers a list without per-row indices; unsupported engines just skip the delay. */
-.list-row, .msg-list > * { animation: rise 0.4s var(--ease-out) both; animation-delay: calc(min(sibling-index(), 12) * 25ms); }
+.list-row, .note-card, .msg-list > * { animation: rise 0.4s var(--ease-out) both; animation-delay: calc(min(sibling-index(), 12) * 25ms); }
 .msg-list > .msg-user { animation: from-right 0.45s var(--ease-spring) both; }
 .confirm-card { animation: pop 0.45s var(--ease-spring) both; }
 .slash-menu { animation: pop 0.25s var(--ease-out) both; transform-origin: bottom left; }
