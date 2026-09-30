@@ -100,7 +100,7 @@ export function registerIpc(m: MainCtx): void {
     deleteConversation(m.db, cid);
   });
   ipcMain.handle('conv:rename', (_e, convId: unknown, title: unknown) => {
-    if (typeof title !== 'string') throw new UserError('invalidValue');
+    if (typeof title !== 'string' || title.length > MAX_TEXT) throw new UserError('invalidValue');
     renameConversation(m.db, id(convId), title);
   });
 

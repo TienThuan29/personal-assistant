@@ -29,13 +29,16 @@ describe('store', () => {
   it('renames a conversation: trims, collapses spaces, caps at 100 code points, rejects empty', () => {
     const { db } = testDb();
     const c = createConversation(db);
+    const updatedAt = listConversations(db)[0].updated_at;
     renameConversation(db, c, '  Kế   hoạch  tuần  ');
     expect(listConversations(db)[0].title).toBe('Kế hoạch tuần');
+    renameConversation(db, c, '😀'.repeat(120));
+    expect(listConversations(db)[0].title).toBe('😀'.repeat(100)); // code points, not UTF-16 units
     renameConversation(db, c, 'a'.repeat(120));
     expect(listConversations(db)[0].title).toBe('a'.repeat(100));
     expect(() => renameConversation(db, c, ' \n ')).toThrow(UserError);
     setTitleIfNew(db, c, 'auto'); // a renamed conversation is never auto-titled
-    expect(listConversations(db)[0].title).toBe('a'.repeat(100));
+    expect(listConversations(db)[0]).toMatchObject({ title: 'a'.repeat(100), updated_at: updatedAt }); // rename must not reorder
   });
 
   it('titles whitespace-only text as an image and cuts at 40 code points', () => {

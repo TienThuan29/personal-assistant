@@ -36,7 +36,7 @@ export type DayBucket = 'today' | 'yesterday' | 'week' | 'older';
 /** Sidebar group of a conversation's updated_at, in local days (design §2). */
 export function dayBucket(iso: string, today: string): DayBucket {
   const day = toLocalDate(new Date(iso));
-  if (day === today) return 'today';
+  if (day >= today) return 'today'; // a future day: stale `today` after midnight or clock skew
   if (day === addDays(today, -1)) return 'yesterday';
   return day >= addDays(today, -7) ? 'week' : 'older';
 }
@@ -48,8 +48,10 @@ export function relativeDay(date: string, today: string): 'today' | 'tomorrow' |
   return date === addDays(today, -1) ? 'yesterday' : null;
 }
 
-export const partOfDay = (d: Date): 'morning' | 'afternoon' | 'evening' =>
-  d.getHours() >= 5 && d.getHours() < 12 ? 'morning' : d.getHours() >= 12 && d.getHours() < 18 ? 'afternoon' : 'evening';
+export function partOfDay(d: Date): 'morning' | 'afternoon' | 'evening' {
+  const h = d.getHours();
+  return h >= 5 && h < 12 ? 'morning' : h >= 12 && h < 18 ? 'afternoon' : 'evening';
+}
 
 export const RECURRENCE_RE = /^(daily|weekly:[1-7](,[1-7])*|monthly:([1-9]|[12]\d|3[01]))$/;
 

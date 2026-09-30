@@ -25,6 +25,7 @@ describe('dates', () => {
     const today = '2026-09-30';
     const at = (d: number, h = 12, m = 0) => new Date(2026, 8, d, h, m).toISOString();
     expect(dayBucket(at(30, 0, 5), today)).toBe('today');
+    expect(dayBucket(new Date(2026, 9, 1, 0, 10).toISOString(), today)).toBe('today'); // stale `today` / clock skew
     expect(dayBucket(at(29, 23, 30), today)).toBe('yesterday');
     expect(dayBucket(at(23), today)).toBe('week');
     expect(dayBucket(at(22), today)).toBe('older');
