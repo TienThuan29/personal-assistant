@@ -69,9 +69,10 @@ export const vi = {
     retry: 'Thử lại',
     confirmAll: 'Xác nhận tất cả ({{count}})',
     // SendBox
-    placeholder: 'Nhắn cho trợ lý… (Enter gửi, Shift+Enter xuống dòng, / xem lệnh nhanh, dán hoặc kéo ảnh vào đây)',
+    placeholder: 'Nhắn cho trợ lý…',
+    composerHint: 'Enter gửi · Shift+Enter xuống dòng · / lệnh nhanh · dán hoặc kéo ảnh vào',
     inputLabel: 'Tin nhắn cho trợ lý',
-    attachImage: 'Ảnh',
+    attachImage: 'Đính kèm ảnh',
     send: 'Gửi',
     stop: 'Dừng',
     tooManyImages: 'Tối đa {{max}} ảnh mỗi tin nhắn',

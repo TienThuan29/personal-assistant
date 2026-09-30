@@ -176,13 +176,15 @@ body {
 
 .chat { display: flex; flex-direction: column; height: 100%; }
 .messages { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 24px; }
-.msg-list { display: flex; flex-direction: column; gap: 12px; max-width: 860px; margin: 0 auto; }
+/* min-height lets .chat-empty center vertically (margin: auto 0). */
+.msg-list { display: flex; flex-direction: column; gap: 12px; max-width: 760px; min-height: 100%; margin: 0 auto; }
 .msg-user {
   align-self: flex-end;
   max-width: 75%;
   padding: 8px 14px;
-  border-radius: 16px 16px 4px 16px;
+  border-radius: 18px 18px 6px 18px;
   background: var(--message-user-bg);
+  color: var(--ink);
   white-space: pre-wrap;
 }
 .msg-assistant { display: flex; flex-direction: column; gap: 8px; }
@@ -217,7 +219,7 @@ body {
   border: 1px solid var(--border-base);
   border-left: 3px solid var(--card-accent, var(--primary));
   border-radius: 12px;
-  background: var(--bg-2);
+  background: var(--surface);
   box-shadow: 0 8px 24px -16px rgba(var(--gray-10), 0.35);
   transition: opacity 0.3s, border-color 0.3s;
 }
@@ -237,8 +239,8 @@ body {
   margin: 0 auto;
   padding: 10px 10px 8px;
   border: 1px solid var(--border-base);
-  border-radius: 16px;
-  background: var(--bg-1);
+  border-radius: 18px;
+  background: var(--surface);
   box-shadow: 0 10px 30px -18px rgba(var(--gray-10), 0.4);
   transition: border-color 0.2s, box-shadow 0.3s var(--ease-out);
 }
@@ -290,10 +292,8 @@ body .arco-radio-group-type-button .arco-radio-button::after { display: none; }
 .form-row > * { flex: 1; min-width: 0; }
 
 .settings { display: flex; flex-direction: column; gap: 16px; }
-/* Arco fields use the same gray as SectionCard (bg-2) and vanish inside it. :where() keeps the
-   input rule below Arco's hover/focus and inner-password rules, so those still apply. */
-.settings :where(.arco-input-inner-wrapper, .arco-input),
-.settings .arco-select-view { background-color: var(--bg-1); border: 1px solid var(--border-base); }
+/* SectionCard paints bg-2 (sunken), barely off the canvas; match the app's Card (components/ui.tsx). */
+.settings > section { border-color: var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-card); }
 .link { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; text-align: start; }
 .link:hover { color: rgb(var(--primary-6)); }
 mark { background: rgb(var(--warning-2)); color: inherit; border-radius: 2px; }
@@ -312,7 +312,8 @@ mark { background: rgb(var(--warning-2)); color: inherit; border-radius: 2px; }
 .list-row, .note-card, .msg-list > * { animation: rise 0.4s var(--ease-out) both; animation-delay: calc(min(sibling-index(), 12) * 25ms); }
 .msg-list > .msg-user { animation: from-right 0.45s var(--ease-spring) both; }
 .confirm-card { animation: pop 0.45s var(--ease-spring) both; }
-.slash-menu { animation: pop 0.25s var(--ease-out) both; transform-origin: bottom left; }
+/* No fill mode: a filling animation keeps it a backdrop root, which disables the menu's backdrop blur. */
+.slash-menu { animation: pop 0.25s var(--ease-out); transform-origin: bottom left; }
 .arco-btn:not(:disabled):active, .suggestion:active { transform: scale(0.97); }
 .arco-btn { transition-property: all; }
 
@@ -324,18 +325,17 @@ mark { background: rgb(var(--warning-2)); color: inherit; border-radius: 2px; }
 .skeleton-cards .skeleton { width: auto; height: 88px; margin: 0; border-radius: 14px; }
 .skeleton-grid .skeleton { width: auto; height: 140px; margin: 0; border-radius: 14px; }
 
-.chat-empty { margin: 16vh 0 0; max-width: 520px; animation: rise 0.6s var(--ease-out) both; }
-.chat-empty h2 { margin: 0 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+.chat-empty { margin: auto 0; animation: rise 0.6s var(--ease-out) both; }
+.chat-empty h2 { margin: 0 0 6px; font-size: 26px; font-weight: 600; letter-spacing: -0.02em; }
 .chat-empty p { margin: 0 0 16px; color: var(--text-secondary); line-height: 1.6; }
-.suggestions { display: flex; flex-wrap: wrap; gap: 8px; }
 .suggestion {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 10px 14px;
-  border: 1px solid var(--border-base);
-  border-radius: 12px;
-  background: var(--bg-1);
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
   color: inherit;
   font: inherit;
   text-align: start;

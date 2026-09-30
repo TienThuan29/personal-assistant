@@ -1,4 +1,5 @@
 import { Alert, Button, Input, InputNumber, Select, Space, Tag } from '@arco-design/web-react';
+import { CheckOne, Edit, Notes, Remind, Wallet } from '@icon-park/react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { parseLocalDate, RECURRENCE_RE, recurrenceText } from '../../shared/dates';
@@ -14,6 +15,15 @@ const SHORT = new Set(['title', 'due_date', 'due_time', 'remind_at', 'spent_at',
 const STATUS_COLORS = { pending: 'arcoblue', confirmed: 'green', cancelled: 'gray' } as const;
 
 type Row = Record<string, unknown> & { id: number };
+
+/** Header icon by the record type a tool writes. */
+function toolIcon(name: string) {
+  if (name.includes('_task')) return <CheckOne />;
+  if (name.includes('note')) return <Notes />;
+  if (name.includes('expense')) return <Wallet />;
+  if (name.includes('reminder')) return <Remind />;
+  return <Edit />;
+}
 
 const cut = (s: string, n = 60): string => (s.length > n ? `${s.slice(0, n)}…` : s);
 
@@ -103,6 +113,9 @@ export function ConfirmCard(props: {
   return (
     <div className='confirm-card' data-status={error ? 'failed' : action.status}>
       <div className='confirm-title'>
+        <span aria-hidden className='flex text-accent'>
+          {toolIcon(action.tool_name)}
+        </span>
         {(t('action', { returnObjects: true }) as Record<string, string>)[action.tool_name] ?? action.tool_name}
         <Tag color={status.color}>{status.text}</Tag>
       </div>
@@ -154,7 +167,7 @@ export function ConfirmCard(props: {
           >
             {t('confirm')}
           </Button>
-          <Button loading={busy === 'cancel'} disabled={busy === 'confirm'} onClick={() => void resolve('cancel')}>
+          <Button type='text' loading={busy === 'cancel'} disabled={busy === 'confirm'} onClick={() => void resolve('cancel')}>
             {t('cancel')}
           </Button>
         </Space>

@@ -1,6 +1,7 @@
 import { ThoughtDisplay } from '@aionui/ui';
 import { Markdown } from '@aionui/ui/markdown';
 import { Alert, Button } from '@arco-design/web-react';
+import { CalendarThirtyTwo, Sun, Wallet } from '@icon-park/react';
 import { memo, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ChatMessage, PendingAction } from '../../shared/types';
@@ -8,6 +9,8 @@ import { Thumbs } from '../components/Thumbs';
 import { ConfirmCard } from './ConfirmCard';
 import { COMMANDS } from './SendBox';
 import type { ChatState } from './useChat';
+
+const SUGGESTION_ICONS = { homnay: <Sun />, tuannay: <CalendarThirtyTwo />, chitieu: <Wallet /> };
 
 /** One message; memoized (with its card edits kept here) so streaming and typing don't re-render every Markdown block. */
 const MessageRow = memo(function MessageRow({ m, actions, resolve }: { m: ChatMessage; actions: PendingAction[]; resolve: ChatState['resolve'] }) {
@@ -97,9 +100,12 @@ export function MessageList({ chat }: { chat: ChatState }) {
           <div className='chat-empty'>
             <h2>{t('emptyTitle')}</h2>
             <p>{t('emptyHint')}</p>
-            <div className='suggestions'>
+            <div className='grid grid-cols-1 sm:grid-cols-3 gap-2.5'>
               {COMMANDS.map((key) => (
                 <button key={key} type='button' className='suggestion' onClick={() => void chat.send(t(`cmd.${key}.prompt`), [])}>
+                  <span aria-hidden className='flex items-center justify-center w-8 h-8 mb-1.5 rounded-ctl bg-accent-soft text-accent text-base'>
+                    {SUGGESTION_ICONS[key]}
+                  </span>
                   <span>{t(`cmd.${key}.description`)}</span>
                   <code>/{key}</code>
                 </button>

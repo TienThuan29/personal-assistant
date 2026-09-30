@@ -1,5 +1,5 @@
 import { FilePreview, SlashCommandMenu } from '@aionui/ui';
-import { Button, Input } from '@arco-design/web-react';
+import { Button, Input, Tooltip } from '@arco-design/web-react';
 import { PauseOne, Pic, Send } from '@icon-park/react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -121,9 +121,9 @@ export function SendBox({ running, onSend, onStop, autoFocus }: Props) {
           placeholder={t('placeholder')}
         />
         <div className='sendbox-actions'>
-          <Button type='text' icon={<Pic />} onClick={() => fileInput.current?.click()}>
-            {t('attachImage')}
-          </Button>
+          <Tooltip content={t('attachImage')}>
+            <Button type='text' icon={<Pic />} aria-label={t('attachImage')} onClick={() => fileInput.current?.click()} />
+          </Tooltip>
           <input
             ref={fileInput}
             type='file'
@@ -136,16 +136,13 @@ export function SendBox({ running, onSend, onStop, autoFocus }: Props) {
             }}
           />
           {running ? (
-            <Button status='warning' icon={<PauseOne />} onClick={onStop}>
-              {t('stop')}
-            </Button>
+            <Button shape='circle' status='warning' icon={<PauseOne />} aria-label={t('stop')} onClick={onStop} />
           ) : (
-            <Button type='primary' icon={<Send />} loading={sending} onClick={() => void submit()}>
-              {t('send')}
-            </Button>
+            <Button shape='circle' type='primary' icon={<Send />} aria-label={t('send')} loading={sending} onClick={() => void submit()} />
           )}
         </div>
       </div>
+      <div className='max-w-[860px] mx-auto mt-1.5 px-1 text-xs text-ink-2'>{t('composerHint')}</div>
     </div>
   );
 }
