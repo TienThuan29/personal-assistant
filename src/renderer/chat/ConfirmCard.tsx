@@ -12,7 +12,8 @@ const SELECTS = new Set(['kind', 'priority']);
 /** Single-line string fields; the others get an auto-growing textarea. */
 const SHORT = new Set(['title', 'due_date', 'due_time', 'remind_at', 'spent_at', 'currency', 'category']);
 
-const STATUS_COLORS = { pending: 'arcoblue', confirmed: 'green', cancelled: 'gray' } as const;
+/** Pending takes the accent (styles.css). */
+const STATUS_COLORS = { pending: undefined, confirmed: 'green', cancelled: 'gray' } as const;
 
 type Row = Record<string, unknown> & { id: number };
 

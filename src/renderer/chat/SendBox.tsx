@@ -142,7 +142,7 @@ export function SendBox({ running, onSend, onStop, autoFocus }: Props) {
           )}
         </div>
       </div>
-      <div className='max-w-[860px] mx-auto mt-1.5 px-1 text-xs text-ink-2'>{t('composerHint')}</div>
+      <div className='max-w-[760px] mx-auto mt-1.5 px-1 text-xs text-ink-2'>{t('composerHint')}</div>
     </div>
   );
 }

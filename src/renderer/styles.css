@@ -227,6 +227,7 @@ body {
 .confirm-card[data-status='cancelled'] { --card-accent: var(--border-base); opacity: 0.7; }
 .confirm-card[data-status='failed'] { --card-accent: rgb(var(--danger-6)); }
 .confirm-title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.confirm-card[data-status='pending'] .confirm-title .arco-tag { border-color: transparent; background: var(--accent-soft); color: var(--accent); }
 .confirm-row { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; }
 .confirm-value { white-space: pre-wrap; }
 
@@ -235,7 +236,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-width: 860px;
+  box-sizing: border-box; /* outer edge = the 760px message column */
+  max-width: 760px;
   margin: 0 auto;
   padding: 10px 10px 8px;
   border: 1px solid var(--border-base);
@@ -248,7 +250,8 @@ body {
 /* The composer frame is the field; the textarea inside stays borderless. */
 .sendbox-inner .arco-textarea { border: 0; background: transparent; box-shadow: none; resize: none; padding: 2px 4px; }
 .sendbox-actions { display: flex; justify-content: space-between; align-items: center; }
-.slash-menu { position: absolute; bottom: 100%; left: 24px; width: min(480px, calc(100% - 48px)); }
+/* Starts at the composer frame's left edge (760px wide, centered in .sendbox's 24px padding). */
+.slash-menu { position: absolute; bottom: 100%; left: max(24px, calc((100% - 760px) / 2)); width: min(480px, calc(100% - 48px)); }
 
 .row-main { flex: 1; min-width: 0; }
 /* Rows inside a Card (components/ui.tsx). Edit/delete in .row-actions show on hover or keyboard focus (U17). */
