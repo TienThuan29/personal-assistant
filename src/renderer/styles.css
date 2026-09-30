@@ -279,6 +279,8 @@ body {
 body .arco-radio-group-type-button .arco-radio-button { margin: 0; border-radius: 8px; background: transparent; }
 body .arco-radio-group-type-button .arco-radio-button:not(.arco-radio-disabled):hover { background: transparent; color: var(--ink); }
 body .arco-radio-group-type-button .arco-radio-button.arco-radio-checked { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-card); }
+/* Dark surface is barely lighter than sunken, so the checked pill takes the line color there. */
+body[arco-theme='dark'] .arco-radio-group-type-button .arco-radio-button.arco-radio-checked { background: var(--line); }
 .arco-radio-group-type-button .arco-radio-button::before,
 .arco-radio-group-type-button .arco-radio-button::after { display: none; }
 /* Round checkboxes; Arco fills the checked mask with primary-6 (the accent). */
