@@ -173,10 +173,10 @@ export const vi = {
     noTasksHint: 'Thêm một task, hoặc nhờ trợ lý ghi lại giúp.',
     deleteTask: 'Xóa task: {{what}}',
     // Notes
-    notesHint: 'Tìm không cần gõ dấu. Bấm vào ghi chú để sửa.',
-    searchNotes: 'Tìm ghi chú…',
+    searchNotes: 'Tìm ghi chú (không cần gõ dấu)…',
     noNotesFound: 'Không tìm thấy ghi chú nào',
     noNotes: 'Chưa có ghi chú nào',
+    noNotesHint: 'Thêm ghi chú, hoặc nhờ trợ lý ghi lại giúp.',
     journal: 'Nhật ký',
     untitled: 'Không tiêu đề',
     deleteNote: 'Xóa ghi chú: {{what}}',

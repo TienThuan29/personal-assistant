@@ -77,9 +77,15 @@ export function useData<T>(read: () => Promise<T>, initial: T, delay = 0) {
   return { data, loading, busy, write, remove, fail, holders };
 }
 
-/** Placeholder rows (or StatCard-sized blocks) shown while a page's first read is in flight. */
-export const Skeleton = ({ variant }: { variant?: 'cards' }) =>
-  variant === 'cards' ? (
+/** Placeholder rows (or StatCard-sized blocks, or note cards) shown while a page's first read is in flight. */
+export const Skeleton = ({ variant }: { variant?: 'cards' | 'grid' }) =>
+  variant === 'grid' ? (
+    <div aria-busy='true' className='skeleton-grid grid gap-3 grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'>
+      {[0, 1, 2, 3, 4, 5].map((i) => (
+        <div key={i} className='skeleton' />
+      ))}
+    </div>
+  ) : variant === 'cards' ? (
     <div aria-busy='true' className='skeleton-cards grid gap-3 grid-cols-[repeat(auto-fit,minmax(200px,1fr))]'>
       {[0, 1, 2, 3].map((i) => (
         <div key={i} className='skeleton' />
