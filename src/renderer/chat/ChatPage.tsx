@@ -6,7 +6,7 @@ import { MessageList } from './MessageList';
 import { SendBox } from './SendBox';
 import { useChat } from './useChat';
 
-export function ChatPage({ conversationId }: { conversationId: number }) {
+export function ChatPage({ conversationId, autoFocus }: { conversationId: number; autoFocus?: boolean }) {
   const { t } = useTranslation('chat');
   const chat = useChat(conversationId);
   const [message, messageHolder] = Message.useMessage();
@@ -21,7 +21,7 @@ export function ChatPage({ conversationId }: { conversationId: number }) {
     <div className='chat'>
       {messageHolder}
       <MessageList chat={chat} />
-      <SendBox running={chat.running} onSend={send} onStop={chat.stop} />
+      <SendBox running={chat.running} onSend={send} onStop={chat.stop} autoFocus={autoFocus} />
     </div>
   );
 }

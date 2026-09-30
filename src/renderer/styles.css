@@ -138,30 +138,17 @@ body {
   color: var(--text-primary);
   font-size: 14px;
 }
-.app { display: flex; flex-direction: column; height: 100%; }
-.titlebar {
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-left: 12px;
-  border-bottom: 1px solid var(--border-base);
-  -webkit-app-region: drag;
-}
-.titlebar-title { font-weight: 600; }
-.app-body { flex: 1; display: flex; min-height: 0; }
-.sider {
-  width: 240px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 12px 8px;
-  border-right: 1px solid var(--border-base);
-  background: var(--bg-2);
-}
-.sider-label { font-size: 12px; color: var(--text-secondary); padding: 12px 8px 4px; }
-.sider-list { flex: 1; min-height: 0; }
-.content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* Window drag regions (frameless window); controls inside stay clickable. */
+.drag { -webkit-app-region: drag; }
+.drag :is(button, input) { -webkit-app-region: no-drag; }
+.sider { transition: width 0.25s var(--ease-out); }
+/* The app's own buttons (Arco's have their own states). :where() keeps utilities able to override. */
+:where(button:not(.arco-btn)) { font-family: inherit; }
+:where(button:not(.arco-btn)):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* A conversation's "⋯" shows on hover and on keyboard focus (U17). */
+.conv-more { opacity: 0; transition: opacity 0.15s; }
+.conv-row:is(:hover, :focus-within) .conv-more { opacity: 1; }
+.content { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .page { flex: 1; overflow: auto; padding: 16px 24px; }
 .muted { color: var(--text-secondary); font-size: 12px; }
 /* Arco spaces only an <svg> icon from the label; icon-park icons are <span class='i-icon'>. */

@@ -9,9 +9,9 @@ import { ACCEPT, useImagePicker } from '../components/useImagePicker';
 /** Slash commands are just canned prompts; the names stay the same in every language. */
 export const COMMANDS = ['homnay', 'tuannay', 'chitieu'] as const;
 
-type Props = { running: boolean; onSend: (text: string, images: ImageInput[]) => Promise<boolean>; onStop: () => void };
+type Props = { running: boolean; onSend: (text: string, images: ImageInput[]) => Promise<boolean>; onStop: () => void; autoFocus?: boolean };
 
-export function SendBox({ running, onSend, onStop }: Props) {
+export function SendBox({ running, onSend, onStop, autoFocus }: Props) {
   const { t } = useTranslation('chat');
   const commands = COMMANDS.map((key) => ({ key, label: `/${key}`, description: t(`cmd.${key}.description`), prompt: t(`cmd.${key}.prompt`) }));
   const [text, setText] = useState('');
@@ -108,6 +108,7 @@ export function SendBox({ running, onSend, onStop }: Props) {
             setDismissed(null);
           }}
           aria-label={t('inputLabel')}
+          autoFocus={autoFocus}
           onKeyDown={onKeyDown}
           onPaste={(e) => {
             const files = Array.from(e.clipboardData.files);

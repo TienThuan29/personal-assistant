@@ -25,6 +25,8 @@ export const vi = {
     imageRejected: 'Chỉ nhận ảnh PNG/JPEG, tối đa 20MB',
     tooManyImages: 'Tối đa {{max}} ảnh',
     required: 'Bắt buộc',
+    collapseSidebar: 'Thu gọn thanh bên',
+    expandSidebar: 'Mở rộng thanh bên',
     // @aionui/ui UiProvider labels
     ui: {
       cancel: 'Hủy',
@@ -44,6 +46,9 @@ export const vi = {
     newChat: 'Hội thoại mới',
     conversations: 'Hội thoại',
     deleteConversation: 'Xóa hội thoại?',
+    rename: 'Đổi tên',
+    conversationMenu: 'Tùy chọn: {{title}}',
+    group: { today: 'Hôm nay', yesterday: 'Hôm qua', week: '7 ngày qua', older: 'Cũ hơn' },
     emptyHint: 'Hỏi “Hôm nay tôi có việc gì?”, hoặc nhờ ghi task, ghi chú, khoản chi (kèm ảnh cũng được).',
     emptyTitle: 'Hôm nay mình lo việc gì trước?',
     thinking: 'Đang suy nghĩ…',

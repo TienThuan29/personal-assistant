@@ -26,6 +26,8 @@ export const en: Resources = {
     imageRejected: 'Only PNG/JPEG images up to 20MB are accepted',
     tooManyImages: 'At most {{max}} images',
     required: 'Required',
+    collapseSidebar: 'Collapse sidebar',
+    expandSidebar: 'Expand sidebar',
     ui: {
       cancel: 'Cancel',
       confirm: 'Confirm',
@@ -44,6 +46,9 @@ export const en: Resources = {
     newChat: 'New chat',
     conversations: 'Chats',
     deleteConversation: 'Delete this chat?',
+    rename: 'Rename',
+    conversationMenu: 'Options: {{title}}',
+    group: { today: 'Today', yesterday: 'Yesterday', week: 'Previous 7 days', older: 'Older' },
     emptyHint: 'Ask “What do I have today?”, or have me log a task, note or expense (photos work too).',
     emptyTitle: 'What should we sort out today?',
     thinking: 'Thinking…',
