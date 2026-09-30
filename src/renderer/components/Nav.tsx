@@ -4,9 +4,15 @@ import type { ReactNode } from 'react';
 export type NavItem = { key: string; icon: ReactNode; label: string; shortcut?: string };
 
 /** Sidebar nav of real buttons (the library's SiderItem is a div, not keyboard-accessible). */
-export function Nav({ items, selected, collapsed, onSelect }: { items: NavItem[]; selected?: string; collapsed: boolean; onSelect: (key: string) => void }) {
+export function Nav({
+  items,
+  selected,
+  collapsed,
+  onSelect,
+  label,
+}: { items: NavItem[]; selected?: string; collapsed: boolean; onSelect: (key: string) => void; label?: string }) {
   return (
-    <nav className='flex flex-col gap-0.5'>
+    <nav aria-label={label} className='flex flex-col gap-0.5'>
       {items.map((n) => {
         const on = n.key === selected;
         const button = (

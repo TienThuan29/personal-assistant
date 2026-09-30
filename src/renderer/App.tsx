@@ -132,15 +132,18 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!e.ctrlKey || e.altKey || e.shiftKey || modalOpen()) return;
+      if (!e.ctrlKey || e.altKey || e.shiftKey || e.repeat) return; // holding Ctrl+N must not make a chat per repeat
       const key = e.key.toLowerCase();
       const nav = NAV[Number(key) - 1];
-      if (key === 'n') newChat().catch(fail);
-      else if (nav) setRoute({ page: nav.page });
-      else if (key === ',') setRoute({ page: 'settings' });
-      else if (key === 'b') setCollapsed((c) => !c);
-      else return;
+      const action =
+        key === 'n' ? () => newChat().catch(fail)
+        : nav ? () => setRoute({ page: nav.page })
+        : key === ',' ? () => setRoute({ page: 'settings' })
+        : key === 'b' ? () => setCollapsed((c) => !c)
+        : null;
+      if (!action || modalOpen()) return; // modalOpen() reads styles: only for our keys, not every Ctrl+C
       e.preventDefault();
+      action();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -201,7 +204,6 @@ export function App() {
                 <button
                   type='button'
                   aria-label={siderLabel}
-                  aria-expanded={!collapsed}
                   onClick={() => setCollapsed((c) => !c)}
                   className='flex items-center justify-center w-10 h-8 rounded-ctl border-0 bg-transparent text-ink-2 text-base cursor-pointer hover:bg-[var(--hover)] hover:text-ink'
                 >
@@ -218,6 +220,7 @@ export function App() {
                 newChatButton
               )}
               <Nav
+                label={t('mainNav')}
                 items={NAV.map((n, i) => ({ key: n.page, icon: n.icon, label: t(`nav.${n.page}`), shortcut: `Ctrl+${i + 1}` }))}
                 selected={route?.page}
                 collapsed={collapsed}
@@ -236,6 +239,7 @@ export function App() {
                 />
               )}
               <Nav
+                label={t('nav.settings')}
                 items={[{ key: 'settings', icon: <SettingTwo />, label: t('nav.settings'), shortcut: 'Ctrl+,' }]}
                 selected={route?.page}
                 collapsed={collapsed}

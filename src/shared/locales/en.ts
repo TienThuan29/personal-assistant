@@ -27,6 +27,7 @@ export const en: Resources = {
     tooManyImages: 'At most {{max}} images',
     required: 'Required',
     collapseSidebar: 'Collapse sidebar',
+    mainNav: 'Main navigation',
     expandSidebar: 'Expand sidebar',
     ui: {
       cancel: 'Cancel',
@@ -44,7 +45,6 @@ export const en: Resources = {
   },
   chat: {
     newChat: 'New chat',
-    conversations: 'Chats',
     deleteConversation: 'Delete this chat?',
     rename: 'Rename',
     conversationMenu: 'Options: {{title}}',

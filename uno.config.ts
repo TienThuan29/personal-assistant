@@ -8,6 +8,7 @@ export default defineConfig({
   content: { pipeline: { include: [/src[\\/]renderer[\\/].*\.tsx($|\?)/] } },
   // @aionui/ui's arco-theme.css sets html, body { font-size: var(--app-font-size, 14px) }, so rem = 14px and
   // rem utilities would come out 12.5% small (w-60 = 210px). Emit px on a 16px base.
+  // The library ships same-named utilities in its own CSS; ours load later, so these px versions win app-wide.
   postprocess: (util) => {
     for (const e of util.entries) if (typeof e[1] === 'string') e[1] = e[1].replace(/(-?[\d.]+)rem\b/g, (_, n) => `${Number(n) * 16}px`);
   },

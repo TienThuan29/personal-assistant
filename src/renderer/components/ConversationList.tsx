@@ -24,12 +24,15 @@ export function ConversationList({ conversations, selectedId, titleOf, onOpen, o
   const [message, messageHolder] = Message.useMessage();
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
+  const [menuFor, setMenuFor] = useState<number | null>(null); // the row whose "⋯" menu is open
   const active = useRef(false); // false once exited, so a late blur (Escape, unmount) can't save
   const busy = useRef(false); // Enter then blur while saving must not rename twice
   const refocus = useRef<number | null>(null); // after Enter/Escape, keyboard focus goes back to the row
+  const fresh = useRef(false); // select all on the input's first focus only, not when the window regains focus
 
   const start = (c: ConversationRow) => {
     active.current = true;
+    fresh.current = true;
     setDraft(titleOf(c));
     setEditing(c.id);
   };
@@ -38,14 +41,15 @@ export function ConversationList({ conversations, selectedId, titleOf, onOpen, o
     refocus.current = keyboard ? editing : null;
     setEditing(null);
   };
-  const commit = async (c: ConversationRow, keyboard: boolean) => {
+  /** `input` is set for Enter: focus returns to the row only if the input still has it after the save. */
+  const commit = async (c: ConversationRow, input: HTMLInputElement | null) => {
     if (!active.current || busy.current) return;
     const title = draft.trim();
-    if (!title || title === titleOf(c)) return exit(keyboard);
+    if (!title || title === titleOf(c)) return exit(!!input);
     busy.current = true;
     try {
       await onRename(c.id, title);
-      exit(keyboard);
+      exit(!!input && document.activeElement === input);
     } catch (e) {
       message.error?.(errorText(e));
     } finally {
@@ -57,7 +61,7 @@ export function ConversationList({ conversations, selectedId, titleOf, onOpen, o
   const groups = BUCKETS.map((b) => ({ b, items: conversations.filter((c) => dayBucket(c.updated_at, today) === b) })).filter((g) => g.items.length);
 
   return (
-    <AionScrollArea className='flex-1 min-h-0' aria-label={t('conversations')}>
+    <AionScrollArea className='flex-1 min-h-0'>
       {messageHolder}
       {groups.map(({ b, items }) => (
         <section key={b}>
@@ -72,15 +76,26 @@ export function ConversationList({ conversations, selectedId, titleOf, onOpen, o
                 autoFocus
                 value={draft}
                 onChange={setDraft}
-                onFocus={(e) => e.target.select()}
-                onPressEnter={() => void commit(c, true)}
-                onBlur={() => void commit(c, false)}
+                onFocus={(e) => {
+                  if (fresh.current) e.target.select();
+                  fresh.current = false;
+                }}
+                onPressEnter={(e) => void commit(c, e.currentTarget as HTMLInputElement)}
+                onBlur={() => document.hasFocus() && void commit(c, null)} // not when the window loses focus
                 onKeyDown={(e) => e.key === 'Escape' && exit(true)}
                 aria-label={t('rename')}
                 className='my-0.5'
               />
             ) : (
-              <div key={c.id} className={`conv-row flex items-center rounded-ctl ${on ? 'bg-accent-soft text-accent' : 'text-ink hover:bg-[var(--hover)]'}`}>
+              <div
+                key={c.id}
+                // Escape from the portaled menu bubbles here through the React tree; focus goes back to "⋯".
+                onKeyDown={(e) => {
+                  if (e.key !== 'Escape' || menuFor !== c.id) return;
+                  setMenuFor(null);
+                  e.currentTarget.querySelector<HTMLElement>('.conv-more')?.focus();
+                }}
+                className={`conv-row flex items-center rounded-ctl ${on ? 'bg-accent-soft text-accent' : 'text-ink hover:bg-[var(--hover)]'}`}>
                 <button
                   type='button'
                   ref={(el) => {
@@ -100,13 +115,27 @@ export function ConversationList({ conversations, selectedId, titleOf, onOpen, o
                 <Dropdown
                   trigger='click'
                   position='br'
+                  popupVisible={menuFor === c.id}
+                  onVisibleChange={(v) => {
+                    setMenuFor(v ? c.id : null);
+                    // The popup is portaled to body: move focus into it so the items are keyboard-reachable.
+                    if (v) requestAnimationFrame(() => document.querySelector<HTMLElement>(`.conv-menu-${c.id} .arco-dropdown-menu-item`)?.focus());
+                  }}
                   droplist={
-                    <Menu onClickMenuItem={(key) => (key === 'rename' ? start(c) : onDelete(c))}>
+                    <Menu
+                      className={`conv-menu-${c.id}`}
+                      onClickMenuItem={(key, e) => {
+                        if (key === 'rename') return start(c);
+                        // Arco fires Enter on keydown; confirming now would let the keyup click the dialog's focused Cancel.
+                        if (e.type === 'keydown') window.addEventListener('keyup', () => onDelete(c), { once: true });
+                        else onDelete(c);
+                      }}
+                    >
                       <Menu.Item key='rename'>
                         <Edit className='mr-2' />
                         {t('rename')}
                       </Menu.Item>
-                      <Menu.Item key='delete' className='text-danger'>
+                      <Menu.Item key='delete' className='!text-danger'>
                         <Delete className='mr-2' />
                         {t('common:delete')}
                       </Menu.Item>

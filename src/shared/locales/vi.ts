@@ -26,6 +26,7 @@ export const vi = {
     tooManyImages: 'Tối đa {{max}} ảnh',
     required: 'Bắt buộc',
     collapseSidebar: 'Thu gọn thanh bên',
+    mainNav: 'Điều hướng chính',
     expandSidebar: 'Mở rộng thanh bên',
     // @aionui/ui UiProvider labels
     ui: {
@@ -44,7 +45,6 @@ export const vi = {
   },
   chat: {
     newChat: 'Hội thoại mới',
-    conversations: 'Hội thoại',
     deleteConversation: 'Xóa hội thoại?',
     rename: 'Đổi tên',
     conversationMenu: 'Tùy chọn: {{title}}',
