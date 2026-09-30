@@ -188,3 +188,50 @@ Mỗi giai đoạn một commit, kết thúc bằng test xanh và ảnh chụp m
 6. Chi tiêu.
 7. Chat và Cài đặt.
 8. Tài liệu: phần "As built" của thiết kế và smoke test.
+
+## As built
+
+Commit `7fe60e1` → `4ef0bc6` (sau `f9c52db`). Code là bản tham chiếu; mục này ghi những chỗ khác thiết kế.
+
+- **Main:**
+  - IPC tên là `conv:rename` (theo các kênh `conv:*` có sẵn), không phải `conversations:rename`. Chuỗi dài hơn `MAX_TEXT` (20.000) bị từ chối trước khi xử lý. Store chuẩn hóa NFC, gộp khoảng trắng, cắt còn 100 ký tự; không đổi `updated_at` nên đổi tên không làm nhảy thứ tự.
+  - `dayBucket` (`shared/dates.ts`) coi thời điểm ở tương lai là "Hôm nay" (`today` cũ sau nửa đêm, lệch đồng hồ).
+- **Nền tảng:**
+  - Token khai báo trên `body` và `body[arco-theme='dark']` (không phải `:root` / `[data-theme=dark]`), để thắng biến của Arco và của thư viện.
+  - `arco-theme.css` của `@aionui/ui` đặt `html { font-size: var(--app-font-size, 14px) }`, nên rem = 14px. `uno.config.ts` có `postprocess` đổi rem thành px theo gốc 16px. Thư viện có utility cùng tên trong CSS của nó; bản px của app nạp sau nên thắng trong toàn app.
+  - Token thêm: `--pill` (chip, số đếm; tối = `line` vì `sunken` không thấy trên `surface` tối), `--on-accent` (chữ trên nền accent; tối là `#1a1714` vì chữ trắng trên `#e08a63` chỉ ~2.5:1), `--hover`, `--link-1…6` (link của Arco, vd "hôm nay" trong date picker, mặc định xanh), `--aou-2` / `--aou-7` (highlight menu `/`), `--bg-4` (viền ô nhập khi hover trong modal, mặc định `#c9cdd4` xám lạnh), `--bg-6` (chữ phụ), `--cat-*` (màu danh mục chi tiêu).
+  - Sáng: `--ink-2` `#746a62`. Accent `#ab502d` thay `#b5552f` (U6): chữ accent trên nền `accent-soft` trên `surface` chỉ đạt 4.28:1; `#ab502d` đạt 4.69:1, chữ trắng trên accent 5.36:1. `--primary-5/6/7` của Arco đổi theo. `--cat-1` giữ `#b5552f`.
+  - Segmented control: ở theme tối, pill đang chọn dùng `--line` (surface gần như trùng rãnh `sunken`).
+  - Nút primary bị disable: chữ `ink-2` (Arco để chữ trắng trên nền `--aou-2` nhạt).
+  - Ô nhập, textarea, select, picker của Arco có viền `--line` khi nghỉ và khi hover ở mọi nơi (cùng selector thư viện dùng trong modal); focus, lỗi, cảnh báo, disable giữ màu của Arco. Ô soạn tin vẫn không viền.
+  - `.page` có `scrollbar-gutter: stable`: mép phải giống nhau dù trang có cuộn hay không.
+- **Toolbar các trang:** Task bỏ dòng gợi ý. Ghi chú bỏ gợi ý, ô tìm kiếm nằm trong toolbar (placeholder tiếng Việt ghi "không cần gõ dấu"). Cài đặt không có toolbar. Hôm nay dùng lời chào thay cho gợi ý.
+- **Hôm nay:**
+  - Lưới stat card `minmax(200px, 1fr)` (không phải 160px).
+  - Ngày trống hoàn toàn thì ẩn hàng hành động nhanh; `EmptyState` có "+ Thêm task" và "Hỏi trợ lý".
+  - Số tiền đã chi nằm trong dòng tóm tắt.
+  - Nút thêm dùng lại key tiêu đề form (`addTask`, `addExpense`, `addReminder`).
+- **Ghi chú:** nút Sửa/Xóa đặt `absolute` nhưng nằm sau đoạn trích trong DOM (thứ tự Tab). Chỉ nút ảnh nhỏ nằm trên lớp phủ stretched link.
+- **Chi tiêu:**
+  - Bảng màu (skill `dataviz`), theo hạng: sáng `#b5552f #099fb1 #a05377 #c4a032 #728ad1 #33936a`, Khác `#b8afa6`; tối `#cf704c #099fb2 #a05377 #ac8909 #728ad1 #29a674`, Khác `#7a7068`. Validator: sáng ΔE CVD kề nhau 10.3, thường 18.4; tối 10.4 / 19.5, mọi màu ≥ 3:1. Sáng `#c4a032` chỉ 2.5:1 trên nền trắng; chú thích (số tiền, phần trăm) là bản đọc được.
+  - Một danh mục giữ một màu trên mọi thanh loại tiền (bảng slot theo hạng của thanh đầu; danh mục không có ở đó lấy slot trống thấp nhất của thanh mình).
+  - Lưới chú thích `minmax(240px, 1fr)`. Tên tháng từ `common.monthLong`.
+  - Tháng trống chỉ có "+ Thêm" (không có "Hỏi trợ lý").
+- **Chat:**
+  - Ô soạn, dòng gợi ý phím và menu `/` căn theo cột 760px.
+  - Menu `/` bị mất blur: animation có fill-mode biến nó thành backdrop root; đã bỏ fill-mode.
+  - Tag "Chờ xác nhận" dùng accent. Nút Hủy của thẻ xác nhận là kiểu text.
+  - Nhãn `attachImage` đổi thành "Đính kèm ảnh" / "Attach image".
+  - Thẻ xác nhận và ô soạn dùng `--shadow-card` (bóng theo `--gray-10` thành quầng sáng ở theme tối).
+- **Cài đặt:** hàng `PreferenceRow` xuống dòng khi hẹp (ô điều khiển rộng cố định 380px nằm dưới nhãn), không tràn ngang ở 800px.
+- **Bàn phím:**
+  - Mở menu "⋯" của hội thoại thì focus vào mục đầu của menu (popup nằm ở `body`, không thì không Tab tới được).
+  - Chọn Xóa (hoặc Đổi tên) bằng Enter trong menu có `preventDefault`: Arco xử lý ở keydown, nếu không thì Enter kích hoạt tiếp phần tử nhận focus sau đó (vd nút của hộp xác nhận xóa).
+  - Phím tắt bỏ qua phím lặp khi giữ (`e.repeat`).
+- **Giới hạn đã biết:**
+  - Task vừa tick không kịp hiện gạch ngang: `data:changed` tải lại ngay (có từ trước).
+  - Hủy hộp xác nhận xóa thì focus về `body` (hành vi của Arco).
+  - Ngày vẫn dạng dd/mm/yyyy ở tiếng Anh (quyết định chung của app).
+  - Đổi tháng ở Chi tiêu thoáng hiện dữ liệu tháng trước (`useData` chỉ hiện loading ở lần đọc đầu).
+  - Mục đang chọn trong sidebar (chữ accent trên `accent-soft` trên nền `sunken`) đạt 4.11:1, dưới AA cho chữ thường. Đạt 4.5:1 cần accent khoảng `#9f4a2a` hoặc đổi nền mục chọn; chưa làm.
+  - Viền `--line` của ô nhập chỉ đậm hơn nền ô một chút (sáng `#e7e1d9` trên fill `#f1ede8`).

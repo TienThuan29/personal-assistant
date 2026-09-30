@@ -38,6 +38,15 @@ The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-
 - [ ] Reminder page: "+ Thêm" 2 minutes ahead → toast on time; edit the text of a fired reminder (Đã nhắc) → saved without a "past time" error; moving its time to the future → back under Sắp tới and fires again.
 - [ ] Any form: closing with changes asks "Bỏ thay đổi?"; Ctrl+Enter saves; a server error (e.g. a past reminder time typed by hand) shows inside the modal and keeps the input; 11th image is refused.
 
+**UI refresh** (docs/ui-refresh-design.md)
+- [ ] Shortcuts: Ctrl+N opens a new chat (holding it makes only one); Ctrl+1…5 open Hôm nay, Task, Ghi chú, Chi tiêu, Nhắc nhở; Ctrl+, opens Cài đặt; Ctrl+B collapses/expands the sidebar. With a "+ Thêm" form open, none of them fire.
+- [ ] Rename a conversation three ways: "⋯" → Đổi tên; double-click the title; keyboard only (Tab to the row, Tab to "⋯", Enter, Enter on Đổi tên). Enter or clicking away saves, Escape cancels, an empty title is ignored. The renamed chat does not jump in the list, and a later reply does not overwrite the name.
+- [ ] Collapse the sidebar (button or Ctrl+B) → icons only, hovering one shows its label and shortcut. Quit from the tray and restart → still collapsed.
+- [ ] Hôm nay: "+ Thêm task" opens the task form on the page and the list updates after saving; "Hỏi trợ lý" opens the latest chat with the cursor in the composer. A day with nothing on it shows "Hôm nay thảnh thơi".
+- [ ] Chi tiêu: "‹" / "›" step one month, clicking the month label opens the month picker. Clicking a category in the legend filters the list below to it; clicking it again (or the "✕" chip) clears the filter.
+- [ ] Ghi chú: clicking anywhere on a card opens the edit form; hovering (or Tab onto) a card shows Sửa/Xóa, and Xóa asks to confirm without opening the note. Clicking a thumbnail zooms the image instead of opening the note.
+- [ ] Dark mode: switch Windows to dark (Settings → Personalization → Colors) while the app runs → every page (Hôm nay, Task, Ghi chú, Chi tiêu, Nhắc nhở, Cài đặt, a chat with a confirm card, a "+ Thêm" form) turns dark with readable text, no white or blue patches. Switch back → light again.
+
 **Reminders and tray**
 - [ ] Reminder 2 minutes ahead → Windows toast on time, **with the window hidden in the tray**. Click → opens the Hôm nay page.
 - [ ] Reminder while the app is quit → on next start one grouped "Bạn có N nhắc nhở" toast.

@@ -2,6 +2,8 @@
 
 Thiết kế: `docs/ui-refresh-design.md` (U1–U17). Mỗi task: implementer → review spec → review chất lượng → commit.
 
+> **Ghi chú (sau khi làm xong):** code là bản tham chiếu. Đoạn token trong Task 1 khác với bản đã làm (token khai báo trên `body`, thêm token, accent sáng `#ab502d`...); xem mục "As built" trong `docs/ui-refresh-design.md`.
+
 ## Quy ước chung
 
 - Chạy lệnh ở `personal-assistant/`:
