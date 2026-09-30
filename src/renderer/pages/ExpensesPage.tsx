@@ -37,13 +37,21 @@ export function ExpensesPage() {
   };
   const sums = (rows: ExpenseRow[]) => breakdown(rows).map((b) => money(b.total, b.currency));
   const summary = breakdown(data.items);
-  // Slots 1..6 (styles.css --cat-*) by rank in the largest currency; a category keeps its slot in the other bars.
-  const slots = new Map<string, number>();
-  for (const p of summary.flatMap((b) => b.parts)) if (p.category !== null && !slots.has(p.category)) slots.set(p.category, (slots.size % 6) + 1);
-  const color = (category: string | null) => (category === null ? 'var(--cat-other)' : `var(--cat-${slots.get(category)})`);
+  // Slots 1..6 (styles.css --cat-*) by rank in the largest currency, so a category keeps its color in every bar;
+  // one missing from that ranking takes the lowest slot still free in its own bar (top = 6, so one always is).
+  const ranked = new Map(summary[0]?.parts.flatMap((p, i) => (p.category === null ? [] : [[p.category, i + 1] as const])));
+  const slots = summary.map((b) => {
+    const m = new Map<string, number>();
+    const named = b.parts.flatMap((p) => (p.category === null ? [] : [p.category]));
+    for (const c of named) if (ranked.has(c)) m.set(c, ranked.get(c)!);
+    for (const c of named) if (!m.has(c)) m.set(c, [1, 2, 3, 4, 5, 6].find((n) => ![...m.values()].includes(n))!);
+    return m;
+  });
+  const color = (bar: number, category: string | null) => (category === null ? 'var(--cat-other)' : `var(--cat-${slots[bar].get(category)})`);
+  const active = filter !== null && data.items.some((e) => e.category === filter) ? filter : null;
   const days = new Map<string, ExpenseRow[]>();
   for (const e of [...data.items].sort((a, b) => b.spent_at.localeCompare(a.spent_at))) {
-    if (filter === null || e.category === filter) days.set(e.spent_at, [...(days.get(e.spent_at) ?? []), e]);
+    if (active === null || e.category === active) days.set(e.spent_at, [...(days.get(e.spent_at) ?? []), e]);
   }
 
   const [y, m] = month.split('-');
@@ -91,18 +99,18 @@ export function ExpensesPage() {
               </span>
             ))}
           </div>
-          {summary.map((b) => (
+          {summary.map((b, bar) => (
             <div key={b.currency} className='mt-4'>
               <div aria-hidden className='flex h-3 rounded-full overflow-hidden gap-[2px]'>
                 {b.parts.map((p) => (
-                  <div key={p.category ?? ''} style={{ flexGrow: p.share, background: color(p.category) }} />
+                  <div key={p.category ?? ''} style={{ flexGrow: p.share, background: color(bar, p.category) }} />
                 ))}
               </div>
               <div className='grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-x-4 mt-3'>
                 {b.parts.map((p) => {
                   const inner = (
                     <>
-                      <span aria-hidden className='shrink-0 w-2.5 h-2.5 rounded-full' style={{ background: color(p.category) }} />
+                      <span aria-hidden className='shrink-0 w-2.5 h-2.5 rounded-full' style={{ background: color(bar, p.category) }} />
                       <span className='flex-1 min-w-0 truncate'>{p.category ?? t('otherCategory')}</span>
                       <span className='tabular-nums'>{money(p.total, b.currency)}</span>
                       <span className='w-9 text-right text-ink-2 tabular-nums'>{Math.round(p.share * 100)}%</span>
@@ -117,9 +125,9 @@ export function ExpensesPage() {
                     <button
                       key={p.category}
                       type='button'
-                      aria-pressed={filter === p.category}
-                      className={`${row} border-0 text-left cursor-pointer ${filter === p.category ? 'bg-accent-soft' : 'bg-transparent hover:bg-[var(--hover)]'}`}
-                      onClick={() => setFilter(filter === p.category ? null : p.category)}
+                      aria-pressed={active === p.category}
+                      className={`${row} border-0 text-left cursor-pointer ${active === p.category ? 'bg-accent-soft' : 'bg-transparent hover:bg-[var(--hover)]'}`}
+                      onClick={() => setFilter(active === p.category ? null : p.category)}
                     >
                       {inner}
                     </button>
@@ -130,9 +138,9 @@ export function ExpensesPage() {
           ))}
         </Card>
       )}
-      {filter !== null && (
-        <button type='button' aria-label={t('clearFilter', { what: filter })} className='mb-3 p-0 border-0 bg-transparent cursor-pointer' onClick={() => setFilter(null)}>
-          <Chip tone='accent'>✕ {filter}</Chip>
+      {active !== null && (
+        <button type='button' aria-label={t('clearFilter', { what: active })} className='mb-3 p-0 border-0 bg-transparent cursor-pointer' onClick={() => setFilter(null)}>
+          <Chip tone='accent'>✕ {active}</Chip>
         </button>
       )}
       <div className='flex flex-col gap-4'>
