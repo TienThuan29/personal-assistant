@@ -59,11 +59,16 @@ export function NotesPage() {
         {notes.map((n) => {
           const isBusy = busy.includes(n.id);
           const title = n.title || t('untitled');
+          const journal = n.kind === 'journal';
           return (
             <article key={n.id} className='note-card relative flex flex-col gap-2 p-4 bg-surface border border-line rounded-card shadow-card transition hover:-translate-y-0.5'>
-              {/* Keeps the actions' row even without a chip; they come after the title in DOM for reading and Tab order. */}
-              <div className='flex min-h-6'>{n.kind === 'journal' && <Chip tone='accent'>{t('journal')}</Chip>}</div>
-              <button type='button' className='link note-open font-600 text-left line-clamp-2' disabled={isBusy} onClick={() => openNote(n)}>
+              {journal && (
+                <div className='flex'>
+                  <Chip tone='accent'>{t('journal')}</Chip>
+                </div>
+              )}
+              {/* Actions follow the title in DOM (reading and Tab order) but sit top-right: pr-14 keeps a chip-less title clear of them. */}
+              <button type='button' className={`link note-open font-600 text-left line-clamp-2 ${journal ? '' : 'pr-14'}`} disabled={isBusy} onClick={() => openNote(n)}>
                 {title}
               </button>
               <div className='text-ink-2 text-[13px] line-clamp-4'>{highlight(n.snippet ?? '')}</div>
