@@ -20,8 +20,6 @@ const shiftMonth = (month: string, n: number) => {
   const d = new Date(y, m - 1 + n, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
-/** Colors go by rank within the month (styles.css --cat-*), not by category name. */
-const color = (i: number, category: string | null) => (category === null ? 'var(--cat-other)' : `var(--cat-${i + 1})`);
 
 export function ExpensesPage() {
   const { t } = useTranslation(['pages', 'common']);
@@ -39,6 +37,10 @@ export function ExpensesPage() {
   };
   const sums = (rows: ExpenseRow[]) => breakdown(rows).map((b) => money(b.total, b.currency));
   const summary = breakdown(data.items);
+  // Slots 1..6 (styles.css --cat-*) by rank in the largest currency; a category keeps its slot in the other bars.
+  const slots = new Map<string, number>();
+  for (const p of summary.flatMap((b) => b.parts)) if (p.category !== null && !slots.has(p.category)) slots.set(p.category, (slots.size % 6) + 1);
+  const color = (category: string | null) => (category === null ? 'var(--cat-other)' : `var(--cat-${slots.get(category)})`);
   const days = new Map<string, ExpenseRow[]>();
   for (const e of [...data.items].sort((a, b) => b.spent_at.localeCompare(a.spent_at))) {
     if (filter === null || e.category === filter) days.set(e.spent_at, [...(days.get(e.spent_at) ?? []), e]);
@@ -92,15 +94,15 @@ export function ExpensesPage() {
           {summary.map((b) => (
             <div key={b.currency} className='mt-4'>
               <div aria-hidden className='flex h-3 rounded-full overflow-hidden gap-[2px]'>
-                {b.parts.map((p, i) => (
-                  <div key={p.category ?? ''} style={{ flexGrow: p.share, background: color(i, p.category) }} />
+                {b.parts.map((p) => (
+                  <div key={p.category ?? ''} style={{ flexGrow: p.share, background: color(p.category) }} />
                 ))}
               </div>
               <div className='grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-x-4 mt-3'>
-                {b.parts.map((p, i) => {
+                {b.parts.map((p) => {
                   const inner = (
                     <>
-                      <span aria-hidden className='shrink-0 w-2.5 h-2.5 rounded-full' style={{ background: color(i, p.category) }} />
+                      <span aria-hidden className='shrink-0 w-2.5 h-2.5 rounded-full' style={{ background: color(p.category) }} />
                       <span className='flex-1 min-w-0 truncate'>{p.category ?? t('otherCategory')}</span>
                       <span className='tabular-nums'>{money(p.total, b.currency)}</span>
                       <span className='w-9 text-right text-ink-2 tabular-nums'>{Math.round(p.share * 100)}%</span>
