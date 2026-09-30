@@ -6,8 +6,8 @@ body {
   --sunken: #f3efea;
   --line: #e7e1d9;
   --ink: #2b2622;
-  --ink-2: #7a7068;
-  --accent: #b5552f; /* white text ~4.9:1; #c8643b would be ~4.2:1 (design U6) */
+  --ink-2: #746a62;
+  --accent: #b5552f; /* white text ~4.9:1; #c8643b would be ~3.9:1 (design U6) */
   --on-accent: #ffffff;
   --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
   --danger: rgb(var(--danger-6));
@@ -23,7 +23,6 @@ body {
   --bg-hover: var(--hover);
   --bg-active: var(--line);
   --text-primary: var(--ink);
-  --color-text-1: var(--ink);
   --text-secondary: var(--ink-2);
   --primary: var(--accent);
   --border-base: var(--line);
@@ -32,6 +31,9 @@ body {
   --dialog-fill-0: var(--surface);
   --fill-0: var(--surface);
   --thought-gradient: linear-gradient(90deg, #f6ebe4 0%, var(--sunken) 100%);
+  --aou-2: var(--accent-soft); /* slash menu highlight; also the disabled primary button fill, see below */
+  --aou-7: var(--accent);
+  --bg-6: var(--ink-2); /* tertiary text */
 
   /* Arco: terracotta primary and warm gray ramps (r,g,b like Arco's own) */
   --primary-1: 250, 238, 231;
@@ -75,6 +77,7 @@ body[arco-theme='dark'] {
   --hover: #2a2622;
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.55);
   --thought-gradient: linear-gradient(135deg, #3a2a22 0%, var(--surface) 100%);
+  --color-text-1: var(--ink); /* Arco's dark block sets its own */
   --color-bg-1: var(--canvas);
   --color-bg-2: var(--surface);
   --color-bg-3: #2a2622;
@@ -113,10 +116,15 @@ body {
 }
 /* Arco paints these white-on-primary-6; the dark accent is too light for that. */
 .arco-btn-primary:not(.arco-btn-disabled),
-.arco-btn-primary:not(.arco-btn-disabled):hover,
+.arco-btn-primary:not(.arco-btn-disabled):not(.arco-btn-loading):is(:hover, :active),
 .arco-picker-cell-selected .arco-picker-date-value,
-.arco-picker-cell-selected:hover .arco-picker-date-value {
+.arco-picker-cell-selected:hover .arco-picker-date-value,
+.arco-checkbox-checked:not(.arco-checkbox-disabled) .arco-checkbox-mask-icon {
   color: var(--on-accent);
+}
+/* Arco keeps white text on disabled primary buttons, invisible on the pale --aou-2 fill @aionui/ui gives them. */
+.arco-btn-primary.arco-btn-disabled {
+  color: var(--ink-2);
 }
 
 html,

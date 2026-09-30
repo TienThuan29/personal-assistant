@@ -37,7 +37,7 @@ Ngày: 2026-09-30 · Trạng thái: đã duyệt
 | U3 | Chỉ sửa renderer, override thư viện qua CSS variable | Sửa cả `@aionui/ui` rồi đóng gói lại tarball | Người dùng chọn; token của thư viện và Arco đều override được |
 | U4 | Theme vẫn theo hệ điều hành, làm đẹp cả hai | Thêm công tắc Sáng/Tối/Hệ thống | Người dùng chọn |
 | U5 | Font Be Vietnam Pro, file nằm trong app | Font hệ thống (Segoe UI); Inter | Thiết kế cho dấu tiếng Việt; chạy offline; không thêm dependency npm |
-| U6 | Màu nhấn đất nung `#B5552F` (tối: `#E08A63`) | Xanh xô thơm; chàm ấm | Người dùng chọn. Chọn tông đậm hơn `#C8643B` vì chữ trắng trên `#C8643B` chỉ đạt ~4.2:1 (trượt AA), trên `#B5552F` đạt ~4.9:1 |
+| U6 | Màu nhấn đất nung `#B5552F` (tối: `#E08A63`) | Xanh xô thơm; chàm ấm | Người dùng chọn. Chọn tông đậm hơn `#C8643B` vì chữ trắng trên `#C8643B` chỉ đạt ~3.9:1 (trượt AA), trên `#B5552F` đạt ~4.9:1 |
 | U7 | Làm cả 4 cải thiện UX + nav tự làm, empty state có CTA, phím tắt, title bar hợp nhất | Chỉ làm một phần | Người dùng chọn |
 | U8 | Thêm IPC `conversations:rename` (ngoại lệ của U3) | Bỏ tính năng đổi tên | Người dùng chọn; thay đổi nhỏ ở main |
 | U9 | **Hướng B**: UnoCSS cho markup của app + lớp token CSS variable cho Arco/thư viện | A: token + CSS thuần + vài component; C: build lại theme Arco bằng Less | Người dùng chọn B. Utility class không đổi được CSS bên trong Arco/thư viện, nên lớp token vẫn cần |
@@ -62,7 +62,7 @@ Ngày: 2026-09-30 · Trạng thái: đã duyệt
 | `surface` | `#FFFFFF` | `#23201C` | thẻ, ô soạn tin |
 | `sunken` | `#F3EFEA` | `#1F1C19` | sidebar, top bar |
 | `line` | `#E7E1D9` | `#34302B` | viền |
-| `ink` / `ink-2` | `#2B2622` / `#7A7068` | `#EDE7E1` / `#A39A91` | chữ |
+| `ink` / `ink-2` | `#2B2622` / `#746A62` | `#EDE7E1` / `#A39A91` | chữ |
 | `accent` | `#B5552F` | `#E08A63` | hành động chính |
 | `accent-soft` | accent 10% | accent 16% | đang chọn, chip |
 

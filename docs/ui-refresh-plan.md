@@ -83,8 +83,8 @@ Thiết kế: `docs/ui-refresh-design.md` (U1–U17). Mỗi task: implementer �
      --sunken: #f3efea;
      --line: #e7e1d9;
      --ink: #2b2622;
-     --ink-2: #7a7068;
-     --accent: #b5552f; /* white text ~4.9:1; #c8643b would be ~4.2:1 (design U6) */
+     --ink-2: #746a62;
+     --accent: #b5552f; /* white text ~4.9:1; #c8643b would be ~3.9:1 (design U6) */
      --on-accent: #ffffff;
      --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
      --danger: rgb(var(--danger-6));
@@ -177,9 +177,12 @@ Thiết kế: `docs/ui-refresh-design.md` (U1–U17). Mỗi task: implementer �
    body {
      font-family: 'Be Vietnam Pro', system-ui, sans-serif;
    }
-   /* Arco paints primary buttons white-on-primary-6; the dark accent is too light for that. */
+   /* Arco paints these white-on-primary-6; the dark accent is too light for that. */
    .arco-btn-primary:not(.arco-btn-disabled),
-   .arco-btn-primary:not(.arco-btn-disabled):hover {
+   .arco-btn-primary:not(.arco-btn-disabled):not(.arco-btn-loading):is(:hover, :active),
+   .arco-picker-cell-selected .arco-picker-date-value,
+   .arco-picker-cell-selected:hover .arco-picker-date-value,
+   .arco-checkbox-checked:not(.arco-checkbox-disabled) .arco-checkbox-mask-icon {
      color: var(--on-accent);
    }
    ```
