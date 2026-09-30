@@ -44,7 +44,7 @@ export function Card({
             <h2 className='flex items-center gap-2 m-0 text-[13px] font-600'>
               {title}
               {count !== undefined && (
-                <span className='min-w-5 h-5 px-1.5 rounded-full bg-sunken text-ink-2 text-[11px] font-400 leading-5 text-center tabular-nums'>{count}</span>
+                <span className='min-w-5 h-5 px-1.5 rounded-full bg-pill text-ink-2 text-[11px] font-400 leading-5 text-center tabular-nums'>{count}</span>
               )}
             </h2>
           )}
@@ -57,7 +57,7 @@ export function Card({
 }
 
 const CHIP_TONES = {
-  neutral: 'bg-sunken text-ink-2',
+  neutral: 'bg-pill text-ink-2',
   accent: 'bg-accent-soft text-accent',
   danger: 'bg-danger-soft text-danger',
 };

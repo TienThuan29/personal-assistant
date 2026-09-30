@@ -17,6 +17,7 @@ export default defineConfig({
       canvas: v('canvas'),
       surface: v('surface'),
       sunken: v('sunken'),
+      pill: v('pill'),
       line: v('line'),
       ink: { DEFAULT: v('ink'), 2: v('ink-2') },
       accent: { DEFAULT: v('accent'), soft: v('accent-soft'), on: v('on-accent') },

@@ -27,8 +27,8 @@ const UPCOMING_DAYS = 7;
 const dateText = (date: string) => parseLocalDate(date).toLocaleDateString('vi-VN');
 const timeText = (iso: string) => new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 
-const PILL = 'inline-flex items-center gap-1.5 h-9 px-4 rounded-full text-sm font-500 cursor-pointer';
-const PILL_ACCENT = `${PILL} border-0 bg-accent text-accent-on`;
+const PILL = 'inline-flex items-center gap-1.5 h-9 px-4 rounded-full text-sm font-500 cursor-pointer transition active:scale-97';
+const PILL_ACCENT = `${PILL} border-0 bg-accent text-accent-on hover:brightness-110`;
 const PILL_PLAIN = `${PILL} border border-solid border-line bg-surface text-ink hover:bg-[var(--hover)]`;
 
 export function TodayPage({ go }: { go: (page: 'chat') => void }) {
@@ -99,6 +99,7 @@ export function TodayPage({ go }: { go: (page: 'chat') => void }) {
     nTasks && t('sumTasks', { count: nTasks }),
     nOverdue && t('sumOverdue', { count: nOverdue }),
     nReminders && t('sumReminders', { count: nReminders }),
+    data.spent_today.length && t('sumSpent', { amount: spent }),
   ].filter(Boolean);
   const free = !nTasks && !nOverdue && !nReminders && !data.upcoming.length;
   const tasks = [...taskRows(data.overdue, true), ...taskRows(data.tasks_today, false)];
@@ -161,7 +162,7 @@ export function TodayPage({ go }: { go: (page: 'chat') => void }) {
                 {tasks.length ? tasks : empty(t('noTasksToday'))}
               </Card>
               <Card title={t('remindersCard')} count={reminders.length}>
-                {reminders.length ? reminders : empty(t('noRemindersSoon'))}
+                {reminders.length ? reminders : empty(t('noRemindersSoon', { days: UPCOMING_DAYS }))}
               </Card>
             </div>
           </>

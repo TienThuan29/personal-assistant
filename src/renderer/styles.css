@@ -4,6 +4,7 @@ body {
   --canvas: #faf8f5;
   --surface: #ffffff;
   --sunken: #f3efea;
+  --pill: var(--sunken); /* count badges and neutral chips on a surface */
   --line: #e7e1d9;
   --ink: #2b2622;
   --ink-2: #746a62;
@@ -67,6 +68,7 @@ body[arco-theme='dark'] {
   --canvas: #1a1714;
   --surface: #23201c;
   --sunken: #1f1c19;
+  --pill: var(--line); /* sunken is invisible on the dark surface */
   --line: #34302b;
   --ink: #ede7e1;
   --ink-2: #a39a91;
