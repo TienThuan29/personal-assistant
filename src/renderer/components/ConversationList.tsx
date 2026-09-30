@@ -117,7 +117,7 @@ export function ConversationList({ conversations, selectedId, titleOf, onOpen, o
                   position='br'
                   popupVisible={menuFor === c.id}
                   onVisibleChange={(v) => {
-                    setMenuFor(v ? c.id : null);
+                    setMenuFor((m) => (v ? c.id : m === c.id ? null : m));
                     // The popup is portaled to body: move focus into it so the items are keyboard-reachable.
                     if (v) requestAnimationFrame(() => document.querySelector<HTMLElement>(`.conv-menu-${c.id} .arco-dropdown-menu-item`)?.focus());
                   }}
@@ -125,9 +125,9 @@ export function ConversationList({ conversations, selectedId, titleOf, onOpen, o
                     <Menu
                       className={`conv-menu-${c.id}`}
                       onClickMenuItem={(key, e) => {
-                        if (key === 'rename') return start(c);
-                        // Arco fires Enter on keydown; confirming now would let the keyup click the dialog's focused Cancel.
-                        if (e.type === 'keydown') window.addEventListener('keyup', () => onDelete(c), { once: true });
+                        // Arco acts on Enter keydown; without this the key's default activation lands on whatever has focus next.
+                        e.preventDefault();
+                        if (key === 'rename') start(c);
                         else onDelete(c);
                       }}
                     >
