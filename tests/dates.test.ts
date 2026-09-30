@@ -1,4 +1,14 @@
-import { addDays, localDayRange, nextOccurrence, recurrenceText, toLocalDate, toLocalMinute } from '../src/shared/dates';
+import {
+  addDays,
+  dayBucket,
+  localDayRange,
+  nextOccurrence,
+  partOfDay,
+  recurrenceText,
+  relativeDay,
+  toLocalDate,
+  toLocalMinute,
+} from '../src/shared/dates';
 import { createI18n } from '../src/shared/i18n';
 import { formatMoney } from '../src/shared/money';
 
@@ -10,6 +20,23 @@ describe('dates', () => {
     const at = new Date(2026, 0, 5, 7, 3, 59).toISOString();
     expect(toLocalMinute(new Date(at))).toBe('2026-01-05T07:03');
     expect(new Date('2026-01-05T07:03').getTime()).toBe(new Date(2026, 0, 5, 7, 3).getTime());
+  });
+  it('dayBucket groups by local day', () => {
+    const today = '2026-09-30';
+    const at = (d: number, h = 12, m = 0) => new Date(2026, 8, d, h, m).toISOString();
+    expect(dayBucket(at(30, 0, 5), today)).toBe('today');
+    expect(dayBucket(at(29, 23, 30), today)).toBe('yesterday');
+    expect(dayBucket(at(23), today)).toBe('week');
+    expect(dayBucket(at(22), today)).toBe('older');
+    expect(dayBucket('2026-09-30T02:15:00.123Z', toLocalDate(new Date('2026-09-30T02:15:00.123Z')))).toBe('today'); // SQLite strftime format
+  });
+  it('relativeDay', () => {
+    const r = (d: string) => relativeDay(d, '2026-09-30');
+    expect([r('2026-09-30'), r('2026-10-01'), r('2026-09-29'), r('2026-10-02')]).toEqual(['today', 'tomorrow', 'yesterday', null]);
+  });
+  it('partOfDay', () => {
+    const p = (h: number, m = 0) => partOfDay(new Date(2026, 8, 30, h, m));
+    expect([p(5), p(11, 59), p(12), p(17, 59), p(18), p(2)]).toEqual(['morning', 'morning', 'afternoon', 'afternoon', 'evening', 'evening']);
   });
   it('addDays crosses months', () => expect(addDays('2026-01-31', 1)).toBe('2026-02-01'));
   it('daily', () => expect(nextOccurrence('daily', '2026-09-28')).toBe('2026-09-29'));

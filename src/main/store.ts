@@ -1,5 +1,6 @@
 import { type ChatMessage, type ConversationRow, DEFAULT_CONVERSATION_TITLE, type PendingAction, type StoredMessage } from '../shared/types';
 import { type Db, tx } from './db';
+import { UserError } from './errors';
 import { i18n } from './i18n';
 
 const NOW_ISO = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
@@ -31,6 +32,13 @@ export function pruneEmptyConversations(db: Db): void {
 export function setTitleIfNew(db: Db, id: number, text: string): void {
   const title = [...text.normalize('NFC').replace(/\s+/g, ' ').trim()].slice(0, 40).join('') || i18n.t('common:image'); // code points: never splits an emoji
   db.prepare('UPDATE conversations SET title = ? WHERE id = ? AND title = ?').run(title, id, DEFAULT_CONVERSATION_TITLE);
+}
+
+/** A user-chosen title; setTitleIfNew never overwrites it because it is no longer the default. */
+export function renameConversation(db: Db, id: number, title: string): void {
+  const t = [...title.normalize('NFC').replace(/\s+/g, ' ').trim()].slice(0, 100).join('');
+  if (!t) throw new UserError('invalidValue');
+  db.prepare('UPDATE conversations SET title = ? WHERE id = ?').run(t, id); // not updated_at: renaming must not reorder the list
 }
 
 export function addMessage(db: Db, conversationId: number, m: StoredMessage): number {

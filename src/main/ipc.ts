@@ -15,6 +15,7 @@ import {
   getMessages,
   listActions,
   listConversations,
+  renameConversation,
   setTitleIfNew,
 } from './store';
 import { findTool, parseArgs } from './tools';
@@ -97,6 +98,10 @@ export function registerIpc(m: MainCtx): void {
     const cid = id(convId);
     await stopTurn(cid);
     deleteConversation(m.db, cid);
+  });
+  ipcMain.handle('conv:rename', (_e, convId: unknown, title: unknown) => {
+    if (typeof title !== 'string') throw new UserError('invalidValue');
+    renameConversation(m.db, id(convId), title);
   });
 
   ipcMain.handle('chat:messages', (_e, convId: unknown) => getMessages(m.db, id(convId)));

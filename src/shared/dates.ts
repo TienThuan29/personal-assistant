@@ -31,6 +31,26 @@ export const localDayRange = (date: string): { start: string; end: string } => (
   end: parseLocalDate(addDays(date, 1)).toISOString(),
 });
 
+export type DayBucket = 'today' | 'yesterday' | 'week' | 'older';
+
+/** Sidebar group of a conversation's updated_at, in local days (design §2). */
+export function dayBucket(iso: string, today: string): DayBucket {
+  const day = toLocalDate(new Date(iso));
+  if (day === today) return 'today';
+  if (day === addDays(today, -1)) return 'yesterday';
+  return day >= addDays(today, -7) ? 'week' : 'older';
+}
+
+/** 'today' / 'tomorrow' / 'yesterday' for a local date, else null (the caller shows weekday + date). */
+export function relativeDay(date: string, today: string): 'today' | 'tomorrow' | 'yesterday' | null {
+  if (date === today) return 'today';
+  if (date === addDays(today, 1)) return 'tomorrow';
+  return date === addDays(today, -1) ? 'yesterday' : null;
+}
+
+export const partOfDay = (d: Date): 'morning' | 'afternoon' | 'evening' =>
+  d.getHours() >= 5 && d.getHours() < 12 ? 'morning' : d.getHours() >= 12 && d.getHours() < 18 ? 'afternoon' : 'evening';
+
 export const RECURRENCE_RE = /^(daily|weekly:[1-7](,[1-7])*|monthly:([1-9]|[12]\d|3[01]))$/;
 
 /** Next due date after `from`. weekly days: 1 = Monday … 7 = Sunday. */

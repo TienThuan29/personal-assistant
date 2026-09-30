@@ -15,6 +15,7 @@ const api: Api = {
     list: () => invoke('conv:list'),
     create: () => invoke('conv:create'),
     remove: (id) => invoke('conv:remove', id),
+    rename: (id, title) => invoke('conv:rename', id, title),
   },
   chat: {
     messages: (id) => invoke('chat:messages', id),

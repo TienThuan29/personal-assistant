@@ -115,6 +115,7 @@ export type Api = {
     list(): Promise<ConversationRow[]>;
     create(): Promise<number>;
     remove(id: number): Promise<void>;
+    rename(id: number, title: string): Promise<void>;
   };
   chat: {
     messages(id: number): Promise<ChatMessage[]>;

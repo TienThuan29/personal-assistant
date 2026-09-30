@@ -1,4 +1,5 @@
 import { newAttachmentId, saveAttachment } from '../src/main/attachments';
+import { UserError } from '../src/main/errors';
 import {
   addMessage,
   createAction,
@@ -9,6 +10,7 @@ import {
   listActions,
   listConversations,
   pruneEmptyConversations,
+  renameConversation,
   setTitleIfNew,
 } from '../src/main/store';
 import { testDb } from './helpers';
@@ -22,6 +24,18 @@ describe('store', () => {
     setTitleIfNew(db, c, 'khác');
     expect(getMessages(db, c)[0]).toMatchObject({ role: 'user', content: 'Hôm nay có gì?', attachment_ids: ['abc12345'] });
     expect(listConversations(db)[0].title).toBe('Hôm nay có gì?');
+  });
+
+  it('renames a conversation: trims, collapses spaces, caps at 100 code points, rejects empty', () => {
+    const { db } = testDb();
+    const c = createConversation(db);
+    renameConversation(db, c, '  Kế   hoạch  tuần  ');
+    expect(listConversations(db)[0].title).toBe('Kế hoạch tuần');
+    renameConversation(db, c, 'a'.repeat(120));
+    expect(listConversations(db)[0].title).toBe('a'.repeat(100));
+    expect(() => renameConversation(db, c, ' \n ')).toThrow(UserError);
+    setTitleIfNew(db, c, 'auto'); // a renamed conversation is never auto-titled
+    expect(listConversations(db)[0].title).toBe('a'.repeat(100));
   });
 
   it('titles whitespace-only text as an image and cuts at 40 code points', () => {
