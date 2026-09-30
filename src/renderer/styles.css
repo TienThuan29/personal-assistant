@@ -275,16 +275,17 @@ body {
 .list-row:is(:hover, :focus-within) .row-actions { opacity: 1; }
 
 /* Arco's button Radio.Group as a segmented control: sunken track, the choice a raised surface pill. */
-.arco-radio-group-type-button { padding: 3px; border-radius: 10px; background: var(--sunken); }
+/* body-prefixed to outrank Arco's own body[arco-theme='dark'] radio rules. */
+body .arco-radio-group-type-button { padding: 3px; border-radius: 10px; background: var(--sunken); }
 body .arco-radio-group-type-button .arco-radio-button { margin: 0; border-radius: 8px; background: transparent; }
-body .arco-radio-group-type-button .arco-radio-button:not(.arco-radio-disabled):hover { background: transparent; color: var(--ink); }
-body .arco-radio-group-type-button .arco-radio-button.arco-radio-checked { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-card); }
+body .arco-radio-group-type-button .arco-radio-button:not(.arco-radio-disabled):not(.arco-radio-checked):hover { background: transparent; color: var(--ink); }
+body .arco-radio-group-type-button .arco-radio-button.arco-radio-checked:not(.arco-radio-disabled) { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-card); }
 /* Dark surface is barely lighter than sunken, so the checked pill takes the line color there. */
-body[arco-theme='dark'] .arco-radio-group-type-button .arco-radio-button.arco-radio-checked { background: var(--line); }
-.arco-radio-group-type-button .arco-radio-button::before,
-.arco-radio-group-type-button .arco-radio-button::after { display: none; }
-/* Round checkboxes; Arco fills the checked mask with primary-6 (the accent). */
-.arco-checkbox-mask { border-radius: 50%; }
+body[arco-theme='dark'] .arco-radio-group-type-button .arco-radio-button.arco-radio-checked:not(.arco-radio-disabled) { background: var(--line); }
+body .arco-radio-group-type-button .arco-radio-button::before,
+body .arco-radio-group-type-button .arco-radio-button::after { display: none; }
+/* Round checkboxes in list rows (forms keep square ones); Arco fills the checked mask with primary-6 (the accent). */
+.row .arco-checkbox-mask, .list-row .arco-checkbox-mask { border-radius: 50%; }
 .form-row { display: flex; gap: 12px; }
 .form-row > * { flex: 1; min-width: 0; }
 
