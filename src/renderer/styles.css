@@ -8,7 +8,7 @@ body {
   --line: #e7e1d9;
   --ink: #2b2622;
   --ink-2: #746a62;
-  --accent: #b5552f; /* white text ~4.9:1; #c8643b would be ~3.9:1 (design U6) */
+  --accent: #ab502d; /* white text 5.4:1; on its 10% tint 4.7:1 (#b5552f was 4.3:1); design U6 */
   --on-accent: #ffffff;
   --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
   --danger: rgb(var(--danger-6));
@@ -44,15 +44,16 @@ body {
   --aou-2: var(--accent-soft); /* slash menu highlight; also the disabled primary button fill, see below */
   --aou-7: var(--accent);
   --bg-6: var(--ink-2); /* tertiary text */
+  --bg-4: rgb(var(--gray-4)); /* hovered field edge in modals (library default #c9cdd4 is cool gray) */
 
   /* Arco: terracotta primary and warm gray ramps (r,g,b like Arco's own) */
   --primary-1: 250, 238, 231;
   --primary-2: 244, 217, 202;
   --primary-3: 234, 184, 160;
   --primary-4: 221, 148, 116;
-  --primary-5: 203, 114, 79;
-  --primary-6: 181, 85, 47;
-  --primary-7: 153, 68, 36;
+  --primary-5: 197, 108, 74;
+  --primary-6: 171, 80, 45;
+  --primary-7: 145, 64, 34;
   --primary-8: 124, 53, 27;
   --primary-9: 94, 39, 19;
   --primary-10: 64, 26, 12;
@@ -145,6 +146,15 @@ body {
 .arco-btn-primary.arco-btn-disabled {
   color: var(--ink-2);
 }
+/* Arco fields rely on a fill alone (~1.2:1 on white). Give them an edge at rest and on hover; focus, error, warning
+   and disabled keep Arco's colors. Same selectors @aionui/ui uses for fields inside .arco-modal. */
+.arco-input:not(.arco-input-disabled):not(.arco-input-error):not(.arco-input-warning):not(.arco-input-focus):not(:focus),
+.arco-input-inner-wrapper:not(.arco-input-inner-wrapper-disabled):not(.arco-input-inner-wrapper-error):not(.arco-input-inner-wrapper-warning):not(.arco-input-inner-wrapper-focus),
+.arco-textarea:not(.arco-textarea-disabled):not(.arco-textarea-error):not(.arco-textarea-warning):not(.arco-textarea-focus):not(:focus),
+.arco-select:not(.arco-select-disabled):not(.arco-select-error):not(.arco-select-warning):not(.arco-select-focused) .arco-select-view,
+.arco-picker:not(.arco-picker-disabled):not(.arco-picker-error):not(.arco-picker-warning):not(.arco-picker-focused) {
+  border-color: var(--line);
+}
 
 html,
 body,
@@ -169,7 +179,7 @@ body {
 .conv-row:is(:hover, :has(:focus-visible)) .conv-more,
 .conv-more.arco-dropdown-popup-visible { opacity: 1; }
 .content { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.page { flex: 1; overflow: auto; padding: 16px 24px; }
+.page { flex: 1; overflow: auto; scrollbar-gutter: stable; padding: 16px 24px; } /* gutter: same right edge whether a page scrolls or not */
 .muted { color: var(--text-secondary); font-size: 12px; }
 /* Arco spaces only an <svg> icon from the label; icon-park icons are <span class='i-icon'>. */
 .arco-btn > .i-icon + span { margin-left: 8px; }
@@ -220,7 +230,7 @@ body {
   border-left: 3px solid var(--card-accent, var(--primary));
   border-radius: 12px;
   background: var(--surface);
-  box-shadow: 0 8px 24px -16px rgba(var(--gray-10), 0.35);
+  box-shadow: var(--shadow-card); /* rgba(var(--gray-10)) turned into a light glow in dark mode */
   transition: opacity 0.3s, border-color 0.3s;
 }
 .confirm-card[data-status='confirmed'] { --card-accent: rgb(var(--green-6)); }
@@ -243,10 +253,10 @@ body {
   border: 1px solid var(--border-base);
   border-radius: 18px;
   background: var(--surface);
-  box-shadow: 0 10px 30px -18px rgba(var(--gray-10), 0.4);
+  box-shadow: var(--shadow-card);
   transition: border-color 0.2s, box-shadow 0.3s var(--ease-out);
 }
-.sendbox-inner:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(var(--primary-6), 0.12), 0 10px 30px -18px rgba(var(--gray-10), 0.4); }
+.sendbox-inner:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(var(--primary-6), 0.12), var(--shadow-card); }
 /* The composer frame is the field; the textarea inside stays borderless. */
 .sendbox-inner .arco-textarea { border: 0; background: transparent; box-shadow: none; resize: none; padding: 2px 4px; }
 .sendbox-actions { display: flex; justify-content: space-between; align-items: center; }
@@ -297,6 +307,9 @@ body .arco-radio-group-type-button .arco-radio-button::after { display: none; }
 .settings { display: flex; flex-direction: column; gap: 16px; }
 /* SectionCard paints bg-2 (sunken), barely off the canvas; match the app's Card (components/ui.tsx). */
 .settings > section { border-color: var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-card); }
+/* PreferenceRow's control is a fixed 380px and never shrinks; on a narrow window it drops below its label instead of overflowing. */
+.settings .justify-between.gap-24px { flex-wrap: wrap; row-gap: 8px; }
+.settings .justify-between.gap-24px > .flex-1 { min-width: 240px; }
 .link { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; text-align: start; }
 .link:hover { color: rgb(var(--primary-6)); }
 mark { background: rgb(var(--warning-2)); color: inherit; border-radius: 2px; }
