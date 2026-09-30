@@ -64,9 +64,9 @@ export function RemindersPage() {
               const isBusy = busy.includes(r.id);
               return (
                 <div key={r.id} className={r.status === 'pending' ? 'list-row' : 'list-row is-closed'}>
-                  <span className='shrink-0 inline-flex items-center justify-center min-w-14 h-6 px-2 rounded-md bg-pill text-ink-2 text-[13px] tabular-nums'>
-                    {toLocalTime(new Date(r.remind_at))}
-                  </span>
+                  <Chip>
+                    <span className='tabular-nums inline-block min-w-9 text-center'>{toLocalTime(new Date(r.remind_at))}</span>
+                  </Chip>
                   <div className='row-main'>
                     <button type='button' className='link' disabled={isBusy} onClick={() => setEditing(r)}>
                       {r.message}

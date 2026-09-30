@@ -242,11 +242,7 @@ body {
   transition: background-color 0.2s, opacity 0.4s var(--ease-out);
 }
 .row:hover { background: var(--bg-hover); }
-/* A completed task stays a moment (struck through) before the reload removes it. */
-.row.is-done { opacity: 0.45; }
-.row.is-done .row-main { text-decoration: line-through; }
 .row-main { flex: 1; min-width: 0; }
-.row.is-closed { opacity: 0.55; }
 /* Rows inside a Card (components/ui.tsx). Edit/delete in .row-actions show on hover or keyboard focus (U17). */
 .list-row {
   display: flex;
@@ -258,6 +254,7 @@ body {
 }
 .list-row:first-child { border-top: 0; }
 .list-row:hover { background: var(--hover); }
+/* A completed task stays a moment (struck through) before the reload removes it. */
 .list-row.is-done { opacity: 0.45; }
 .list-row.is-done .row-main { text-decoration: line-through; }
 .list-row.is-closed { opacity: 0.55; }
@@ -275,7 +272,7 @@ body[arco-theme='dark'] .arco-radio-group-type-button .arco-radio-button.arco-ra
 body .arco-radio-group-type-button .arco-radio-button::before,
 body .arco-radio-group-type-button .arco-radio-button::after { display: none; }
 /* Round checkboxes in list rows (forms keep square ones); Arco fills the checked mask with primary-6 (the accent). */
-.row .arco-checkbox-mask, .list-row .arco-checkbox-mask { border-radius: 50%; }
+.list-row .arco-checkbox-mask { border-radius: 50%; }
 .form-row { display: flex; gap: 12px; }
 .form-row > * { flex: 1; min-width: 0; }
 

@@ -2,12 +2,13 @@ import type { Namespace, TFunction } from 'i18next';
 import type { ReactNode } from 'react';
 import { parseLocalDate, relativeDay, toLocalDate } from '../../shared/dates';
 
-/** Day group title: today / tomorrow / yesterday, else "weekday, d/m". */
+/** Day group title: today / tomorrow / yesterday, else "weekday, d/m" ("/yyyy" outside the current year). */
 export function dayTitle(date: string, t: TFunction<Namespace>): string {
   const rel = relativeDay(date, toLocalDate());
   if (rel) return t(`common:${rel}`);
   const d = parseLocalDate(date);
-  return `${t(`common:weekdayLong.${String(d.getDay() || 7) as '1'}`)}, ${d.getDate()}/${d.getMonth() + 1}`;
+  const year = d.getFullYear() === new Date().getFullYear() ? '' : `/${d.getFullYear()}`;
+  return `${t(`common:weekdayLong.${String(d.getDay() || 7) as '1'}`)}, ${d.getDate()}/${d.getMonth() + 1}${year}`;
 }
 
 /** Top of a page: hint on the left, actions on the right. The page title lives in the app's top bar. */

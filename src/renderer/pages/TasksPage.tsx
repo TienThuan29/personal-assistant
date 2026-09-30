@@ -77,6 +77,7 @@ export function TasksPage() {
               {list.map((task) => {
                 const closed = task.status !== 'todo';
                 const isBusy = busy.includes(task.id);
+                const overdue = !closed && !!task.due_date && task.due_date < today;
                 const due = dueText(task);
                 return (
                   <div key={task.id} className={isBusy ? 'list-row is-done' : closed ? 'list-row is-closed' : 'list-row'}>
@@ -91,7 +92,7 @@ export function TasksPage() {
                         {task.title}
                       </button>
                       <div className='flex flex-wrap gap-1.5'>
-                        {due && <Chip tone={!closed && task.due_date && task.due_date < today ? 'danger' : 'neutral'}>{due}</Chip>}
+                        {due && <Chip tone={overdue ? 'danger' : 'neutral'}>{overdue && !group ? `${t('overdue')} · ${due}` : due}</Chip>}
                         {priorityChips[task.priority]}
                         <Chip icon={<span className='w-1.5 h-1.5 rounded-full bg-current' />}>{categories[task.category] ?? task.category}</Chip>
                         {task.recurrence && <Chip icon={<Refresh />}>{recurrenceText(task.recurrence, t)}</Chip>}
