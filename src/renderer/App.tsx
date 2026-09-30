@@ -120,15 +120,13 @@ export function App() {
     void api.win.isMaximized().then(setMaximized);
     const offs = [
       api.win.onMaximizedChange(setMaximized),
-      api.onNavigate((page) => {
-        if (page !== 'chat') setRoute({ page });
-      }),
+      api.onNavigate((page) => go(page).catch(fail)),
       api.chat.onEvent((e) => {
         if (e.type === 'done') void refresh(); // picks up the auto-title
       }),
     ];
     return () => offs.forEach((off) => off());
-  }, [openLatest, refresh]);
+  }, [openLatest, go, refresh]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -224,7 +222,7 @@ export function App() {
                 items={NAV.map((n, i) => ({ key: n.page, icon: n.icon, label: t(`nav.${n.page}`), shortcut: `Ctrl+${i + 1}` }))}
                 selected={route?.page}
                 collapsed={collapsed}
-                onSelect={(k) => void go(k as Page)}
+                onSelect={(k) => go(k as Page).catch(fail)}
               />
               {collapsed ? (
                 <div className='flex-1' />
@@ -259,7 +257,7 @@ export function App() {
             </header>
             <main className='content'>
               {route?.page === 'chat' && <ChatPage key={route.id} conversationId={route.id} autoFocus={route.focus} />}
-              {route?.page === 'today' && <TodayPage />}
+              {route?.page === 'today' && <TodayPage go={(p) => go(p).catch(fail)} />}
               {route?.page === 'tasks' && <TasksPage />}
               {route?.page === 'notes' && <NotesPage />}
               {route?.page === 'expenses' && <ExpensesPage />}

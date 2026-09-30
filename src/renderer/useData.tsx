@@ -80,7 +80,7 @@ export function useData<T>(read: () => Promise<T>, initial: T, delay = 0) {
 /** Placeholder rows (or StatCard-sized blocks) shown while a page's first read is in flight. */
 export const Skeleton = ({ variant }: { variant?: 'cards' }) =>
   variant === 'cards' ? (
-    <div aria-busy='true' className='skeleton-cards grid gap-3 grid-cols-[repeat(auto-fit,minmax(160px,1fr))]'>
+    <div aria-busy='true' className='skeleton-cards grid gap-3 grid-cols-[repeat(auto-fit,minmax(200px,1fr))]'>
       {[0, 1, 2, 3].map((i) => (
         <div key={i} className='skeleton' />
       ))}

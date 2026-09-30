@@ -79,7 +79,7 @@ export function StatCard({ icon, value, label, tone }: { icon: ReactNode; value:
         {icon}
       </div>
       <div className='min-w-0'>
-        <div className={`text-2xl font-600 tabular-nums leading-tight ${danger ? 'text-danger' : ''}`}>{value}</div>
+        <div className={`text-2xl font-600 tabular-nums leading-tight truncate ${danger ? 'text-danger' : ''}`}>{value}</div>
         <div className='text-ink-2 truncate'>{label}</div>
       </div>
     </Card>
