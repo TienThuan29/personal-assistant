@@ -15,6 +15,15 @@ body {
   --danger-soft: color-mix(in srgb, rgb(var(--danger-6)) 10%, transparent);
   --hover: #f1ede8;
   --shadow-card: 0 1px 2px rgba(43, 38, 34, 0.04), 0 8px 24px -12px rgba(43, 38, 34, 0.14);
+  /* Expense categories by rank. dataviz validator on #fff: adjacent CVD ΔE 10.3, normal 18.4;
+     cat-4 is 2.5:1, so the legend's amounts are the readable copy. Other is gray on purpose. */
+  --cat-1: #b5552f;
+  --cat-2: #099fb1;
+  --cat-3: #a05377;
+  --cat-4: #c4a032;
+  --cat-5: #728ad1;
+  --cat-6: #33936a;
+  --cat-other: #b8afa6;
 
   /* @aionui/ui */
   --bg-base: var(--surface);
@@ -78,6 +87,14 @@ body[arco-theme='dark'] {
   --danger-soft: color-mix(in srgb, rgb(var(--danger-6)) 16%, transparent);
   --hover: #2a2622;
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.55);
+  /* Validator on #23201c: adjacent CVD ΔE 10.4, normal 19.5, all >= 3:1 */
+  --cat-1: #cf704c;
+  --cat-2: #099fb2;
+  --cat-3: #a05377;
+  --cat-4: #ac8909;
+  --cat-5: #728ad1;
+  --cat-6: #29a674;
+  --cat-other: #7a7068;
   --thought-gradient: linear-gradient(135deg, #3a2a22 0%, var(--surface) 100%);
   --color-text-1: var(--ink); /* Arco's dark block sets its own */
   --color-bg-1: var(--canvas);

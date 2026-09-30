@@ -23,3 +23,29 @@ export function formatMoney(amount: number, currency: string, style: 'vi' | 'int
     return `${amount} ${currency}`;
   }
 }
+
+export type Breakdown = { currency: string; total: number; parts: { category: string | null; total: number; share: number }[] };
+
+/** Per currency, largest first; categories past `top` fold into one part with category null ("Other"). */
+export function breakdown(items: { category: string; currency: string; amount: number }[], top = 6): Breakdown[] {
+  const byCur = new Map<string, Map<string, number>>();
+  for (const e of items) {
+    const m = byCur.get(e.currency) ?? new Map<string, number>();
+    m.set(e.category, (m.get(e.category) ?? 0) + e.amount);
+    byCur.set(e.currency, m);
+  }
+  return (
+    [...byCur]
+      .map(([currency, m]) => {
+        const sorted = [...m].sort((a, b) => b[1] - a[1]);
+        const total = sorted.reduce((s, [, v]) => s + v, 0);
+        const rest = sorted.slice(top).reduce((s, [, v]) => s + v, 0);
+        const parts: Breakdown['parts'] = sorted.slice(0, top).map(([category, v]) => ({ category, total: v, share: v / total }));
+        if (rest) parts.push({ category: null, total: rest, share: rest / total });
+        return { currency, total, parts };
+      })
+      // ponytail: compares minor units across currencies (a presentation order, not a conversion); put the UI settings'
+      // default currency first if it ever matters.
+      .sort((a, b) => b.total - a.total)
+  );
+}
