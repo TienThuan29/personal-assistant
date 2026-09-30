@@ -1,11 +1,11 @@
-import { SettingsPageHeader } from '@aionui/ui';
-import { Button, Empty, Radio, Space, Tag } from '@arco-design/web-react';
-import { Delete, Edit, Plus } from '@icon-park/react';
+import { Button, Radio, Tag } from '@arco-design/web-react';
+import { Delete, Edit, Plus, Remind } from '@icon-park/react';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { addDays, parseLocalDate, toLocalDate, toLocalTime } from '../../shared/dates';
 import type { ReminderRow } from '../../shared/types';
 import { api } from '../api';
+import { EmptyState, PageToolbar } from '../components/ui';
 import { Skeleton, useData } from '../useData';
 import { ReminderForm } from './ReminderForm';
 
@@ -36,25 +36,19 @@ export function RemindersPage() {
   return (
     <div className='page'>
       {holders}
-      <SettingsPageHeader
-        title={t('common:nav.reminders')}
-        sticky={false}
-        actions={
-          <Space wrap>
-            <Radio.Group
-              type='button'
-              value={status}
-              onChange={setStatus}
-              options={[...STATUSES.map((s) => ({ label: t(`reminderStatus.${s}`), value: s })), { label: t('all'), value: 'all' }]}
-            />
-            <Button type='primary' icon={<Plus />} onClick={() => setEditing(null)}>
-              {t('common:add')}
-            </Button>
-          </Space>
-        }
-      />
+      <PageToolbar>
+        <Radio.Group
+          type='button'
+          value={status}
+          onChange={setStatus}
+          options={[...STATUSES.map((s) => ({ label: t(`reminderStatus.${s}`), value: s })), { label: t('all'), value: 'all' }]}
+        />
+        <Button type='primary' icon={<Plus />} onClick={() => setEditing(null)}>
+          {t('common:add')}
+        </Button>
+      </PageToolbar>
       {loading && <Skeleton />}
-      {!loading && !reminders.length && <Empty description={t('noReminders')} />}
+      {!loading && !reminders.length && <EmptyState icon={<Remind />} title={t('noReminders')} />}
       {[...groups].map(([day, list]) => (
         <section key={day}>
           <div className='group-title'>

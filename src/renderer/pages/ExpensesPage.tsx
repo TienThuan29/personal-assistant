@@ -1,4 +1,3 @@
-import { SettingsPageHeader } from '@aionui/ui';
 import { Button, DatePicker, Space, Table, Tag } from '@arco-design/web-react';
 import { Delete, Edit, Plus } from '@icon-park/react';
 import { useCallback, useState } from 'react';
@@ -8,6 +7,7 @@ import { formatMoney } from '../../shared/money';
 import type { ExpenseList, ExpenseRow } from '../../shared/types';
 import { api, useUiSettings } from '../api';
 import { Thumbs } from '../components/Thumbs';
+import { PageToolbar } from '../components/ui';
 import { useData } from '../useData';
 import { ExpenseForm } from './ExpenseForm';
 
@@ -76,25 +76,18 @@ export function ExpensesPage() {
   return (
     <div className='page'>
       {holders}
-      <SettingsPageHeader
-        title={t('common:nav.expenses')}
-        sticky={false}
-        description={data.totals.length ? t('total', { amount: data.totals.map((x) => money(x.total, x.currency)).join(' + ') }) : t('noExpenses')}
-        actions={
-          <Space wrap>
-            <DatePicker.MonthPicker
-              aria-label={t('month')}
-              format='MM/YYYY'
-              value={`${month.slice(5)}/${month.slice(0, 4)}`}
-              allowClear={false}
-              onChange={(v: string) => v && setMonth(`${v.slice(3)}-${v.slice(0, 2)}`)}
-            />
-            <Button type='primary' icon={<Plus />} onClick={() => setEditing(null)}>
-              {t('common:add')}
-            </Button>
-          </Space>
-        }
-      />
+      <PageToolbar hint={data.totals.length ? t('total', { amount: data.totals.map((x) => money(x.total, x.currency)).join(' + ') }) : t('noExpenses')}>
+        <DatePicker.MonthPicker
+          aria-label={t('month')}
+          format='MM/YYYY'
+          value={`${month.slice(5)}/${month.slice(0, 4)}`}
+          allowClear={false}
+          onChange={(v: string) => v && setMonth(`${v.slice(3)}-${v.slice(0, 2)}`)}
+        />
+        <Button type='primary' icon={<Plus />} onClick={() => setEditing(null)}>
+          {t('common:add')}
+        </Button>
+      </PageToolbar>
       <Space wrap style={{ marginBottom: 16 }}>
         {[...byCategory.values()]
           .sort((a, b) => b.total - a.total)

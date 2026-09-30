@@ -1,4 +1,4 @@
-import { AionSelect, PreferenceRow, SectionCard, SettingsPageHeader } from '@aionui/ui';
+import { AionSelect, PreferenceRow, SectionCard } from '@aionui/ui';
 import { Alert, Button, Input, Message, Select, Space, Switch } from '@arco-design/web-react';
 import { Refresh } from '@icon-park/react';
 import { useEffect, useState } from 'react';
@@ -137,7 +137,6 @@ export function SettingsPage() {
   return (
     <div className='page settings'>
       {messageHolder}
-      <SettingsPageHeader title={t('title')} sticky={false} />
       <DisplayCard />
       <SectionCard title={t('model')}>
         <PreferenceRow label={t('provider')} description={t('providerDesc')}>

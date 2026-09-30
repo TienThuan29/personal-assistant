@@ -1,11 +1,12 @@
-import { AionSearchInput, SettingsPageHeader } from '@aionui/ui';
-import { Button, Empty, Tag } from '@arco-design/web-react';
-import { Delete, Edit, Plus } from '@icon-park/react';
+import { AionSearchInput } from '@aionui/ui';
+import { Button, Tag } from '@arco-design/web-react';
+import { Delete, Edit, Notes, Plus, Search } from '@icon-park/react';
 import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { NoteRow } from '../../shared/types';
 import { api } from '../api';
 import { Thumbs } from '../components/Thumbs';
+import { EmptyState, PageToolbar } from '../components/ui';
 import { Skeleton, useData } from '../useData';
 import { NoteForm } from './NoteForm';
 
@@ -35,19 +36,14 @@ export function NotesPage() {
   return (
     <div className='page'>
       {holders}
-      <SettingsPageHeader
-        title={t('notesTitle')}
-        sticky={false}
-        description={t('notesHint')}
-        actions={
-          <Button type='primary' icon={<Plus />} onClick={() => open(null)}>
-            {t('common:add')}
-          </Button>
-        }
-      />
-      <AionSearchInput value={query} onChange={setQuery} placeholder={t('searchNotes')} style={{ marginTop: 12 }} />
+      <PageToolbar hint={t('notesHint')}>
+        <Button type='primary' icon={<Plus />} onClick={() => open(null)}>
+          {t('common:add')}
+        </Button>
+      </PageToolbar>
+      <AionSearchInput value={query} onChange={setQuery} placeholder={t('searchNotes')} />
       {loading && <Skeleton />}
-      {!loading && !notes.length && <Empty description={query.trim() ? t('noNotesFound') : t('noNotes')} />}
+      {!loading && !notes.length && (query.trim() ? <EmptyState icon={<Search />} title={t('noNotesFound')} /> : <EmptyState icon={<Notes />} title={t('noNotes')} />)}
       {notes.map((n) => (
         <div key={n.id} className='row'>
           <div className='row-main'>

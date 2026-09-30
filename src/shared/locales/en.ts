@@ -150,7 +150,6 @@ export const en: Resources = {
     priorityLow: 'Low priority',
     noTasks: 'No tasks',
     deleteTask: 'Delete task: {{what}}',
-    notesTitle: 'Notes & journal',
     notesHint: 'Search works without diacritics. Click a note to edit it.',
     searchNotes: 'Search notes…',
     noNotesFound: 'No notes found',
@@ -185,7 +184,6 @@ export const en: Resources = {
     noReminders: 'No reminders',
   },
   settings: {
-    title: 'Settings',
     display: 'Display',
     language: 'Language',
     langVi: 'Tiếng Việt',

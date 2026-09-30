@@ -155,7 +155,6 @@ export const vi = {
     noTasks: 'Không có task nào',
     deleteTask: 'Xóa task: {{what}}',
     // Notes
-    notesTitle: 'Ghi chú & nhật ký',
     notesHint: 'Tìm không cần gõ dấu. Bấm vào ghi chú để sửa.',
     searchNotes: 'Tìm ghi chú…',
     noNotesFound: 'Không tìm thấy ghi chú nào',
@@ -191,7 +190,6 @@ export const vi = {
     noReminders: 'Không có nhắc nhở nào',
   },
   settings: {
-    title: 'Cài đặt',
     display: 'Hiển thị',
     language: 'Ngôn ngữ',
     langVi: 'Tiếng Việt',

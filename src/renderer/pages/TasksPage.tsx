@@ -1,12 +1,12 @@
-import { SettingsPageHeader } from '@aionui/ui';
-import { Button, Checkbox, Empty, Radio, Space, Tag } from '@arco-design/web-react';
-import { Delete, Edit, Plus } from '@icon-park/react';
+import { Button, Checkbox, Radio, Tag } from '@arco-design/web-react';
+import { CheckOne, Delete, Edit, Plus } from '@icon-park/react';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { parseLocalDate, recurrenceText, toLocalDate } from '../../shared/dates';
 import type { TaskRow } from '../../shared/types';
 import { api } from '../api';
 import { Thumbs } from '../components/Thumbs';
+import { EmptyState, PageToolbar } from '../components/ui';
 import { Skeleton, useData } from '../useData';
 import { TaskForm } from './TaskForm';
 
@@ -38,36 +38,29 @@ export function TasksPage() {
   return (
     <div className='page'>
       {holders}
-      <SettingsPageHeader
-        title={t('common:nav.tasks')}
-        sticky={false}
-        description={t('tasksHint')}
-        actions={
-          <Space wrap>
-            <Radio.Group
-              type='button'
-              value={status}
-              onChange={setStatus}
-              options={[...(['todo', 'done', 'cancelled'] as const).map((s) => ({ label: t(`status.${s}`), value: s })), { label: t('all'), value: 'all' }]}
-            />
-            <Radio.Group
-              type='button'
-              value={category}
-              onChange={setCategory}
-              options={[
-                { label: t('all'), value: 'all' },
-                { label: categories.work, value: 'work' },
-                { label: categories.personal, value: 'personal' },
-              ]}
-            />
-            <Button type='primary' icon={<Plus />} onClick={() => setEditing(null)}>
-              {t('common:add')}
-            </Button>
-          </Space>
-        }
-      />
+      <PageToolbar hint={t('tasksHint')}>
+        <Radio.Group
+          type='button'
+          value={status}
+          onChange={setStatus}
+          options={[...(['todo', 'done', 'cancelled'] as const).map((s) => ({ label: t(`status.${s}`), value: s })), { label: t('all'), value: 'all' }]}
+        />
+        <Radio.Group
+          type='button'
+          value={category}
+          onChange={setCategory}
+          options={[
+            { label: t('all'), value: 'all' },
+            { label: categories.work, value: 'work' },
+            { label: categories.personal, value: 'personal' },
+          ]}
+        />
+        <Button type='primary' icon={<Plus />} onClick={() => setEditing(null)}>
+          {t('common:add')}
+        </Button>
+      </PageToolbar>
       {loading && <Skeleton />}
-      {!loading && !tasks.length && <Empty description={t('noTasks')} />}
+      {!loading && !tasks.length && <EmptyState icon={<CheckOne />} title={t('noTasks')} />}
       {groups
         .filter(([, list]) => list.length)
         .map(([group, list]) => (

@@ -1,12 +1,12 @@
-import { SettingsPageHeader } from '@aionui/ui';
-import { Button, Checkbox, Empty } from '@arco-design/web-react';
-import { Delete } from '@icon-park/react';
+import { Button, Checkbox } from '@arco-design/web-react';
+import { Delete, Sun } from '@icon-park/react';
 import { type ReactNode, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { addDays, parseLocalDate, toLocalDate } from '../../shared/dates';
 import { formatMoney } from '../../shared/money';
 import type { ReminderRow, TaskRow } from '../../shared/types';
 import { api, useUiSettings } from '../api';
+import { EmptyState, PageToolbar } from '../components/ui';
 import { Skeleton, useData } from '../useData';
 
 type Today = {
@@ -88,13 +88,9 @@ export function TodayPage() {
   return (
     <div className='page'>
       {holders}
-      <SettingsPageHeader
-        title={t('common:nav.today')}
-        sticky={false}
-        description={`${data.today ? longDate(data.today) : ''} · ${t('spentToday', { amount: spent })}`}
-      />
+      <PageToolbar hint={`${data.today ? longDate(data.today) : ''} · ${t('spentToday', { amount: spent })}`} />
       {loading && <Skeleton />}
-      {!loading && sections.every(([, rows]) => !rows.length) && <Empty description={t('todayEmpty')} />}
+      {!loading && sections.every(([, rows]) => !rows.length) && <EmptyState icon={<Sun />} title={t('todayEmpty')} />}
       {sections
         .filter(([, rows]) => rows.length)
         .map(([title, rows]) => (

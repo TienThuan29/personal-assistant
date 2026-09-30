@@ -257,6 +257,32 @@ body {
 .row.is-done .row-main { text-decoration: line-through; }
 .row-main { flex: 1; min-width: 0; }
 .row.is-closed { opacity: 0.55; }
+/* Rows inside a Card (components/ui.tsx). Edit/delete in .row-actions show on hover or keyboard focus (U17). */
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  transition: background-color 0.2s, opacity 0.4s var(--ease-out);
+}
+.list-row:first-child { border-top: 0; }
+.list-row:hover { background: var(--hover); }
+.list-row.is-done { opacity: 0.45; }
+.list-row.is-done .row-main { text-decoration: line-through; }
+.list-row.is-closed { opacity: 0.55; }
+.row-actions { opacity: 0; transition: opacity 0.15s; }
+.list-row:is(:hover, :focus-within) .row-actions { opacity: 1; }
+
+/* Arco's button Radio.Group as a segmented control: sunken track, the choice a raised surface pill. */
+.arco-radio-group-type-button { padding: 3px; border-radius: 10px; background: var(--sunken); }
+body .arco-radio-group-type-button .arco-radio-button { margin: 0; border-radius: 8px; background: transparent; }
+body .arco-radio-group-type-button .arco-radio-button:not(.arco-radio-disabled):hover { background: transparent; color: var(--ink); }
+body .arco-radio-group-type-button .arco-radio-button.arco-radio-checked { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-card); }
+.arco-radio-group-type-button .arco-radio-button::before,
+.arco-radio-group-type-button .arco-radio-button::after { display: none; }
+/* Round checkboxes; Arco fills the checked mask with primary-6 (the accent). */
+.arco-checkbox-mask { border-radius: 50%; }
 .form-row { display: flex; gap: 12px; }
 .form-row > * { flex: 1; min-width: 0; }
 
@@ -282,7 +308,7 @@ mark { background: rgb(var(--warning-2)); color: inherit; border-radius: 2px; }
 
 .page, .chat { animation: rise 0.45s var(--ease-out) both; }
 /* sibling-index() staggers a list without per-row indices; unsupported engines just skip the delay. */
-.row, .msg-list > * { animation: rise 0.4s var(--ease-out) both; animation-delay: calc(min(sibling-index(), 12) * 25ms); }
+.row, .list-row, .msg-list > * { animation: rise 0.4s var(--ease-out) both; animation-delay: calc(min(sibling-index(), 12) * 25ms); }
 .msg-list > .msg-user { animation: from-right 0.45s var(--ease-spring) both; }
 .confirm-card { animation: pop 0.45s var(--ease-spring) both; }
 .slash-menu { animation: pop 0.25s var(--ease-out) both; transform-origin: bottom left; }
@@ -294,6 +320,7 @@ mark { background: rgb(var(--warning-2)); color: inherit; border-radius: 2px; }
 .skeleton { height: 38px; margin: 6px 0; border-radius: 8px; background: linear-gradient(90deg, var(--bg-2) 25%, var(--bg-3) 50%, var(--bg-2) 75%) 0 0 / 200% 100%; animation: shimmer 1.4s linear infinite; }
 .skeleton:nth-child(2) { width: 82%; }
 .skeleton:nth-child(3) { width: 64%; }
+.skeleton-cards .skeleton { width: auto; height: 88px; margin: 0; border-radius: 14px; }
 
 .chat-empty { margin: 16vh 0 0; max-width: 520px; animation: rise 0.6s var(--ease-out) both; }
 .chat-empty h2 { margin: 0 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
