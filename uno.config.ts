@@ -5,7 +5,7 @@ const v = (name: string) => `var(--${name})`;
 
 export default defineConfig({
   presets: [presetWind3()],
-  content: { pipeline: { include: [/src[\/]renderer[\/].*\.tsx($|\?)/] } },
+  content: { pipeline: { include: [/src[\\/]renderer[\\/].*\.tsx($|\?)/] } },
   theme: {
     colors: {
       canvas: v('canvas'),

@@ -71,7 +71,7 @@ describe.skipIf(!path)('seed demo data', () => {
     for (const [amount, category, description, back] of expenses) callTool(ctx, 'create_expense', { amount, category, description, spent_at: day(back) });
     callTool(ctx, 'create_expense', { amount: 1299, currency: 'USD', category: 'giải trí', description: 'Spotify + iCloud', spent_at: day(1) });
 
-    // Two later today; after ~23:30 they spill past midnight rather than fail as past.
+    // Two later today: in 1h and 3h, or in 5 and 15 min when that would pass 23:40 (after ~23:45 these spill past midnight rather than fail as past).
     const now = Date.now();
     const lastSlot = parseLocalDate(addDays(today, 1)).getTime() - 20 * 60_000;
     const laterToday = (ms: number) => toLocalMinute(new Date(now + ms < lastSlot ? now + ms : now + ms / 12));
