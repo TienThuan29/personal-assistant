@@ -1,12 +1,12 @@
-import { Button, Checkbox, Radio, Tag } from '@arco-design/web-react';
-import { CheckOne, Delete, Edit, Plus } from '@icon-park/react';
+import { Button, Checkbox, Radio } from '@arco-design/web-react';
+import { CheckOne, Delete, Edit, Plus, Refresh } from '@icon-park/react';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { parseLocalDate, recurrenceText, toLocalDate } from '../../shared/dates';
 import type { TaskRow } from '../../shared/types';
 import { api } from '../api';
 import { Thumbs } from '../components/Thumbs';
-import { EmptyState, PageToolbar } from '../components/ui';
+import { Card, Chip, EmptyState, PageToolbar } from '../components/ui';
 import { Skeleton, useData } from '../useData';
 import { TaskForm } from './TaskForm';
 
@@ -24,7 +24,7 @@ export function TasksPage() {
   const { data: tasks, loading, busy, write, remove, holders } = useData(read, []);
   const { t } = useTranslation(['pages', 'common']);
   const categories = t('common:category', { returnObjects: true }) as Record<string, string>;
-  const priorityTags = { 1: <Tag color='red'>{t('priorityHigh')}</Tag>, 2: null, 3: <Tag>{t('priorityLow')}</Tag> };
+  const priorityChips = { 1: <Chip tone='danger'>{t('priorityHigh')}</Chip>, 2: null, 3: <Chip>{t('priorityLow')}</Chip> };
 
   const today = toLocalDate();
   // Closed and mixed views are one flat list; only open tasks group by due date.
@@ -35,10 +35,16 @@ export function TasksPage() {
     ['noDate', tasks.filter((x) => !x.due_date)],
   ] as const);
 
+  const addButton = (
+    <Button type='primary' icon={<Plus />} onClick={() => setEditing(null)}>
+      {t('common:add')}
+    </Button>
+  );
+
   return (
     <div className='page'>
       {holders}
-      <PageToolbar hint={t('tasksHint')}>
+      <PageToolbar>
         <Radio.Group
           type='button'
           value={status}
@@ -55,64 +61,69 @@ export function TasksPage() {
             { label: categories.personal, value: 'personal' },
           ]}
         />
-        <Button type='primary' icon={<Plus />} onClick={() => setEditing(null)}>
-          {t('common:add')}
-        </Button>
+        {addButton}
       </PageToolbar>
       {loading && <Skeleton />}
-      {!loading && !tasks.length && <EmptyState icon={<CheckOne />} title={t('noTasks')} />}
-      {groups
-        .filter(([, list]) => list.length)
-        .map(([group, list]) => (
-          <section key={group}>
-            {group && (
-              <div className='group-title'>
-                {t(group)} <span className='count'>{list.length}</span>
-              </div>
-            )}
-            {list.map((task) => {
-              const closed = task.status !== 'todo';
-              return (
-                <div key={task.id} className={busy.includes(task.id) ? 'row is-done' : closed ? 'row is-closed' : 'row'}>
-                  <Checkbox
-                    aria-label={t('complete', { title: task.title })}
-                    checked={closed || busy.includes(task.id)}
-                    disabled={closed || busy.includes(task.id)}
-                    onChange={() => void write(task.id, 'update_tasks', { ids: [task.id], patch: { status: 'done' } })}
-                  />
-                  <div className='row-main'>
-                    <button type='button' className='link' disabled={busy.includes(task.id)} onClick={() => setEditing(task)}>
-                      {task.title}
-                    </button>
-                    {task.recurrence && <span className='muted'> · {recurrenceText(task.recurrence, t)}</span>}
-                    {task.notes && <div className='muted'>{task.notes}</div>}
-                    <Thumbs ids={task.attachment_ids} />
+      {!loading && !tasks.length && (
+        <EmptyState icon={<CheckOne />} title={t('noTasks')} hint={t('noTasksHint')}>
+          {addButton}
+        </EmptyState>
+      )}
+      <div className='flex flex-col gap-4'>
+        {groups
+          .filter(([, list]) => list.length)
+          .map(([group, list]) => (
+            <Card key={group} title={group && t(group)} count={list.length}>
+              {list.map((task) => {
+                const closed = task.status !== 'todo';
+                const isBusy = busy.includes(task.id);
+                const due = dueText(task);
+                return (
+                  <div key={task.id} className={isBusy ? 'list-row is-done' : closed ? 'list-row is-closed' : 'list-row'}>
+                    <Checkbox
+                      aria-label={t('complete', { title: task.title })}
+                      checked={closed || isBusy}
+                      disabled={closed || isBusy}
+                      onChange={() => void write(task.id, 'update_tasks', { ids: [task.id], patch: { status: 'done' } })}
+                    />
+                    <div className='row-main flex flex-col items-start gap-1'>
+                      <button type='button' className='link' disabled={isBusy} onClick={() => setEditing(task)}>
+                        {task.title}
+                      </button>
+                      <div className='flex flex-wrap gap-1.5'>
+                        {due && <Chip tone={!closed && task.due_date && task.due_date < today ? 'danger' : 'neutral'}>{due}</Chip>}
+                        {priorityChips[task.priority]}
+                        <Chip icon={<span className='w-1.5 h-1.5 rounded-full bg-current' />}>{categories[task.category] ?? task.category}</Chip>
+                        {task.recurrence && <Chip icon={<Refresh />}>{recurrenceText(task.recurrence, t)}</Chip>}
+                      </div>
+                      {task.notes && <div className='text-ink-2 text-[13px] line-clamp-2'>{task.notes}</div>}
+                      <Thumbs ids={task.attachment_ids} />
+                    </div>
+                    <div className='row-actions flex'>
+                      <Button
+                        size='mini'
+                        type='text'
+                        icon={<Edit />}
+                        aria-label={t('editTaskLabel', { what: task.title })}
+                        disabled={isBusy}
+                        onClick={() => setEditing(task)}
+                      />
+                      <Button
+                        size='mini'
+                        type='text'
+                        status='danger'
+                        icon={<Delete />}
+                        aria-label={t('deleteTask', { what: task.title })}
+                        disabled={isBusy}
+                        onClick={() => remove(task.id, 'delete_tasks', task.title)}
+                      />
+                    </div>
                   </div>
-                  <span className={!closed && task.due_date && task.due_date < today ? 'overdue' : 'muted'}>{dueText(task)}</span>
-                  {priorityTags[task.priority]}
-                  <Tag>{categories[task.category] ?? task.category}</Tag>
-                  <Button
-                    size='mini'
-                    type='text'
-                    icon={<Edit />}
-                    aria-label={t('editTaskLabel', { what: task.title })}
-                    disabled={busy.includes(task.id)}
-                    onClick={() => setEditing(task)}
-                  />
-                  <Button
-                    size='mini'
-                    type='text'
-                    status='danger'
-                    icon={<Delete />}
-                    aria-label={t('deleteTask', { what: task.title })}
-                    disabled={busy.includes(task.id)}
-                    onClick={() => remove(task.id, 'delete_tasks', task.title)}
-                  />
-                </div>
-              );
-            })}
-          </section>
-        ))}
+                );
+              })}
+            </Card>
+          ))}
+      </div>
       {editing !== undefined && (
         <TaskForm task={editing} categories={tasks.map((x) => x.category)} onClose={() => setEditing(undefined)} />
       )}

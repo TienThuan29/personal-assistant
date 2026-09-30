@@ -1,11 +1,21 @@
+import type { Namespace, TFunction } from 'i18next';
 import type { ReactNode } from 'react';
+import { parseLocalDate, relativeDay, toLocalDate } from '../../shared/dates';
+
+/** Day group title: today / tomorrow / yesterday, else "weekday, d/m". */
+export function dayTitle(date: string, t: TFunction<Namespace>): string {
+  const rel = relativeDay(date, toLocalDate());
+  if (rel) return t(`common:${rel}`);
+  const d = parseLocalDate(date);
+  return `${t(`common:weekdayLong.${String(d.getDay() || 7) as '1'}`)}, ${d.getDate()}/${d.getMonth() + 1}`;
+}
 
 /** Top of a page: hint on the left, actions on the right. The page title lives in the app's top bar. */
 export function PageToolbar({ hint, children }: { hint?: ReactNode; children?: ReactNode }) {
   return (
     <div className='flex flex-wrap items-center justify-between gap-3 mb-5'>
-      <div className='flex-1 min-w-0 text-[13px] text-ink-2'>{hint}</div>
-      {children && <div className='flex flex-wrap items-center gap-2'>{children}</div>}
+      {hint && <div className='flex-1 min-w-0 text-[13px] text-ink-2'>{hint}</div>}
+      {children && <div className='ml-auto flex flex-wrap items-center justify-end gap-2'>{children}</div>}
     </div>
   );
 }

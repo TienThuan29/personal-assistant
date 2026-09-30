@@ -17,6 +17,9 @@ export const vi = {
     attachment: 'Ảnh đính kèm',
     viewAttachment: 'Xem ảnh đính kèm',
     add: 'Thêm',
+    today: 'Hôm nay',
+    tomorrow: 'Ngày mai',
+    yesterday: 'Hôm qua',
     discardChanges: 'Bỏ thay đổi?',
     discard: 'Bỏ',
     addImage: 'Thêm ảnh',
@@ -155,7 +158,6 @@ export const vi = {
     dismiss: 'Bỏ qua',
     deleteReminder: 'Xóa nhắc nhở: {{what}}',
     // Tasks
-    tasksHint: 'Tick để hoàn thành, bấm vào tiêu đề để sửa.',
     status: { todo: 'Chưa xong', done: 'Đã xong', cancelled: 'Đã hủy' },
     recurNone: 'Không lặp',
     recurWeekly: 'Hằng tuần',
@@ -168,6 +170,7 @@ export const vi = {
     priorityHigh: 'Ưu tiên cao',
     priorityLow: 'Ưu tiên thấp',
     noTasks: 'Không có task nào',
+    noTasksHint: 'Thêm một task, hoặc nhờ trợ lý ghi lại giúp.',
     deleteTask: 'Xóa task: {{what}}',
     // Notes
     notesHint: 'Tìm không cần gõ dấu. Bấm vào ghi chú để sửa.',
@@ -203,6 +206,7 @@ export const vi = {
     editReminderLabel: 'Sửa nhắc nhở: {{what}}',
     reminderStatus: { pending: 'Sắp tới', fired: 'Đã nhắc', dismissed: 'Đã bỏ qua' },
     noReminders: 'Không có nhắc nhở nào',
+    noRemindersHint: 'Thêm một nhắc nhở, hoặc nói với trợ lý “nhắc tôi…”.',
   },
   settings: {
     display: 'Hiển thị',

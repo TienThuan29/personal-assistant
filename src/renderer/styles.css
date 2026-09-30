@@ -231,18 +231,6 @@ body {
 .sendbox-actions { display: flex; justify-content: space-between; align-items: center; }
 .slash-menu { position: absolute; bottom: 100%; left: 24px; width: min(480px, calc(100% - 48px)); }
 
-.group-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 20px 0 4px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-.count { min-width: 20px; padding: 0 6px; border-radius: 10px; background: var(--bg-3); font-size: 11px; text-align: center; letter-spacing: 0; }
 .row {
   display: flex;
   align-items: center;
@@ -296,7 +284,6 @@ body .arco-radio-group-type-button .arco-radio-button::after { display: none; }
    input rule below Arco's hover/focus and inner-password rules, so those still apply. */
 .settings :where(.arco-input-inner-wrapper, .arco-input),
 .settings .arco-select-view { background-color: var(--bg-1); border: 1px solid var(--border-base); }
-.overdue { color: rgb(var(--danger-6)); font-size: 12px; }
 .link { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; text-align: start; }
 .link:hover { color: rgb(var(--primary-6)); }
 .snippet { cursor: pointer; }
