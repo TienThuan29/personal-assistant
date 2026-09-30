@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, Notification, powerMonitor, protocol, safeStorage, shell, Tray } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, Notification, powerMonitor, protocol, safeStorage, shell, Tray } from 'electron';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -170,8 +170,10 @@ async function start(): Promise<void> {
     },
   });
 
+  // Dev-only: PA_THEME=light|dark overrides the OS theme; the renderer's prefers-color-scheme follows.
+  if (!app.isPackaged && (process.env.PA_THEME === 'light' || process.env.PA_THEME === 'dark')) nativeTheme.themeSource = process.env.PA_THEME;
   win = createWindow();
-  // Dev-only: PA_SCREENSHOT=<file.png> [PA_PAGE=<page>] [PA_SCREENSHOT_DELAY=<ms>] saves a capture of the window, then quits.
+  // Dev-only: PA_SCREENSHOT=<file.png> [PA_PAGE=<page>] [PA_SCREENSHOT_DELAY=<ms>] [PA_THEME=light|dark] saves a capture of the window, then quits.
   const shot = process.env.PA_SCREENSHOT;
   if (!app.isPackaged && shot) {
     const w = win;

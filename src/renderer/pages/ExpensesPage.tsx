@@ -32,7 +32,7 @@ export function ExpensesPage() {
   }
 
   const columns = [
-    { title: t('date'), dataIndex: 'spent_at', width: 110, render: (v: string) => parseLocalDate(v).toLocaleDateString('vi-VN') },
+    { title: t('date'), dataIndex: 'spent_at', width: 124, render: (v: string) => parseLocalDate(v).toLocaleDateString('vi-VN') },
     { title: t('categoryColumn'), dataIndex: 'category', width: 140 },
     {
       title: t('description'),

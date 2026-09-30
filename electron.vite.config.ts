@@ -1,4 +1,6 @@
 import { defineConfig } from 'electron-vite';
+import UnoCSS from 'unocss/vite';
+import uno from './uno.config';
 
 export default defineConfig({
   main: {
@@ -11,6 +13,7 @@ export default defineConfig({
   renderer: {
     // The CSP in index.html allows no WebSocket; only the dev server needs one, for Vite's HMR client.
     plugins: [
+      UnoCSS(uno),
       {
         name: 'csp-dev-hmr',
         apply: 'serve',

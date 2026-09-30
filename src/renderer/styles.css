@@ -1,3 +1,124 @@
+/* ---- Design tokens (docs/ui-refresh-design.md §1) ----
+   On body, like Arco's own variables: loaded last, so these win over Arco and over @aionui/ui's html-level tokens. */
+body {
+  --canvas: #faf8f5;
+  --surface: #ffffff;
+  --sunken: #f3efea;
+  --line: #e7e1d9;
+  --ink: #2b2622;
+  --ink-2: #7a7068;
+  --accent: #b5552f; /* white text ~4.9:1; #c8643b would be ~4.2:1 (design U6) */
+  --on-accent: #ffffff;
+  --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
+  --danger: rgb(var(--danger-6));
+  --danger-soft: color-mix(in srgb, rgb(var(--danger-6)) 10%, transparent);
+  --hover: #f1ede8;
+  --shadow-card: 0 1px 2px rgba(43, 38, 34, 0.04), 0 8px 24px -12px rgba(43, 38, 34, 0.14);
+
+  /* @aionui/ui */
+  --bg-base: var(--surface);
+  --bg-1: var(--canvas);
+  --bg-2: var(--sunken);
+  --bg-3: var(--line);
+  --bg-hover: var(--hover);
+  --bg-active: var(--line);
+  --text-primary: var(--ink);
+  --color-text-1: var(--ink);
+  --text-secondary: var(--ink-2);
+  --primary: var(--accent);
+  --border-base: var(--line);
+  --border-light: var(--hover);
+  --message-user-bg: var(--accent-soft);
+  --dialog-fill-0: var(--surface);
+  --fill-0: var(--surface);
+  --thought-gradient: linear-gradient(90deg, #f6ebe4 0%, var(--sunken) 100%);
+
+  /* Arco: terracotta primary and warm gray ramps (r,g,b like Arco's own) */
+  --primary-1: 250, 238, 231;
+  --primary-2: 244, 217, 202;
+  --primary-3: 234, 184, 160;
+  --primary-4: 221, 148, 116;
+  --primary-5: 203, 114, 79;
+  --primary-6: 181, 85, 47;
+  --primary-7: 153, 68, 36;
+  --primary-8: 124, 53, 27;
+  --primary-9: 94, 39, 19;
+  --primary-10: 64, 26, 12;
+  /* Arco links (e.g. the date picker's "today") default to arcoblue; these are the only steps it uses. */
+  --link-1: var(--primary-1);
+  --link-2: var(--primary-2);
+  --link-3: var(--primary-3);
+  --link-4: var(--primary-4);
+  --link-6: var(--primary-6);
+  --gray-1: 247, 245, 242;
+  --gray-2: 241, 237, 232;
+  --gray-3: 231, 225, 217;
+  --gray-4: 214, 206, 197;
+  --gray-5: 190, 181, 171;
+  --gray-6: 158, 149, 139;
+  --gray-7: 128, 119, 110;
+  --gray-8: 99, 91, 83;
+  --gray-9: 69, 62, 56;
+  --gray-10: 43, 38, 34;
+}
+body[arco-theme='dark'] {
+  --canvas: #1a1714;
+  --surface: #23201c;
+  --sunken: #1f1c19;
+  --line: #34302b;
+  --ink: #ede7e1;
+  --ink-2: #a39a91;
+  --accent: #e08a63;
+  --on-accent: #1a1714; /* white on #e08a63 is ~2.5:1; this is ~6.8:1 */
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  --danger-soft: color-mix(in srgb, rgb(var(--danger-6)) 16%, transparent);
+  --hover: #2a2622;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.55);
+  --thought-gradient: linear-gradient(135deg, #3a2a22 0%, var(--surface) 100%);
+  --color-bg-1: var(--canvas);
+  --color-bg-2: var(--surface);
+  --color-bg-3: #2a2622;
+  --color-bg-4: #302b27;
+  --color-bg-5: #36312c;
+  --color-border: var(--line);
+  --primary-1: 58, 36, 27;
+  --primary-2: 88, 50, 35;
+  --primary-3: 125, 69, 45;
+  --primary-4: 163, 93, 61;
+  --primary-5: 196, 115, 80;
+  --primary-6: 224, 138, 99;
+  --primary-7: 232, 160, 127;
+  --primary-8: 239, 184, 158;
+  --primary-9: 245, 210, 193;
+  --primary-10: 251, 236, 228;
+  --link-1: var(--primary-1); /* Arco redeclares these for dark too */
+  --link-2: var(--primary-2);
+  --link-3: var(--primary-3);
+  --link-4: var(--primary-4);
+  --link-6: var(--primary-6);
+  --gray-1: 26, 23, 20;
+  --gray-2: 35, 32, 28;
+  --gray-3: 52, 48, 43;
+  --gray-4: 68, 63, 57;
+  --gray-5: 90, 84, 77;
+  --gray-6: 118, 110, 102;
+  --gray-7: 150, 141, 132;
+  --gray-8: 180, 171, 162;
+  --gray-9: 210, 203, 196;
+  --gray-10: 237, 231, 225;
+}
+html,
+body {
+  font-family: 'Be Vietnam Pro', system-ui, sans-serif;
+}
+/* Arco paints these white-on-primary-6; the dark accent is too light for that. */
+.arco-btn-primary:not(.arco-btn-disabled),
+.arco-btn-primary:not(.arco-btn-disabled):hover,
+.arco-picker-cell-selected .arco-picker-date-value,
+.arco-picker-cell-selected:hover .arco-picker-date-value {
+  color: var(--on-accent);
+}
+
 html,
 body,
 #root {
