@@ -132,6 +132,20 @@ export const vi = {
     cleared: '(xóa)',
     confirm: 'Xác nhận',
     cancel: 'Hủy',
+    // AskCard
+    ask: {
+      title: 'Câu hỏi từ trợ lý',
+      pending: 'Chờ trả lời',
+      answered: 'Đã trả lời',
+      inChat: 'Đã trả lời trong chat',
+      other: 'Khác',
+      otherPlaceholder: 'Nhập câu trả lời của bạn…',
+      step: 'Câu {{current}}/{{total}}',
+      prev: 'Trước',
+      next: 'Tiếp',
+      submit: 'Gửi',
+      hint: 'Hoặc cứ gõ trả lời ở ô bên dưới.',
+    },
   },
   pages: {
     complete: 'Hoàn thành: {{title}}',
@@ -297,6 +311,7 @@ export const vi = {
     unknownWriteTool: 'Không có tool ghi {{name}}',
     invalidArgs: 'Tham số không hợp lệ: {{error}}',
     actionResolved: 'Thao tác này đã được xử lý',
+    invalidAnswer: 'Câu trả lời không hợp lệ',
     // IPC validation
     invalidId: 'ID không hợp lệ',
     invalidImage: 'Ảnh không hợp lệ hoặc lớn hơn {{mb}}MB',

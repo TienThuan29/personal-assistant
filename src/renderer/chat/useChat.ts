@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AgentEvent, ChatMessage, ImageInput, PendingAction } from '../../shared/types';
+import type { AgentEvent, AskReply, ChatMessage, ImageInput, PendingAction } from '../../shared/types';
 import { api, errorText } from '../api';
 
 /** `turn`: the agent's turn failed (Retry helps). Otherwise an IPC call failed. */
@@ -95,13 +95,13 @@ export function useChat(conversationId: number) {
       if (!ended()) setRunning(true);
     });
 
-  /** False if main refused or the write failed, so "confirm all" can stop at that card. Stable, for the memoized rows. */
-  const resolve = useCallback(
-    async (actionId: number, decision: 'confirm' | 'cancel', args?: unknown): Promise<boolean> => {
+  /** Runs `call` (which settles action `actionId`) and reloads. False if main refused or the write failed, so "confirm all" can stop at that card. */
+  const settle = useCallback(
+    async (actionId: number, call: () => Promise<unknown>): Promise<boolean> => {
       let ok = false;
       await guard(async () => {
         last.current = null;
-        await api.chat.resolve(actionId, decision, args);
+        await call();
         const s = seq.current;
         const left = await reload();
         ok = !(left.find((a) => a.id === actionId)?.result as { error?: string } | null)?.error;
@@ -112,8 +112,14 @@ export function useChat(conversationId: number) {
     },
     [guard, reload]
   );
+  // Stable, for the memoized rows.
+  const resolve = useCallback(
+    (actionId: number, decision: 'confirm' | 'cancel', args?: unknown) => settle(actionId, () => api.chat.resolve(actionId, decision, args)),
+    [settle]
+  );
+  const answer = useCallback((actionId: number, replies: AskReply[]) => settle(actionId, () => api.chat.answer(actionId, replies)), [settle]);
 
-  return { messages, actions, streaming, running, tool, error, send, stop, retry, resolve };
+  return { messages, actions, streaming, running, tool, error, send, stop, retry, resolve, answer };
 }
 
 export type ChatState = ReturnType<typeof useChat>;

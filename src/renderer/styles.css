@@ -240,6 +240,7 @@ body {
 .confirm-card[data-status='pending'] .confirm-title .arco-tag { border-color: transparent; background: var(--accent-soft); color: var(--accent); }
 .confirm-row { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; }
 .confirm-value { white-space: pre-wrap; }
+.ask-question { margin-bottom: 8px; font-weight: 500; }
 
 .sendbox { position: relative; padding: 8px 24px 16px; }
 .sendbox-inner {

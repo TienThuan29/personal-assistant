@@ -73,6 +73,14 @@ export type PendingAction = {
   result: unknown;
 };
 
+/** The tool the model calls to ask the user (docs/ask-user-design.md). The card always adds an Other row, so `options` never holds one. */
+export const ASK_TOOL = 'ask_user';
+export type AskQuestion = { question: string; options: string[]; multiple: boolean };
+/** What the card sends back for one question: ticked options and/or free text. */
+export type AskReply = { picked: string[]; other?: string };
+/** What the model receives, and what an answered card shows. */
+export type AskAnswer = AskReply & { question: string };
+
 export type AgentEvent = { conversationId: number } & (
   | { type: 'text'; delta: string }
   | { type: 'tool'; name: string }
@@ -129,6 +137,8 @@ export type Api = {
     stop(id: number): Promise<void>;
     retry(id: number): Promise<void>;
     resolve(actionId: number, decision: 'confirm' | 'cancel', args?: unknown): Promise<void>;
+    /** Answers an ask_user card, one reply per question; the turn resumes. */
+    answer(actionId: number, replies: AskReply[]): Promise<void>;
     onEvent(cb: (e: AgentEvent) => void): () => void;
   };
   data: {

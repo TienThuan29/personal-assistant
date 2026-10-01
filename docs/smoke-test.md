@@ -67,5 +67,11 @@ The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-
 - [ ] After installing: the installer, the installed Personal Assistant.exe, the Start-menu shortcut, the taskbar button, the window and the tray show the blue chat-bubble icon, not Electron's default. Hover the tray icon: tooltip still shows.
 - [ ] An old icon lingers on a pinned shortcut or in Explorer → unpin/re-pin, or restart Explorer (the Windows icon cache), before suspecting the build.
 
+**Questions from the assistant** (docs/ask-user-design.md; needs a real LLM)
+- [ ] "Vừa chi tiền" (no amount) → a card "Câu hỏi từ trợ lý" with options plus "Khác", not a plain-text question. Pick one (or type under "Khác") → Gửi → the card turns "Đã trả lời" and the bot continues with your answer (usually a confirm card).
+- [ ] "Xóa task họp" with two tasks matching → options are the matching tasks. A multi-question card shows "Câu 1/2", Tiếp is disabled until you answer, Trước keeps your earlier picks, a multiple-choice question has checkboxes and "Khác" combines with ticked boxes.
+- [ ] With a card open, type a normal message instead → the card turns "Đã trả lời trong chat" and the bot reads your message as the answer. Restart the app with a card open → it is still there.
+- [ ] Gateway provider: the model's ```tool_calls block with `ask_user` shows the same card (if it keeps asking in text, tighten the prompt rather than parsing text).
+
 Toasts need the Start-menu shortcut carrying the AppUserModelID `com.personal-assistant.app`, which the installer
 creates. `release/win-unpacked/Personal Assistant.exe` run directly may show no toasts.

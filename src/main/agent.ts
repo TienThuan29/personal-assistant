@@ -1,11 +1,12 @@
 import type { ChatCompletionContentPartImage, ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import type { AgentEvent, AssistantMessage, ChatMessage, ToolCall, UiSettings } from '../shared/types';
+import { ASK_TOOL, type AgentEvent, type AskAnswer, type AskQuestion, type AskReply, type AssistantMessage, type ChatMessage, type ToolCall, type UiSettings } from '../shared/types';
 import { dataUrl } from './attachments';
 import { type Db, tx } from './db';
 import { collect, describeLlmError, type Llm } from './llm';
 import { systemPrompt } from './prompt';
 import { addMessage, createAction, finishAction, getAction, getMessages, listActions } from './store';
 import { findTool, parseArgs, toOpenAITools, type ToolCtx } from './tools';
+import { ASK_LIMITS } from './tools/ask';
 import { errMsg, te, UserError } from './errors';
 import { BAD_BLOCK } from './gateway';
 
@@ -135,6 +136,10 @@ function handleCall(deps: AgentDeps, conversationId: number, messageId: number, 
     }
     return 'ran';
   }
+  if (tool.kind === 'ask') {
+    createAction(deps.db, { conversation_id: conversationId, message_id: messageId, tool_call_id: c.id, tool_name: tool.name, args, preview: null });
+    return 'parked'; // answered from the card (answerAction), or by the user's next message (resolveAction 'cancel')
+  }
   let preview: unknown = null;
   try {
     preview = tool.preview?.(args, ctxOf(deps)) ?? null;
@@ -158,9 +163,14 @@ export function resolveAction(deps: AgentDeps, actionId: number, decision: 'conf
     void addMessage(deps.db, action.conversation_id, { role: 'tool', tool_call_id: action.tool_call_id, content: JSON.stringify(content) });
 
   if (decision === 'cancel') {
+    const ask = action.tool_name === ASK_TOOL; // only ever closed this way by the user typing a message instead of answering
     tx(deps.db, () => {
-      finishAction(deps.db, actionId, 'cancelled', action.args, null);
-      respond({ cancelled: true, message: 'Người dùng đã hủy thao tác này' });
+      finishAction(deps.db, actionId, 'cancelled', action.args, ask ? { inChat: true } : null);
+      respond(
+        ask
+          ? { skipped: true, note: 'Người dùng không chọn trên thẻ mà trả lời ở tin nhắn kế tiếp' }
+          : { cancelled: true, message: 'Người dùng đã hủy thao tác này' }
+      );
     });
   } else {
     const tool = findTool(action.tool_name);
@@ -180,6 +190,37 @@ export function resolveAction(deps: AgentDeps, actionId: number, decision: 'conf
       });
     }
   }
+  return listActions(deps.db, action.conversation_id, 'pending').length === 0;
+}
+
+/** The replies as answers, or a throw: one per question, picks drawn from its options, one pick at most unless `multiple`, never empty. */
+function checkReplies(questions: AskQuestion[], replies: unknown): AskAnswer[] {
+  if (!Array.isArray(replies) || replies.length !== questions.length) throw new UserError('invalidAnswer');
+  return questions.map((q, i) => {
+    const r = replies[i] as Partial<AskReply> | null;
+    const picked = r?.picked;
+    const other = typeof r?.other === 'string' ? r.other.trim() : '';
+    if (!Array.isArray(picked) || other.length > ASK_LIMITS.other) throw new UserError('invalidAnswer');
+    const count = picked.length + (other ? 1 : 0);
+    const valid = picked.every((p) => q.options.includes(p)) && new Set(picked).size === picked.length;
+    if (!valid || count === 0 || (!q.multiple && count > 1)) throw new UserError('invalidAnswer');
+    return { question: q.question, picked, ...(other ? { other } : {}) };
+  });
+}
+
+/**
+ * Answers a parked ask_user card and answers its tool call with the replies. Invalid replies throw and leave it pending.
+ * Returns true when no pending action is left, meaning the caller should resume the turn.
+ */
+export function answerAction(deps: AgentDeps, actionId: number, replies: unknown): boolean {
+  const action = getAction(deps.db, actionId);
+  if (!action || action.status !== 'pending') throw new UserError('actionResolved');
+  if (action.tool_name !== ASK_TOOL) throw new UserError('invalidAnswer');
+  const answers = checkReplies((action.args as { questions: AskQuestion[] }).questions, replies);
+  tx(deps.db, () => {
+    finishAction(deps.db, actionId, 'confirmed', action.args, { answers });
+    addMessage(deps.db, action.conversation_id, { role: 'tool', tool_call_id: action.tool_call_id, content: JSON.stringify({ answers }) });
+  });
   return listActions(deps.db, action.conversation_id, 'pending').length === 0;
 }
 

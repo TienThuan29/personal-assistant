@@ -14,6 +14,12 @@ it('states the current date, weekday and existing categories', () => {
   expect(p).toContain('tiền tệ mặc định VND');
 });
 
+it('tells the model to ask through ask_user, not in text', () => {
+  const p = systemPrompt(testCtx().db, NOW);
+  expect(p).toMatch(/hỏi bằng tool ask_user/);
+  expect(p).toMatch(/skipped: true/);
+});
+
 it("names the user's default currency", () => {
   const p = systemPrompt(testCtx().db, NOW, { ...DEFAULT_UI, defaultCurrency: 'USD' });
   expect(p).toContain('tiền tệ mặc định USD');

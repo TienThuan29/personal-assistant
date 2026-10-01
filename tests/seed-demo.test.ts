@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { openDb } from '../src/main/db';
+import { addMessage, createAction, createConversation, finishAction } from '../src/main/store';
 import type { ToolCtx } from '../src/main/tools';
 import { addDays, parseLocalDate, toLocalDate, toLocalMinute } from '../src/shared/dates';
 import { DEFAULT_UI } from '../src/shared/types';
@@ -83,6 +84,30 @@ describe.skipIf(!path)('seed demo data', () => {
       { message: 'Lấy đồ giặt ủi', remind_at: `${addDays(today, 6)}T17:30` },
     ];
     for (const r of reminders) callTool(ctx, 'create_reminder', r);
+
+    // One chat holding every ask_user state: answered, closed by typing, and open (two questions: single, then multiple).
+    const conv = createConversation(db);
+    const ask = (userText: string, questions: object[], close?: { status: 'confirmed' | 'cancelled'; result: unknown }) => {
+      const id = `ask${conv}${count('pending_actions')}`;
+      addMessage(db, conv, { role: 'user', content: userText });
+      const messageId = addMessage(db, conv, {
+        role: 'assistant',
+        content: 'Mình cần hỏi thêm một chút.',
+        tool_calls: [{ id, type: 'function', function: { name: 'ask_user', arguments: JSON.stringify({ questions }) } }],
+      });
+      const actionId = createAction(db, { conversation_id: conv, message_id: messageId, tool_call_id: id, tool_name: 'ask_user', args: { questions }, preview: null });
+      if (!close) return;
+      finishAction(db, actionId, close.status, { questions }, close.result);
+      addMessage(db, conv, { role: 'tool', tool_call_id: id, content: JSON.stringify(close.result) });
+    };
+    const q = (question: string, options: string[], multiple = false) => ({ question, options, multiple });
+    const answers = [{ question: 'Khoản chi này thuộc danh mục nào?', picked: ['ăn uống'] }];
+    ask('Ghi 45k', [q('Khoản chi này thuộc danh mục nào?', ['ăn uống', 'đi lại', 'mua sắm'])], { status: 'confirmed', result: { answers } });
+    ask('Xóa task họp', [q('Bạn muốn xóa task nào?', ['#3 Họp team dự án Alpha', '#9 Họp phụ huynh'])], { status: 'cancelled', result: { inChat: true } });
+    ask('Nhắc mình đi khám', [
+      q('Nhắc vào ngày nào?', ['Ngày mai', 'Thứ 6 tuần này', 'Thứ 2 tuần sau']),
+      q('Nhắc lúc mấy giờ? (chọn được nhiều)', ['8:00', '12:00', '18:00'], true),
+    ]);
 
     expect([count('tasks'), count('notes'), count('expenses'), count('reminders')]).toEqual([8, 6, 14, 5]);
     ro.close();

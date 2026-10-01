@@ -1,6 +1,6 @@
 import { ipcMain, nativeImage, net } from 'electron';
 import type { ImageInput, SettingsInput, SettingsView } from '../shared/types';
-import { type AgentDeps, cancelOpenActions, resolveAction, runTurn } from './agent';
+import { type AgentDeps, answerAction, cancelOpenActions, resolveAction, runTurn } from './agent';
 import { newAttachmentId, saveAttachment } from './attachments';
 import { type Db, tx } from './db';
 import { i18n, setLanguage } from './i18n';
@@ -138,6 +138,14 @@ export function registerIpc(m: MainCtx): void {
     const action = getAction(m.db, id(actionId));
     const last = resolveAction(deps, id(actionId), decision, args);
     if (decision === 'confirm') m.onDataChanged();
+    if (last && action) {
+      await stopTurn(action.conversation_id);
+      startTurn(action.conversation_id);
+    }
+  });
+  ipcMain.handle('chat:answer', async (_e, actionId: unknown, replies: unknown) => {
+    const action = getAction(m.db, id(actionId));
+    const last = answerAction(deps, id(actionId), replies); // no data changed, so no onDataChanged
     if (last && action) {
       await stopTurn(action.conversation_id);
       startTurn(action.conversation_id);

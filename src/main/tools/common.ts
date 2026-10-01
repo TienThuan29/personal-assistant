@@ -19,11 +19,14 @@ export type WriteTool<S extends z.ZodType = z.ZodType> = Base<S> & {
   preview?: (args: z.output<S>, ctx: ToolCtx) => unknown;
   apply: (args: z.output<S>, ctx: ToolCtx) => unknown;
 };
+/** Asks the user: parked like a write, but answered with their replies instead of applied (see agent.ts answerAction). */
+export type AskTool<S extends z.ZodType = z.ZodType> = Base<S> & { kind: 'ask' };
 // oxlint-disable-next-line no-explicit-any -- heterogeneous registry; each tool is typed at its definition
-export type Tool = ReadTool<any> | WriteTool<any>;
+export type Tool = ReadTool<any> | WriteTool<any> | AskTool<any>;
 
 export const readTool = <S extends z.ZodType>(t: Omit<ReadTool<S>, 'kind'>): Tool => ({ ...t, kind: 'read' });
 export const writeTool = <S extends z.ZodType>(t: Omit<WriteTool<S>, 'kind'>): Tool => ({ ...t, kind: 'write' });
+export const askTool = <S extends z.ZodType>(t: Omit<AskTool<S>, 'kind'>): Tool => ({ ...t, kind: 'ask' });
 
 // ---- shared schemas ----
 export const date = z

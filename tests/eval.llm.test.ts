@@ -7,7 +7,7 @@ import { testDeps } from './helpers';
 
 const { LLM_PROVIDER, LLM_ENDPOINT, LLM_MODEL, LLM_KEY, LLM_API_VERSION } = process.env;
 
-/** [prompt, acceptable first tool]. An empty list means the model should reply or ask back, with no tool. */
+/** [prompt, acceptable first tool]. An empty list means the model should just reply, with no tool. Missing info → ask_user, complete info → no ask. */
 const CASES: [string, string[]][] = [
   ['Hôm nay tôi có việc gì?', ['get_today_overview', 'list_tasks']],
   ['Tuần này có task công việc nào?', ['list_tasks']],
@@ -26,8 +26,8 @@ const CASES: [string, string[]][] = [
   ['Tháng 9 tôi hoàn thành bao nhiêu task?', ['query_readonly_sql', 'list_tasks']],
   ['Đánh dấu xong task họp team', ['list_tasks']],
   ['Dời hết task hôm nay sang mai', ['list_tasks', 'get_today_overview']],
-  ['Tôi vừa chi tiền', []],
-  ['Thêm task', []],
+  ['Tôi vừa chi tiền', ['ask_user']],
+  ['Thêm task', ['ask_user']],
   ['Chào bạn', []],
 ];
 

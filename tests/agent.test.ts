@@ -1,5 +1,6 @@
 import { APIConnectionError } from 'openai';
-import { buildLlmMessages, cancelOpenActions, MAX_ROUNDS, resolveAction, runTurn } from '../src/main/agent';
+import { answerAction, buildLlmMessages, cancelOpenActions, MAX_ROUNDS, resolveAction, runTurn } from '../src/main/agent';
+import type { AssistantMessage } from '../src/shared/types';
 import { newAttachmentId, saveAttachment } from '../src/main/attachments';
 import type { Llm } from '../src/main/llm';
 import { tx } from '../src/main/db';
@@ -224,6 +225,112 @@ describe('runTurn', () => {
     expect(getMessages(deps.db, conv).at(-1)).not.toHaveProperty('tool_calls');
     expect(listActions(deps.db, conv)).toEqual([]);
     expect(deps.events.at(-1)).toMatchObject({ type: 'done' });
+  });
+});
+
+describe('ask_user', () => {
+  const ask = (questions: object[]) => call('a1', 'ask_user', { questions });
+  const price = { question: 'Bao nhiêu tiền?', options: ['30k', '50k'] };
+  const when = { question: 'Nhắc lúc nào?', options: ['8h', '12h', '18h'], multiple: true };
+
+  /** Parks an ask, as the model would. */
+  async function parked(questions: object[]) {
+    const deps = testDeps([ask(questions), say('Ok.')]);
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    return { deps, conv, action: listActions(deps.db, conv, 'pending')[0] };
+  }
+
+  it('parks the call, pauses the turn and stores the questions with their defaults', async () => {
+    const { deps, conv, action } = await parked([{ question: 'Ghi gì?' }]);
+    expect(action).toMatchObject({ tool_name: 'ask_user', args: { questions: [{ question: 'Ghi gì?', options: [], multiple: false }] } });
+    expect(deps.events.at(-1)).toMatchObject({ type: 'pending' });
+    expect(toolResults(deps, conv)).toEqual([]);
+  });
+
+  it('rejects too many questions or options as a tool error', async () => {
+    const q = (n: number) => Array.from({ length: n }, (_, i) => ({ question: `q${i}` }));
+    const deps = testDeps([ask(q(5)), ask([{ question: 'q', options: ['1', '2', '3', '4', '5'] }]), say('Hỏi lại.')]);
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    expect(listActions(deps.db, conv)).toEqual([]);
+    expect(toolResults(deps, conv)).toHaveLength(2);
+  });
+
+  it('answers the tool call with the replies, in order, and resumes the turn', async () => {
+    const { deps, conv, action } = await parked([price, when]);
+    const replies = [{ picked: ['50k'] }, { picked: ['8h', '18h'], other: ' 21h ' }];
+    expect(answerAction(deps, action.id, replies)).toBe(true);
+    expect(getAction(deps.db, action.id)).toMatchObject({ status: 'confirmed' });
+    const answers = [
+      { question: 'Bao nhiêu tiền?', picked: ['50k'] },
+      { question: 'Nhắc lúc nào?', picked: ['8h', '18h'], other: '21h' },
+    ];
+    expect(toolResults(deps, conv)).toEqual([{ answers }]);
+    await runTurn(deps, conv);
+    expect(getMessages(deps.db, conv).at(-1)).toMatchObject({ role: 'assistant', content: 'Ok.' });
+  });
+
+  it('accepts free text alone, also for a question without options', async () => {
+    const { deps, action } = await parked([price, { question: 'Ghi gì?' }]);
+    expect(answerAction(deps, action.id, [{ picked: [], other: '45k' }, { picked: [], other: 'sữa' }])).toBe(true);
+  });
+
+  it.each([
+    ['an unknown option', [{ picked: ['99k'] }, { picked: ['8h'] }]],
+    ['two picks on a single-choice question', [{ picked: ['30k', '50k'] }, { picked: ['8h'] }]],
+    ['a pick and Other on a single-choice question', [{ picked: ['30k'], other: 'x' }, { picked: ['8h'] }]],
+    ['an empty answer', [{ picked: [] }, { picked: ['8h'] }]],
+    ['a blank Other', [{ picked: [], other: '   ' }, { picked: ['8h'] }]],
+    ['a repeated pick', [{ picked: ['30k'] }, { picked: ['8h', '8h'] }]],
+    ['too long an Other', [{ picked: [], other: 'x'.repeat(501) }, { picked: ['8h'] }]],
+    ['too few replies', [{ picked: ['30k'] }]],
+    ['no replies', 'oops'],
+  ])('rejects %s and leaves the card pending', async (_name, replies) => {
+    const { deps, conv, action } = await parked([price, when]);
+    expect(() => answerAction(deps, action.id, replies)).toThrow(/không hợp lệ/);
+    expect(getAction(deps.db, action.id)?.status).toBe('pending');
+    expect(toolResults(deps, conv)).toEqual([]);
+  });
+
+  it('cannot be answered twice, nor confirmed as a write', async () => {
+    const { deps, action } = await parked([price]);
+    expect(() => resolveAction(deps, action.id, 'confirm')).toThrow();
+    answerAction(deps, action.id, [{ picked: ['30k'] }]);
+    expect(() => answerAction(deps, action.id, [{ picked: ['30k'] }])).toThrow(/đã được xử lý/);
+  });
+
+  it('answerAction refuses a write card', async () => {
+    const deps = testDeps([call('c1', 'create_task', { title: 'x' })]);
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    const [action] = listActions(deps.db, conv, 'pending');
+    expect(() => answerAction(deps, action.id, [])).toThrow(/không hợp lệ/);
+    expect(getAction(deps.db, action.id)?.status).toBe('pending');
+  });
+
+  it('is not resumed while a write card beside it is still pending', async () => {
+    const both: AssistantMessage = {
+      role: 'assistant',
+      content: null,
+      tool_calls: [
+        { id: 'a1', type: 'function', function: { name: 'ask_user', arguments: JSON.stringify({ questions: [price] }) } },
+        { id: 'w1', type: 'function', function: { name: 'create_task', arguments: '{"title":"x"}' } },
+      ],
+    };
+    const deps = testDeps([both]);
+    const conv = start(deps);
+    await runTurn(deps, conv);
+    const [askAction, write] = listActions(deps.db, conv, 'pending');
+    expect(answerAction(deps, askAction.id, [{ picked: ['30k'] }])).toBe(false);
+    expect(resolveAction(deps, write.id, 'cancel')).toBe(true);
+  });
+
+  it('a new user message closes it as answered in chat and tells the model', async () => {
+    const { deps, conv, action } = await parked([price]);
+    tx(deps.db, () => cancelOpenActions(deps, conv));
+    expect(getAction(deps.db, action.id)).toMatchObject({ status: 'cancelled', result: { inChat: true } });
+    expect(toolResults(deps, conv)).toEqual([expect.objectContaining({ skipped: true })]);
   });
 });
 

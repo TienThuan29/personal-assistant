@@ -25,6 +25,7 @@ const api: Api = {
     stop: (id) => invoke('chat:stop', id),
     retry: (id) => invoke('chat:retry', id),
     resolve: (actionId, decision, args) => invoke('chat:resolve', actionId, decision, args),
+    answer: (actionId, replies) => invoke('chat:answer', actionId, replies),
     onEvent: listen('chat:event'),
   },
   data: {

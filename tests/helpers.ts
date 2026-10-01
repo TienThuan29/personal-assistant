@@ -33,6 +33,7 @@ export function callTool<T = unknown>(ctx: ToolCtx, name: string, args: object):
   const tool = findTool(name);
   if (!tool) throw new Error(`no tool ${name}`);
   const parsed = parseArgs(tool, args);
+  if (tool.kind === 'ask') throw new Error(`${name} asks the user; it has nothing to run`);
   return (tool.kind === 'read' ? tool.run(parsed, ctx) : tool.apply(parsed, ctx)) as T;
 }
 

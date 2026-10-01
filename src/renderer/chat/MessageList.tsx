@@ -4,8 +4,9 @@ import { Alert, Button } from '@arco-design/web-react';
 import { CalendarThirtyTwo, Sun, Wallet } from '@icon-park/react';
 import { memo, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ChatMessage, PendingAction } from '../../shared/types';
+import { ASK_TOOL, type ChatMessage, type PendingAction } from '../../shared/types';
 import { Thumbs } from '../components/Thumbs';
+import { AskCard } from './AskCard';
 import { ConfirmCard } from './ConfirmCard';
 import { COMMANDS } from './SendBox';
 import type { ChatState } from './useChat';
@@ -13,7 +14,17 @@ import type { ChatState } from './useChat';
 const SUGGESTION_ICONS = { homnay: <Sun />, tuannay: <CalendarThirtyTwo />, chitieu: <Wallet /> };
 
 /** One message; memoized (with its card edits kept here) so streaming and typing don't re-render every Markdown block. */
-const MessageRow = memo(function MessageRow({ m, actions, resolve }: { m: ChatMessage; actions: PendingAction[]; resolve: ChatState['resolve'] }) {
+const MessageRow = memo(function MessageRow({
+  m,
+  actions,
+  resolve,
+  answer,
+}: {
+  m: ChatMessage;
+  actions: PendingAction[];
+  resolve: ChatState['resolve'];
+  answer: ChatState['answer'];
+}) {
   const { t } = useTranslation('chat');
   const [edits, setEdits] = useState<Record<number, Record<string, unknown>>>({});
   const [confirmingAll, setConfirmingAll] = useState(false);
@@ -30,7 +41,7 @@ const MessageRow = memo(function MessageRow({ m, actions, resolve }: { m: ChatMe
   // By message: tool_call_ids repeat across turns with some gateways. Rows from before migration 2 have no message_id.
   const callIds = new Set((m.tool_calls ?? []).map((c) => c.id));
   const cards = actions.filter((a) => (a.message_id === null ? callIds.has(a.tool_call_id) : a.message_id === m.id));
-  const open = cards.filter((a) => a.status === 'pending');
+  const open = cards.filter((a) => a.status === 'pending' && a.tool_name !== ASK_TOOL); // asks are answered one by one, never confirmed in bulk
   const decide = (a: PendingAction, d: 'confirm' | 'cancel') => resolve(a.id, d, d === 'confirm' ? edits[a.id] : undefined);
   const confirmAll = async () => {
     setConfirmingAll(true);
@@ -45,17 +56,21 @@ const MessageRow = memo(function MessageRow({ m, actions, resolve }: { m: ChatMe
   return (
     <div className='msg-assistant'>
       {m.content && <Markdown>{m.content}</Markdown>}
-      {cards.map((a) => (
-        <ConfirmCard
-          key={a.id}
-          action={a}
-          args={edits[a.id] ?? a.args}
-          onArgsChange={(args) => setEdits((e) => ({ ...e, [a.id]: args }))}
-          onResolve={async (d) => {
-            await decide(a, d);
-          }}
-        />
-      ))}
+      {cards.map((a) =>
+        a.tool_name === ASK_TOOL ? (
+          <AskCard key={a.id} action={a} onAnswer={(replies) => answer(a.id, replies)} />
+        ) : (
+          <ConfirmCard
+            key={a.id}
+            action={a}
+            args={edits[a.id] ?? a.args}
+            onArgsChange={(args) => setEdits((e) => ({ ...e, [a.id]: args }))}
+            onResolve={async (d) => {
+              await decide(a, d);
+            }}
+          />
+        )
+      )}
       {open.length > 1 && (
         <Button type='primary' loading={confirmingAll} style={{ alignSelf: 'flex-start' }} onClick={() => void confirmAll()}>
           {t('confirmAll', { count: open.length })}
@@ -113,7 +128,7 @@ export function MessageList({ chat }: { chat: ChatState }) {
             </div>
           </div>
         )}
-        {chat.messages.map((m) => <MessageRow key={m.id} m={m} actions={chat.actions} resolve={chat.resolve} />)}
+        {chat.messages.map((m) => <MessageRow key={m.id} m={m} actions={chat.actions} resolve={chat.resolve} answer={chat.answer} />)}
         {chat.streaming && (
           <div className='msg-assistant'>
             <Markdown>{chat.streaming}</Markdown>

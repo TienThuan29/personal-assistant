@@ -1,5 +1,6 @@
 import type { ChatCompletionFunctionTool } from 'openai/resources/chat/completions';
 import { z } from 'zod/v4';
+import { askTools } from './ask';
 import { type Tool, tr } from './common';
 import { expenseTools } from './expenses';
 import { noteTools } from './notes';
@@ -10,7 +11,7 @@ import { taskTools } from './tasks';
 
 export type { Tool, ToolCtx } from './common';
 
-export const TOOLS: Tool[] = [...overviewTools, ...taskTools, ...reminderTools, ...noteTools, ...expenseTools, ...sqlTools];
+export const TOOLS: Tool[] = [...overviewTools, ...taskTools, ...reminderTools, ...noteTools, ...expenseTools, ...sqlTools, ...askTools];
 
 export const findTool = (name: string): Tool | undefined => TOOLS.find((t) => t.name === name);
 
