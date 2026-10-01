@@ -110,8 +110,8 @@ describe('settings', () => {
     const { db } = testDb();
     expect(getUi(db)).toEqual(DEFAULT_UI);
     expect(saveUi(db, { language: 'en' })).toEqual({ ...DEFAULT_UI, language: 'en' });
-    expect(saveUi(db, { defaultCurrency: ' usd ', extra: 1 })).toEqual({ language: 'en', moneyStyle: 'vi', defaultCurrency: 'USD' });
-    expect(getUi(db)).toEqual({ language: 'en', moneyStyle: 'vi', defaultCurrency: 'USD' });
+    expect(saveUi(db, { defaultCurrency: ' usd ', extra: 1 })).toEqual({ language: 'en', moneyStyle: 'vi', defaultCurrency: 'USD', accent: '#ab502d' });
+    expect(getUi(db)).toEqual({ language: 'en', moneyStyle: 'vi', defaultCurrency: 'USD', accent: '#ab502d' });
   });
 
   it('ignores a __proto__ key in the UI patch', () => {
@@ -139,5 +139,18 @@ describe('settings', () => {
     expect(() => saveUi(db, { moneyStyle: 'us' })).toThrow('Giá trị không hợp lệ');
     for (const bad of [null, 'en', ['en']]) expect(() => saveUi(db, bad)).toThrow('Giá trị không hợp lệ');
     expect(getUi(db)).toEqual(DEFAULT_UI);
+  });
+
+  it('saves the accent as lowercase #rrggbb and rejects anything else', () => {
+    const { db } = testDb();
+    expect(saveUi(db, { accent: '#3366AA' }).accent).toBe('#3366aa');
+    for (const accent of ['red', '#12345', '#1234567', 123]) expect(() => saveUi(db, { accent })).toThrow('Giá trị không hợp lệ');
+    expect(getUi(db).accent).toBe('#3366aa');
+  });
+
+  it('reads a stored row without accent with the default accent', () => {
+    const { db } = testDb();
+    setSetting(db, 'ui', { language: 'en', moneyStyle: 'intl', defaultCurrency: 'USD' });
+    expect(getUi(db)).toEqual({ language: 'en', moneyStyle: 'intl', defaultCurrency: 'USD', accent: '#ab502d' });
   });
 });

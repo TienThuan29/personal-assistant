@@ -91,6 +91,11 @@ export const uiSettingsSchema = z.object({
     .trim()
     .toUpperCase()
     .regex(/^[A-Z]{3}$/, 'errors:currencyFormat'),
+  accent: z
+    .string({ error: 'errors:invalidValue' })
+    .trim()
+    .toLowerCase()
+    .regex(/^#[0-9a-f]{6}$/, 'errors:invalidValue'),
 });
 
 /** Stored values over the defaults; a row that fails validation (hand-edited, corrupt) reads as the defaults. */
