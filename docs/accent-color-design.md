@@ -72,3 +72,15 @@ Ngày: 2026-10-01. Liên quan: `docs/ui-refresh-design.md` (token màu, U6).
 - i18n: khoá mới ở cả vi/en (test đồng bộ khoá hiện có).
 - Ảnh chụp sáng/tối trang Hôm nay + Cài đặt trên profile nháp với Biển, Hổ phách, vàng tuỳ chỉnh.
 - `docs/smoke-test.md`: chọn màu → khởi động lại → màu còn; Esc hoàn tác.
+
+## As built
+
+Commit `154f025` → `e864a5f`. Code là bản tham chiếu; mục này ghi những chỗ khác thiết kế.
+
+- **Ô có sẵn** (sáng, đạt AA không cần chỉnh → tối sau chỉnh): Đất nung `#ab502d`, Biển `#2f6b86` → `#69a4c1`, Lá xô thơm `#4f6e52` → `#85a687`, Mận `#7e4a72` → `#c38ab5`, Hồng `#a3485e` → `#e07e93`, Hổ phách `#8a5a1c` → `#c69358`, Chàm `#4e57a0` → `#8b98e7`, Đá phiến `#56616e` → `#929eac`.
+- **Nền nhạt để kiểm AA** là `accent-soft` trên `--surface` (không phải `--sunken`): trên sunken, đất nung chỉ 4.11:1; sidebar dùng chữ `--ink` ở đó (ui-refresh As built).
+- **Dải Arco tối** sinh từ accent sáng (như Arco: bước 6 tối tự sáng hơn), rồi ép `--primary-6` = accent tối. Bước 6 và 7 có thể gần nhau.
+- `--shadow-card` chỉ nhuộm ở theme sáng (bóng tối là đen). `--link-*` không ghi lại; date picker vẫn theo accent ở cả hai theme.
+- `@arco-design/color` nằm trong `devDependencies` (renderer được bundle), kèm khai báo kiểu `src/renderer/arco-color.d.ts`.
+- **Ô màu:** hiển thị `adjustAccent(hex, theme)`, theme lấy từ `useUi()` của `@aionui/ui`; ô Đất nung ở tối hiện màu tính ra (`#e3825f`), gần với `#e08a63` viết tay. Phím mũi tên vừa di chuyển vừa chọn (như radio gốc); tới ô Tuỳ chỉnh thì chỉ di chuyển. Popup bảng chọn mở `br` (ô nằm sát mép phải).
+- Lưu thất bại sau khi xem trước → áp lại màu đã lưu và báo lỗi.

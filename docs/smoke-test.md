@@ -59,6 +59,9 @@ The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-
 - [ ] Language → English: the sider, the current page, Arco widgets (date pickers, pagination, empty states) and the window title switch at once, with no reload. Tray tooltip and right-click menu ("Open Assistant" / "Quit") are English; the next reminder toast is "Reminder" (grouped: "You have N reminders"). A validation error (e.g. a past reminder via chat) is English.
 - [ ] Money style Vietnamese ↔ International changes every amount (Today, Expenses, confirm cards) at once. Default currency: "USD" is used by a new expense without a currency; typing "US" + Enter does nothing.
 - [ ] Restart: the chosen language and money style persist. Switch back to Tiếng Việt → everything is Vietnamese again.
+- [ ] Màu chủ đạo (docs/accent-color-design.md): click Biển → buttons, links, the active sidebar icon, chat bubbles and the faint background tint turn blue at once on every page; expense category colours stay the same. Arrow keys move between swatches and select them.
+- [ ] Rainbow swatch → picker: dragging previews live; Esc reverts and closes; clicking outside saves and the rainbow swatch shows the picked colour. Pick a pale yellow → buttons and links are a readable darker olive in light mode.
+- [ ] Restart → the colour persists. Switch Windows to dark → still readable. Click Đất nung → the app looks exactly as before.
 
 Toasts need the Start-menu shortcut carrying the AppUserModelID `com.personal-assistant.app`, which the installer
 creates. `release/win-unpacked/Personal Assistant.exe` run directly may show no toasts.
