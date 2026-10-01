@@ -32,7 +32,7 @@ const SIDER_KEY = 'pa.siderCollapsed';
 
 const modalOpen = () => [...document.querySelectorAll('.arco-modal-wrapper')].some((el) => getComputedStyle(el).display !== 'none');
 
-// Arco's vi-VN locale lacks the ColorPicker strings its Locale type requires; the app has no ColorPicker.
+// Arco's vi-VN locale lacks the ColorPicker strings its Locale type requires; the settings picker shows none of them.
 const ARCO_LOCALES = { vi: { ...viVN, ColorPicker: {} }, en: enUS };
 
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');

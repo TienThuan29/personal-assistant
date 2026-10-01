@@ -9,6 +9,7 @@ import { createRoot } from 'react-dom/client';
 import { I18nextProvider } from 'react-i18next';
 import { createI18n } from '../shared/i18n';
 import { DEFAULT_UI, type UiSettings } from '../shared/types';
+import { applyAccent } from './accent';
 import { api, UiContext } from './api';
 import { App } from './App';
 
@@ -26,6 +27,15 @@ try {
 } catch (e) {
   console.error('i18n init failed', e);
 }
+/** A colour that fails to compute keeps the current one instead of breaking the window. */
+const setAccent = (hex: string) => {
+  try {
+    applyAccent(hex);
+  } catch (e) {
+    console.error('Applying the app colour failed', e);
+  }
+};
+setAccent(initial.accent); // before the first render, so the default colour never flashes
 
 /** Instead of a white window: a render error, a missing preload, or a preload older than this renderer. */
 function Crash({ error }: { error: unknown }) {
@@ -59,6 +69,7 @@ function Root() {
     () =>
       api.onUiChanged((next: UiSettings) => {
         void i18n?.changeLanguage(next.language);
+        setAccent(next.accent);
         setUi(next);
       }),
     []

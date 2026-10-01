@@ -8,7 +8,7 @@ type Rgb = [number, number, number];
 export type Oklch = [l: number, c: number, h: number];
 
 /** Each passes light-theme AA as is; dark is adjusted. */
-export const PRESETS: { key: string; hex: string }[] = [
+export const PRESETS = [
   { key: 'terracotta', hex: '#ab502d' },
   { key: 'ocean', hex: '#2f6b86' },
   { key: 'sage', hex: '#4f6e52' },
@@ -17,7 +17,7 @@ export const PRESETS: { key: string; hex: string }[] = [
   { key: 'amber', hex: '#8a5a1c' },
   { key: 'indigo', hex: '#4e57a0' },
   { key: 'slate', hex: '#56616e' },
-];
+] as const;
 
 // Neutrals from styles.css; gray-* are written back as "r, g, b".
 const NEUTRALS: Record<Theme, Record<string, string>> = {

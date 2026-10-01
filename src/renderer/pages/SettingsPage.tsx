@@ -1,14 +1,106 @@
-import { AionSelect, PreferenceRow, SectionCard } from '@aionui/ui';
-import { Alert, Button, Input, Message, Select, Space, Switch } from '@arco-design/web-react';
+import { AionSelect, PreferenceRow, SectionCard, useUi } from '@aionui/ui';
+import { Alert, Button, ColorPicker, Input, Message, Select, Space, Switch } from '@arco-design/web-react';
 import { Refresh } from '@icon-park/react';
-import { useEffect, useState } from 'react';
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatMoney } from '../../shared/money';
 import { DEFAULT_LLM, type LlmSettings, type Provider, PROVIDER_NAMES, type SettingsView, type UiSettings } from '../../shared/types';
+import { adjustAccent, applyAccent, PRESETS } from '../accent';
 import { api, errorText, useUiSettings } from '../api';
 
 const CURRENCIES = ['VND', 'USD', 'EUR', 'JPY'];
 const EXAMPLE_AMOUNT = 1_234_500; // minor units: 1.234.500 ₫ or $12,345.00
+const RAINBOW = 'conic-gradient(#e5484d, #f5a524, #46a758, #0090ff, #8e4ec6, #e5484d)';
+const ARROWS: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+
+/** 8 presets + a custom picker as one radio group. Swatches show the colour as the current theme adjusts it. */
+function AccentPicker({ value, onPick }: { value: string; onPick: (accent: string) => void }) {
+  const { t } = useTranslation('settings');
+  const { theme } = useUi();
+  const shown = (hex: string) => adjustAccent(hex, theme); // presets pass in light as is
+  const swatches = useMemo(() => PRESETS.map((p) => shown(p.hex)), [theme]); // shown depends only on theme
+  const custom = !PRESETS.some((p) => p.hex === value);
+  const group = useRef<HTMLDivElement>(null);
+  const draft = useRef(value);
+  const [open, setOpen] = useState(false);
+
+  // Dragging previews; closing saves; Esc (anywhere, also in the panel's inputs) undoes.
+  const close = (undo: boolean) => {
+    setOpen(false);
+    if (undo) applyAccent(value);
+    else if (draft.current !== value) onPick(draft.current);
+  };
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      close(true);
+      (group.current?.lastElementChild as HTMLElement | null)?.focus();
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  });
+
+  // Roving focus; like native radios, arrows also select (the custom swatch only takes focus).
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const step = ARROWS[e.key];
+    if (!step || !e.currentTarget.contains(e.target as Node)) return; // not keys from the picker's portal
+    e.preventDefault();
+    const radios = [...e.currentTarget.querySelectorAll<HTMLElement>('[role=radio]')];
+    const i = (radios.indexOf(e.target as HTMLElement) + step + radios.length) % radios.length;
+    radios[i].focus();
+    if (i < PRESETS.length) onPick(PRESETS[i].hex);
+  };
+
+  const swatch = 'size-6 shrink-0 rounded-full border-0 p-0 cursor-pointer focus-visible:outline-offset-4';
+  const ring = 'outline outline-2 outline-ink outline-offset-2';
+  return (
+    <div ref={group} role='radiogroup' aria-label={t('accent')} className='flex flex-wrap items-center gap-2' onKeyDown={onKeyDown}>
+      {PRESETS.map((p, i) => (
+        <button
+          key={p.key}
+          type='button'
+          role='radio'
+          aria-checked={p.hex === value}
+          aria-label={t(`accentName.${p.key}`)}
+          title={t(`accentName.${p.key}`)}
+          tabIndex={p.hex === value ? 0 : -1}
+          className={`${swatch} ${p.hex === value ? ring : ''}`}
+          style={{ background: swatches[i] }}
+          onClick={() => onPick(p.hex)}
+        />
+      ))}
+      <ColorPicker
+        value={value}
+        disabledAlpha
+        format='hex'
+        popupVisible={open}
+        triggerProps={{ position: 'br' }} // the swatch ends the row, at the window's right edge
+        onVisibleChange={(v) => {
+          if (!v) return close(false);
+          draft.current = value;
+          setOpen(true);
+        }}
+        onChange={(v) => {
+          draft.current = String(v).toLowerCase();
+          applyAccent(draft.current);
+        }}
+        triggerElement={
+          <button
+            type='button'
+            role='radio'
+            aria-checked={custom}
+            aria-label={t('accentCustom')}
+            title={t('accentCustom')}
+            tabIndex={custom ? 0 : -1}
+            className={`${swatch} ${custom ? ring : ''}`}
+            style={{ background: custom ? shown(value) : RAINBOW }}
+          />
+        }
+      />
+    </div>
+  );
+}
 
 /** Applied at once; main broadcasts ui:changed, which updates the language and the context (main.tsx). */
 function DisplayCard() {
@@ -31,6 +123,9 @@ function DisplayCard() {
             { label: t('langEn'), value: 'en' },
           ]}
         />
+      </PreferenceRow>
+      <PreferenceRow label={t('accent')} description={t('accentDesc')}>
+        <AccentPicker value={ui.accent} onPick={(accent) => setUi({ accent })} />
       </PreferenceRow>
       <PreferenceRow label={t('moneyStyle')} description={t('moneyStyleDesc')}>
         <AionSelect
