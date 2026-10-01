@@ -1,0 +1,74 @@
+# Push a tag vX.Y.Z (matching package.json's version) to build all three OSes and publish a GitHub Release.
+# Run it by hand (Actions → Release → Run workflow) for a dry run: builds and uploads artifacts, publishes nothing.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      - run: bun run typecheck
+      - run: bun run test
+
+  build:
+    needs: check
+    strategy:
+      fail-fast: false # let the other OSes finish so every failure shows up in one run
+      matrix:
+        include:
+          - { os: windows-latest, script: 'pack:win', files: 'release/PersonalAssistant-win-x64-*.exe' }
+          - { os: macos-latest, script: 'pack:mac', files: 'release/*.zip' }
+          - { os: ubuntu-latest, script: 'pack:linux', files: 'release/*.AppImage' }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run ${{ matrix.script }}
+      - name: Smoke test (starts and creates its database)
+        if: runner.os == 'Linux'
+        run: |
+          set +e
+          xvfb-run -a timeout 25 release/PersonalAssistant-linux-x64.AppImage --appimage-extract-and-run --no-sandbox --user-data-dir="$RUNNER_TEMP/pa"
+          code=$?
+          [ "$code" = 124 ] || { echo "exited early with code $code"; exit 1; } # 124 = still running when timeout stopped it
+          test -f "$RUNNER_TEMP/pa/assistant.db"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # the only job that can write to the repo
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: ls -l dist
+      - name: Create the Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

@@ -1,6 +1,6 @@
 # Smoke test (run before each release)
 
-Setup: install the packaged app (`bun run pack` → run `release/PersonalAssistant-Setup-0.1.0.exe`; per-user, no admin prompt,
+Setup: install the packaged app (`bun run pack` → run `release/PersonalAssistant-win-x64-setup.exe`; per-user, no admin prompt,
 adds a Start-menu shortcut), real LLM configured. Uninstall from Windows Settings → Apps (keeps the data folder).
 The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-assistant/`
 (`assistant.db`, `attachments/`, `backups/`, `secrets.bin`). Rename it first for a truly fresh start.

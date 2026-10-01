@@ -1,6 +1,8 @@
 # Everything is bundled by electron-vite (all deps are devDependencies), so ship only out/.
 # appId is also the AppUserModelID (app.setAppUserModelId in main); the NSIS installer puts it on the
-# Start-menu shortcut, which Windows needs before it shows the app's toasts.
+# Start-menu shortcut, which Windows needs before it shows the app's toasts (the portable exe has none).
+# File names carry no version so https://github.com/<owner>/<repo>/releases/latest/download/<name> stays valid.
+# Local Windows builds pass -c.electronDist (package.json "pack") to reuse the installed Electron; CI downloads it.
 appId: com.personal-assistant.app
 productName: Personal Assistant
 directories:
@@ -13,14 +15,36 @@ afterPack: scripts/stamp-icon.cjs
 # Electron loads the window/tray icon through native code, which cannot read inside app.asar.
 asarUnpack:
   - out/**/*.ico
-# Reuse the installed Electron instead of downloading it (TLS proxy).
-electronDist: node_modules/electron/dist
 win:
-  target: nsis
+  target:
+    - target: portable
+      arch: x64
+    - target: nsis
+      arch: x64
   icon: assets/app-icons/personal-assistant.ico
   signAndEditExecutable: false
+portable:
+  artifactName: PersonalAssistant-win-x64-portable.${ext}
 nsis:
   oneClick: true
   perMachine: false # per-user: %LOCALAPPDATA%\Programs, no admin prompt
   createStartMenuShortcut: true
-  artifactName: PersonalAssistant-Setup-${version}.${ext}
+  artifactName: PersonalAssistant-win-x64-setup.${ext}
+mac:
+  target:
+    - target: zip
+      arch: [arm64, x64]
+  icon: assets/app-icons/icon-1024.png
+  category: public.app-category.productivity
+  # No signing certificate: without an identity electron-builder skips signing entirely, which can leave an
+  # arm64 app unable to start. Ad-hoc signing ("-") needs hardenedRuntime off (library validation).
+  identity: '-'
+  hardenedRuntime: false
+  artifactName: PersonalAssistant-mac-${arch}.${ext}
+linux:
+  target:
+    - target: AppImage
+      arch: x64
+  icon: assets/app-icons/icon-512.png
+  category: Office
+  artifactName: PersonalAssistant-linux-${arch}.${ext}

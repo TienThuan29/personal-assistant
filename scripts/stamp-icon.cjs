@@ -4,7 +4,8 @@
 const { execFileSync } = require('node:child_process');
 const { join } = require('node:path');
 
-exports.default = async function stampIcon({ appOutDir, packager }) {
+exports.default = async function stampIcon({ appOutDir, packager, electronPlatformName }) {
+  if (electronPlatformName !== 'win32') return; // rcedit.exe is a Windows tool
   const root = packager.projectDir;
   const rcedit = join(root, 'node_modules/electron-winstaller/vendor/rcedit.exe');
   const exe = join(appOutDir, `${packager.appInfo.productFilename}.exe`);

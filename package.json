@@ -9,7 +9,10 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit",
     "test": "ELECTRON_RUN_AS_NODE=1 electron node_modules/vitest/vitest.mjs run",
-    "pack": "electron-vite build && electron-builder --config electron-builder.yml"
+    "pack": "electron-vite build && electron-builder --config electron-builder.yml --win -c.electronDist=node_modules/electron/dist --publish never",
+    "pack:win": "electron-vite build && electron-builder --config electron-builder.yml --win --publish never",
+    "pack:mac": "electron-vite build && electron-builder --config electron-builder.yml --mac --publish never",
+    "pack:linux": "electron-vite build && electron-builder --config electron-builder.yml --linux --publish never"
   },
   "devDependencies": {
     "@aionui/ui": "file:./vendor/aionui-ui-0.1.0.tgz",
