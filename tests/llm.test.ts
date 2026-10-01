@@ -126,6 +126,16 @@ describe('createLlm', () => {
     expect(seen[0].headers.get('api-key')).toBe('k1');
   });
 
+  it('Azure/Foundry v1 URL (even a pasted /responses one) uses /openai/v1/chat/completions with the deployment as model', async () => {
+    const { f, seen } = stubFetch([sse('hi'), DONE]);
+    const cfg: LlmConfig = { provider: 'azure', endpoint: 'https://r.services.ai.azure.com/openai/v1/responses', model: 'gpt-5-01', apiVersion: '2024-10-21' };
+    const msg = await collect(createLlm(cfg, 'k1', { fetch: f }).stream({ messages: [] }), () => {});
+    expect(msg.content).toBe('hi');
+    expect(seen[0].url).toBe('https://r.services.ai.azure.com/openai/v1/chat/completions');
+    expect(seen[0].headers.get('api-key')).toBe('k1');
+    expect(JSON.parse(seen[0].body).model).toBe('gpt-5-01');
+  });
+
   it('gateway hits <baseURL>/chat/completions with a bearer token', async () => {
     const { f, seen } = stubFetch([sse('ok'), DONE]);
     const msg = await collect(createLlm(gateway, 'tok', { fetch: f }).stream({ messages: [] }), () => {});

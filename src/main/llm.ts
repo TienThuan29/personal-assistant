@@ -16,8 +16,12 @@ export function createLlm(cfg: LlmConfig, apiKey: string, opts: { fetch?: typeof
   if (!cfg.endpoint || !apiKey || (cfg.provider === 'azure' && (!cfg.model || !cfg.apiVersion)))
     throw new UserError('llmNotConfigured');
   const common = { apiKey, maxRetries: 2, timeout: 60_000, fetch: opts.fetch };
-  const client =
-    cfg.provider === 'azure'
+  // A pasted Azure/Foundry "v1" URL (…/openai/v1[/responses]) has no deployment path or api-version: use the plain client
+  // on …/openai/v1 with the deployment as `model`; Azure takes the key as api-key (Bearer is also sent by the SDK).
+  const v1 = cfg.provider === 'azure' ? /^(.*?\/openai\/v1)(?:\/|$)/i.exec(cfg.endpoint.trim())?.[1] : undefined;
+  const client = v1
+    ? new OpenAI({ ...common, baseURL: v1, defaultHeaders: { 'api-key': apiKey } })
+    : cfg.provider === 'azure'
       ? new AzureOpenAI({ ...common, endpoint: cfg.endpoint, apiVersion: cfg.apiVersion, deployment: cfg.model })
       : new OpenAI({ ...common, baseURL: gatewayBaseURL(cfg.endpoint) });
   const gateway = cfg.provider === 'gateway';
