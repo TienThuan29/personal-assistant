@@ -42,6 +42,12 @@ const api: Api = {
     setOpenAtLogin: (on) => invoke('settings:setOpenAtLogin', on),
     setUi: (patch) => invoke('settings:setUi', patch),
   },
+  update: {
+    check: (manual) => invoke('update:check', manual),
+    skip: (version) => invoke('update:skip', version),
+    install: () => invoke('update:install'),
+    onProgress: listen<number>('update:progress'),
+  },
   win: {
     minimize: () => invoke('win:minimize'),
     toggleMaximize: () => invoke('win:toggleMaximize'),

@@ -110,8 +110,8 @@ describe('settings', () => {
     const { db } = testDb();
     expect(getUi(db)).toEqual(DEFAULT_UI);
     expect(saveUi(db, { language: 'en' })).toEqual({ ...DEFAULT_UI, language: 'en' });
-    expect(saveUi(db, { defaultCurrency: ' usd ', extra: 1 })).toEqual({ language: 'en', moneyStyle: 'vi', defaultCurrency: 'USD', accent: '#ab502d' });
-    expect(getUi(db)).toEqual({ language: 'en', moneyStyle: 'vi', defaultCurrency: 'USD', accent: '#ab502d' });
+    expect(saveUi(db, { defaultCurrency: ' usd ', extra: 1 })).toEqual({ language: 'en', moneyStyle: 'vi', defaultCurrency: 'USD', accent: '#ab502d', checkUpdates: true });
+    expect(getUi(db)).toEqual({ language: 'en', moneyStyle: 'vi', defaultCurrency: 'USD', accent: '#ab502d', checkUpdates: true });
   });
 
   it('ignores a __proto__ key in the UI patch', () => {
@@ -148,9 +148,16 @@ describe('settings', () => {
     expect(getUi(db).accent).toBe('#3366aa');
   });
 
+  it('checks for updates by default and accepts only a boolean to change that', () => {
+    const { db } = testDb();
+    expect(getUi(db).checkUpdates).toBe(true);
+    expect(saveUi(db, { checkUpdates: false }).checkUpdates).toBe(false);
+    expect(() => saveUi(db, { checkUpdates: 'yes' })).toThrow('Giá trị không hợp lệ');
+  });
+
   it('reads a stored row without accent with the default accent', () => {
     const { db } = testDb();
     setSetting(db, 'ui', { language: 'en', moneyStyle: 'intl', defaultCurrency: 'USD' });
-    expect(getUi(db)).toEqual({ language: 'en', moneyStyle: 'intl', defaultCurrency: 'USD', accent: '#ab502d' });
+    expect(getUi(db)).toEqual({ language: 'en', moneyStyle: 'intl', defaultCurrency: 'USD', accent: '#ab502d', checkUpdates: true });
   });
 });

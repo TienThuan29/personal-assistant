@@ -1,11 +1,11 @@
 import { UiProvider, WindowControls } from '@aionui/ui';
-import { ConfigProvider, Message, Modal, Tooltip } from '@arco-design/web-react';
+import { Alert, Button, ConfigProvider, Message, Modal, Space, Tooltip } from '@arco-design/web-react';
 import enUS from '@arco-design/web-react/es/locale/en-US';
 import viVN from '@arco-design/web-react/es/locale/vi-VN';
 import { CheckOne, MenuFold, MenuUnfold, Notes, Plus, Remind, SettingTwo, Sun, Wallet } from '@icon-park/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { type ConversationRow, DEFAULT_CONVERSATION_TITLE, type Page } from '../shared/types';
+import { type ConversationRow, DEFAULT_CONVERSATION_TITLE, type Page, type UpdateStatus } from '../shared/types';
 import { api, errorText } from './api';
 import { ChatPage } from './chat/ChatPage';
 import { ConversationList } from './components/ConversationList';
@@ -65,6 +65,8 @@ export function App() {
   const [route, setRoute] = useState<Route | null>(null);
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [maximized, setMaximized] = useState(false);
+  const [percent, setPercent] = useState<number | null>(null); // download progress while the app updates itself
+  const [update, setUpdate] = useState<UpdateStatus | null>(null); // a newer version, when there is one (docs/update-design.md)
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem(SIDER_KEY) === '1';
@@ -118,9 +120,11 @@ export function App() {
   useEffect(() => {
     openLatest().catch(fail);
     void api.win.isMaximized().then(setMaximized);
+    api.update.check(false).then(setUpdate, () => {}); // automatic checks never report failure
     const offs = [
       api.win.onMaximizedChange(setMaximized),
       api.onNavigate((page) => go(page).catch(fail)),
+      api.update.onProgress(setPercent),
       api.chat.onEvent((e) => {
         if (e.type === 'done') void refresh(); // picks up the auto-title
       }),
@@ -256,6 +260,51 @@ export function App() {
                 onClose={() => void api.win.close()}
               />
             </header>
+            {update?.latest && (
+              <div className='px-6 pb-2'>
+                <Alert
+                  type='info'
+                  content={t('update.banner', { latest: update.latest, current: update.current })}
+                  action={
+                    <Space>
+                      {update.canInstall ? (
+                        <Button
+                          size='mini'
+                          type='primary'
+                          loading={percent !== null}
+                          onClick={() => {
+                            setPercent(0);
+                            api.update.install().catch((e) => {
+                              fail(e);
+                              setPercent(null);
+                              setUpdate({ ...update, canInstall: false }); // fall back to the download page
+                            });
+                          }}
+                        >
+                          {percent === null ? t('update.install') : t('update.downloading', { percent })}
+                        </Button>
+                      ) : (
+                        <Button size='mini' type='primary' onClick={() => window.open(update.url ?? undefined)}>
+                          {t('update.download')}
+                        </Button>
+                      )}
+                      <Button
+                        size='mini'
+                        disabled={percent !== null}
+                        onClick={() =>
+                          api.update
+                            .skip(update.latest!)
+                            .then(() => setUpdate(null))
+                            .catch(fail)
+                        }
+                      >
+                        {t('update.skip')}
+                      </Button>
+                    </Space>
+                  }
+                />
+              </div>
+            )}
             <main className='content'>
               {route?.page === 'chat' && <ChatPage key={route.id} conversationId={route.id} autoFocus={route.focus} />}
               {route?.page === 'today' && <TodayPage go={(p) => go(p).catch(fail)} />}

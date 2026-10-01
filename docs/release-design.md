@@ -11,7 +11,7 @@ Ngày: 2026-10-01. Liên quan: `electron-builder.yml`, `docs/app-icon-design.md`
 - GitHub Actions build cả ba khi đẩy tag `vX.Y.Z` rồi tạo một GitHub Release; README link tới file mới nhất của Release.
 - Hiện chưa có remote git, chưa có CI, chưa có README; máy này là Windows nên không build được macOS/Linux cục bộ.
 - Không đổi hành vi ứng dụng cho macOS/Linux; giới hạn ghi trong README.
-- Ngoài phạm vi: ký mã / notarize, tự cập nhật, `.dmg`/`.deb`/`.rpm`, ARM Linux/Windows, sửa tray/toast/keyring/khung cửa sổ cho macOS và Linux.
+- Ngoài phạm vi: ký mã / notarize, tự tải và tự cài bản mới (chỉ báo có bản mới: `docs/update-design.md`), `.dmg`/`.deb`/`.rpm`, ARM Linux/Windows, sửa tray/toast/keyring/khung cửa sổ cho macOS và Linux.
 
 ## Giả định
 

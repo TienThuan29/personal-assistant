@@ -111,10 +111,15 @@ export const DEFAULT_LLM: LlmSettings = {
  * Display preferences, stored under the settings key 'ui'. `moneyStyle` 'vi' is "55.000 ₫", 'intl' is "₫55,000".
  * `accent` is the app colour as lowercase `#rrggbb` (docs/accent-color-design.md).
  */
-export type UiSettings = { language: Lang; moneyStyle: 'vi' | 'intl'; defaultCurrency: string; accent: string };
-export const DEFAULT_UI: UiSettings = { language: 'vi', moneyStyle: 'vi', defaultCurrency: 'VND', accent: '#ab502d' };
+export type UiSettings = { language: Lang; moneyStyle: 'vi' | 'intl'; defaultCurrency: string; accent: string; checkUpdates: boolean };
+export const DEFAULT_UI: UiSettings = { language: 'vi', moneyStyle: 'vi', defaultCurrency: 'VND', accent: '#ab502d', checkUpdates: true };
 
-export type SettingsView = { llm: LlmSettings; hasKey: Record<Provider, boolean>; openAtLogin: boolean; ui: UiSettings };
+export type SettingsView = { llm: LlmSettings; hasKey: Record<Provider, boolean>; openAtLogin: boolean; ui: UiSettings; version: string };
+/**
+ * `latest` is the newer version to announce (null: none); `url` is the page to open for it; `canInstall` says whether this
+ * build can download and install it itself (Windows installer, Linux AppImage) or only send the user to `url`.
+ */
+export type UpdateStatus = { current: string; latest: string | null; url: string | null; canInstall: boolean };
 /** `apiKey` is for the active provider. */
 export type SettingsInput = { llm: LlmSettings; apiKey?: string };
 
@@ -158,6 +163,16 @@ export type Api = {
     setOpenAtLogin(on: boolean): Promise<boolean>;
     /** Validates, saves and broadcasts `ui:changed`; resolves to the settings now in effect. */
     setUi(patch: Partial<UiSettings>): Promise<UiSettings>;
+  };
+  update: {
+    /** `manual` (the Settings button) always asks GitHub and throws on failure; automatic is silent and at most daily. */
+    check(manual: boolean): Promise<UpdateStatus>;
+    /** Stops announcing this version; a newer one is announced again. */
+    skip(version: string): Promise<void>;
+    /** Downloads the newer version and restarts into it; rejects (installFailed) when it cannot, and never resolves when it can. */
+    install(): Promise<void>;
+    /** Download progress 0–100 while `install` runs. */
+    onProgress(cb: (percent: number) => void): () => void;
   };
   win: {
     minimize(): Promise<void>;

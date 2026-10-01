@@ -96,6 +96,7 @@ export const uiSettingsSchema = z.object({
     .trim()
     .toLowerCase()
     .regex(/^#[0-9a-f]{6}$/, 'errors:invalidValue'),
+  checkUpdates: z.boolean({ error: 'errors:invalidValue' }),
 });
 
 /** Stored values over the defaults; a row that fails validation (hand-edited, corrupt) reads as the defaults. */

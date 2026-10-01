@@ -36,6 +36,15 @@ The apps are not code-signed, so each OS warns you the first time:
 
 The interface is in Vietnamese or English (Settings → Display), and you can pick your own accent colour there too.
 
+## Updating
+
+The app checks GitHub once a day when it opens and shows a banner when a newer version exists; **Download** opens the
+Release page. Check by hand or switch it off under Settings → Updates.
+
+The Windows installer and the Linux AppImage can update themselves: the banner's **Update and restart** downloads the new
+version, installs it and reopens the app. The Windows portable file and macOS only link to the Release page: download the
+new file and replace the old one. Your data stays either way.
+
 ## Where your data lives
 
 | OS | Folder |

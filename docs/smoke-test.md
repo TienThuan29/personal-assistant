@@ -73,5 +73,11 @@ The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-
 - [ ] With a card open, type a normal message instead → the card turns "Đã trả lời trong chat" and the bot reads your message as the answer. Restart the app with a card open → it is still there.
 - [ ] Gateway provider: the model's ```tool_calls block with `ask_user` shows the same card (if it keeps asking in text, tighten the prompt rather than parsing text).
 
+**Update notice** (docs/update-design.md; needs internet)
+- [ ] Settings → Cập nhật shows "Đang dùng bản <version>"; "Kiểm tra cập nhật" says "Bạn đang dùng bản mới nhất" when the newest GitHub Release is this version, or "Có bản X" (click → opens that Release page in the browser) when a newer one exists. Offline → a red toast "Không kiểm tra được bản mới".
+- [ ] With a newer Release published and the app on the older version: opening the app shows the banner "Có phiên bản X (bạn đang dùng Y)" on every page. "Tải về" opens the Release page; "Bỏ qua bản này" hides it, and it stays hidden after a restart, but the manual check still reports that version. Publishing an even newer Release brings the banner back.
+- [ ] Tự cập nhật (cần hai Release có `latest.yml`, vd 0.1.2 rồi 0.1.3): cài bản NSIS 0.1.2, phát hành 0.1.3, mở app → banner có "Cập nhật và khởi động lại". Bấm → nút thành "Đang tải N%", app thoát rồi tự mở lại ở 0.1.3 (Settings → Phiên bản), dữ liệu còn nguyên. Bản portable và macOS chỉ có "Tải về". Linux AppImage: cùng luồng, thư mục chứa file phải ghi được. Mất mạng khi bấm → toast lỗi và nút về "Tải về".
+- [ ] Switch off "Tự kiểm tra khi mở app" → no banner after a restart (the manual button still works). Switching Windows offline never shows an error at startup.
+
 Toasts need the Start-menu shortcut carrying the AppUserModelID `com.personal-assistant.app`, which the installer
 creates. `release/win-unpacked/Personal Assistant.exe` run directly may show no toasts.

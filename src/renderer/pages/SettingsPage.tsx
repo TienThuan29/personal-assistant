@@ -4,7 +4,7 @@ import { Refresh } from '@icon-park/react';
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatMoney } from '../../shared/money';
-import { DEFAULT_LLM, type LlmSettings, type Provider, PROVIDER_NAMES, type SettingsView, type UiSettings } from '../../shared/types';
+import { DEFAULT_LLM, type LlmSettings, type Provider, PROVIDER_NAMES, type SettingsView, type UiSettings, type UpdateStatus } from '../../shared/types';
 import { adjustAccent, applyAccent, PRESETS } from '../accent';
 import { api, errorText, useUiSettings } from '../api';
 
@@ -163,6 +163,49 @@ function DisplayCard() {
   );
 }
 
+/** The version in use, a manual check (always asks GitHub, tells the user when it cannot) and the automatic-check switch. */
+function UpdateCard({ version }: { version: string }) {
+  const { t } = useTranslation('settings');
+  const ui = useUiSettings();
+  const [message, messageHolder] = Message.useMessage();
+  const [checking, setChecking] = useState(false);
+  const [found, setFound] = useState<UpdateStatus | null>(null);
+  const check = () => {
+    setChecking(true);
+    api.update
+      .check(true)
+      .then(setFound, (e) => message.error?.(errorText(e)))
+      .finally(() => setChecking(false));
+  };
+  return (
+    <SectionCard title={t('updates')}>
+      {messageHolder}
+      <PreferenceRow label={t('version')} description={t('versionDesc', { version })}>
+        <Space>
+          <Button loading={checking} onClick={check}>
+            {t('checkNow')}
+          </Button>
+          {found &&
+            (found.latest ? (
+              <Button type='text' onClick={() => window.open(found.url ?? undefined)}>
+                {t('available', { version: found.latest })}
+              </Button>
+            ) : (
+              <span role='status'>{t('upToDate')}</span>
+            ))}
+        </Space>
+      </PreferenceRow>
+      <PreferenceRow label={t('autoCheck')} description={t('autoCheckDesc')}>
+        <Switch
+          aria-label={t('autoCheck')}
+          checked={ui.checkUpdates}
+          onChange={(checkUpdates: boolean) => void api.settings.setUi({ checkUpdates }).catch((e) => message.error?.(errorText(e)))}
+        />
+      </PreferenceRow>
+    </SectionCard>
+  );
+}
+
 export function SettingsPage() {
   const { t } = useTranslation('settings');
   const [view, setView] = useState<SettingsView | null>(null);
@@ -306,6 +349,7 @@ export function SettingsPage() {
           />
         </PreferenceRow>
       </SectionCard>
+      <UpdateCard version={view.version} />
       <SectionCard title={t('system')}>
         <PreferenceRow label={t('openAtLogin')} description={t('openAtLoginDesc')}>
           <Switch

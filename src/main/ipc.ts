@@ -1,4 +1,5 @@
-import { ipcMain, nativeImage, net } from 'electron';
+import { app, ipcMain, nativeImage, net } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import type { ImageInput, SettingsInput, SettingsView } from '../shared/types';
 import { type AgentDeps, answerAction, cancelOpenActions, resolveAction, runTurn } from './agent';
 import { newAttachmentId, saveAttachment } from './attachments';
@@ -19,6 +20,8 @@ import {
   setTitleIfNew,
 } from './store';
 import { findTool, parseArgs } from './tools';
+import { canSelfUpdate, installUpdate, type Updater } from './selfupdate';
+import { checkForUpdate, skipVersion } from './update';
 import { te, UserError } from './errors';
 
 export type MainCtx = {
@@ -187,6 +190,7 @@ export function registerIpc(m: MainCtx): void {
       hasKey: { azure: !!secrets.azure, gateway: !!secrets.gateway },
       openAtLogin: m.loginItem.get(),
       ui,
+      version: app.getVersion(),
     };
   });
   ipcMain.handle('settings:save', (_e, s: SettingsInput) => {
@@ -214,6 +218,16 @@ export function registerIpc(m: MainCtx): void {
     m.send('ui:changed', ui);
     return ui;
   });
+  const canInstall = () => canSelfUpdate({ packaged: app.isPackaged, platform: process.platform, env: process.env });
+  ipcMain.handle('update:check', async (_e, manual: unknown) => ({
+    ...(await checkForUpdate(m.db, { fetch: netFetch, version: app.getVersion(), now: Date.now(), manual: manual === true })),
+    canInstall: canInstall(),
+  }));
+  ipcMain.handle('update:install', () => {
+    if (!canInstall()) throw new UserError('installFailed');
+    return installUpdate(autoUpdater as unknown as Updater, (percent) => m.send('update:progress', percent));
+  });
+  ipcMain.handle('update:skip', (_e, version: unknown) => skipVersion(m.db, version));
   ipcMain.handle('settings:test', async () => {
     try {
       const reply = await collect(deps.llm().stream({ messages: [{ role: 'user', content: 'Reply with exactly one word: OK' }] }), () => {});

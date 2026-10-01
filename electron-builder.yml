@@ -12,6 +12,12 @@ files:
   - '!**/*.map'
   - '!node_modules/**/*'
 afterPack: scripts/stamp-icon.cjs
+# Embeds app-update.yml and makes electron-builder write latest*.yml next to the installers: electron-updater reads them from the
+# Release to self-update the Windows installer and the Linux AppImage (docs/update-design.md). Nothing is published from here (--publish never).
+publish:
+  provider: github
+  owner: TienThuan29
+  repo: personal-assistant
 # Electron loads the window/tray icon through native code, which cannot read inside app.asar.
 asarUnpack:
   - out/**/*.ico
