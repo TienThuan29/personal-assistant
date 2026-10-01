@@ -75,3 +75,10 @@ Ngày: 2026-10-01. Liên quan: `src/main/agent.ts`, `src/main/tools/`, `src/rend
 - `tests/seed-demo.test.ts` thêm một chat có đủ ba trạng thái thẻ để chụp màn hình.
 - Đã kiểm: 18 test mới (tổng 245 pass / 21 skip), typecheck, ảnh chụp sáng/tối ba trạng thái, và chạy thật qua CDP trên profile nháp (chọn, Tiếp/Trước giữ lựa chọn, Khác + gõ chữ, Gửi qua IPC → thẻ thành "Đã trả lời", lượt tiếp tục tới lỗi "Chưa cấu hình LLM" như mong đợi).
 - Chưa kiểm: hành vi của LLM thật (có dùng `ask_user` đúng lúc, không hỏi thừa) và đường gateway (khối ```tool_calls); đó là bước trong `docs/smoke-test.md` và bộ eval tuỳ chọn.
+
+### Chỉnh cho gateway (sau lần chạy thật đầu tiên)
+
+- Trên LLM gateway thật (`gpt-5.1-02`) bản đầu gần như không bao giờ gọi `ask_user`: mô hình vẫn hỏi bằng chữ và hỏi cả những thứ tự suy ra được (đo được 2/8 câu thử đúng hành vi). Nguyên nhân: gateway bỏ qua `tools`, mô hình phải tự viết khối ```tool_calls và quy tắc "dùng ask_user" quá nhẹ.
+- Đã sửa: quy tắc hỏi lên đầu danh sách quy tắc, viết cứng ("NEVER ask in plain text"), thêm quy tắc không hỏi điều có thể mặc định hoặc đã nói rõ, quy tắc "chi tiền là khoản chi dù nói 'note lại'", và vài ví dụ (kể cả câu hỏi mở với `options: []`); phần hướng dẫn gọi tool của gateway có thêm một ví dụ khối `ask_user` hoàn chỉnh và nhắc đóng khối bằng ``` ở dòng riêng.
+- Bộ phân tích khối `tool_calls` nay chấp nhận dấu ``` đóng ngay sau JSON trên cùng dòng (mô hình hay làm vậy), trước đây bị coi là khối hỏng.
+- Kết quả đo lại (3 lần mỗi câu, vòng lặp agent thật, tool đọc chạy trên DB rỗng): 24/24 trên bộ 8 câu dùng để chỉnh và 30/30 trên 10 câu mới chưa xuất hiện trong prompt. Mô hình vẫn có thể hỏi thừa hoặc quên dùng thẻ ở câu lạ; chạy lại `tests/eval.llm.test.ts` sau mỗi lần đổi prompt.

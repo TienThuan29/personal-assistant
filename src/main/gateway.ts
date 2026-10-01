@@ -23,6 +23,11 @@ export function toolProtocol(tools: ChatCompletionFunctionTool[]): string {
     '```',
     '- To call several tools at once, put several elements in the array. The results arrive in the next message, as [Tool result <name>]: <json>.',
     '- When no tool is needed, reply normally without this block. Never write tool results yourself.',
+    '- Always close the block with ``` on its own line, and make sure every bracket in the JSON is closed.',
+    '- To ask the user anything (missing details, a choice, a clarification) call ask_user; never ask in plain text. Example of a complete reply:',
+    FENCE,
+    '[{"name": "ask_user", "arguments": {"questions": [{"question": "What time should I remind you?", "options": ["08:00", "12:00", "18:00"], "multiple": false}]}}]',
+    '```',
     'Tools (name: description. JSON schema of arguments):',
     ...tools.map((t) => `- ${t.function.name}: ${(t.function.description ?? '').replace(/\s+/g, ' ')} ${JSON.stringify(t.function.parameters)}`),
   ].join('\n');
@@ -33,7 +38,7 @@ const call = (name: string, args: string): ToolCall => ({ id: `call_${randomUUID
 function parseBlock(raw: string): ToolCall[] {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(raw.replace(/`{3}$/, '')); // models often close the fence right after the JSON instead of on its own line
   } catch {
     return [call(BAD_BLOCK, raw)];
   }

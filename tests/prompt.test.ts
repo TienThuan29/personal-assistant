@@ -16,7 +16,8 @@ it('states the current date, weekday and existing categories', () => {
 
 it('tells the model to ask through ask_user, not in text', () => {
   const p = systemPrompt(testCtx().db, NOW);
-  expect(p).toMatch(/ask with the ask_user tool, not in plain text/);
+  expect(p).toMatch(/NEVER ask the user a question in plain text/);
+  expect(p.indexOf('NEVER ask the user')).toBeLessThan(p.indexOf('look it up with a tool')); // first rule: models weigh the top of a list most
   expect(p).toMatch(/skipped: true/);
 });
 

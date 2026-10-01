@@ -47,6 +47,12 @@ describe('parseToolCalls', () => {
     expect(visibleText('Ok\r\n```tool_calls\r\n[{"name":"list_tasks"}]\r\n```\r\nXong')).toBe('Ok\r\n\r\nXong');
   });
 
+  it('reads a block whose closing fence follows the JSON on the same line', () => {
+    const reply = '```tool_calls\n[{"name":"ask_user","arguments":{"questions":[{"question":"Mấy giờ?"}]}}]```';
+    expect(names(reply)).toEqual([['ask_user', '{"questions":[{"question":"Mấy giờ?"}]}']]);
+    expect(visibleText(reply)).toBe('');
+  });
+
   it('reads an inline block on the fence line, without swallowing the next lines', () => {
     const reply = 'Xem nhé ```tool_calls [{"name":"list_tasks","arguments":{}}]```\nĐợi chút.';
     expect(names(reply)).toEqual([['list_tasks', '{}']]);
