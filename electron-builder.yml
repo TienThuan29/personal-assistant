@@ -9,10 +9,15 @@ files:
   - out/**/*
   - '!**/*.map'
   - '!node_modules/**/*'
+afterPack: scripts/stamp-icon.cjs
+# Electron loads the window/tray icon through native code, which cannot read inside app.asar.
+asarUnpack:
+  - out/**/*.ico
 # Reuse the installed Electron instead of downloading it (TLS proxy).
 electronDist: node_modules/electron/dist
 win:
   target: nsis
+  icon: assets/app-icons/personal-assistant.ico
   signAndEditExecutable: false
 nsis:
   oneClick: true

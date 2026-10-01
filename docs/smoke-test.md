@@ -63,5 +63,9 @@ The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-
 - [ ] Rainbow swatch → picker: dragging previews live; Esc reverts and closes; clicking outside saves and the rainbow swatch shows the picked colour. Pick a pale yellow → buttons and links are a readable darker olive in light mode.
 - [ ] Restart → the colour persists. Switch Windows to dark → still readable. Click Đất nung → the app looks exactly as before.
 
+**App icon** (docs/app-icon-design.md)
+- [ ] After installing: the installer, the installed Personal Assistant.exe, the Start-menu shortcut, the taskbar button, the window and the tray show the blue chat-bubble icon, not Electron's default. Hover the tray icon: tooltip still shows.
+- [ ] An old icon lingers on a pinned shortcut or in Explorer → unpin/re-pin, or restart Explorer (the Windows icon cache), before suspecting the build.
+
 Toasts need the Start-menu shortcut carrying the AppUserModelID `com.personal-assistant.app`, which the installer
 creates. `release/win-unpacked/Personal Assistant.exe` run directly may show no toasts.

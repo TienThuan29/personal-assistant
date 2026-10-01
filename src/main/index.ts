@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import type { ReminderRow } from '../shared/types';
 import { attachmentFile, cleanupOrphans } from './attachments';
 import { backupDb, openDb } from './db';
+import { appIcon } from './icon';
 import { i18n, setLanguage } from './i18n';
 import { registerIpc } from './ipc';
 import { createScheduler } from './reminders';
@@ -59,6 +60,7 @@ function createWindow(): BrowserWindow {
     minHeight: 560,
     frame: false,
     show: !startHidden,
+    icon: appIcon,
     webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: true },
   });
   w.on('close', (e) => {
@@ -109,7 +111,7 @@ function notify(rows: ReminderRow[]): void {
 }
 
 async function createTray(): Promise<Tray> {
-  const t = new Tray(await app.getFileIcon(process.execPath, { size: 'small' }));
+  const t = new Tray(appIcon);
   const menu = () =>
     Menu.buildFromTemplate([
       { label: i18n.t('system:open'), click: showWindow },
