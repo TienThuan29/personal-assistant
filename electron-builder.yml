@@ -47,4 +47,4 @@ linux:
       arch: x64
   icon: assets/app-icons/icon-512.png
   category: Office
-  artifactName: PersonalAssistant-linux-${arch}.${ext}
+  artifactName: PersonalAssistant-linux-x64.${ext} # not ${arch}: that expands to x86_64 on Linux, and the README links x64
