@@ -99,8 +99,10 @@ export const DEFAULT_LLM: LlmSettings = {
   gateway: { endpoint: '', model: '' },
 };
 
-/** Display preferences, stored under the settings key 'ui'. `moneyStyle` 'vi' is "55.000 ₫", 'intl' is "₫55,000". */
-/** `accent`: the app accent colour as lowercase `#rrggbb` (docs/accent-color-design.md). */
+/**
+ * Display preferences, stored under the settings key 'ui'. `moneyStyle` 'vi' is "55.000 ₫", 'intl' is "₫55,000".
+ * `accent` is the app colour as lowercase `#rrggbb` (docs/accent-color-design.md).
+ */
 export type UiSettings = { language: Lang; moneyStyle: 'vi' | 'intl'; defaultCurrency: string; accent: string };
 export const DEFAULT_UI: UiSettings = { language: 'vi', moneyStyle: 'vi', defaultCurrency: 'VND', accent: '#ab502d' };
 
