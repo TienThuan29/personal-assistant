@@ -25,31 +25,31 @@ export function ConversationList({ conversations, selectedId, titleOf, onOpen, o
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
   const [menuFor, setMenuFor] = useState<number | null>(null); // the row whose "⋯" menu is open
-  const active = useRef(false); // false once exited, so a late blur (Escape, unmount) can't save
+  const active = useRef<number | null>(null); // the row being edited; null once exited, so a late blur (Escape, unmount) can't save
   const busy = useRef(false); // Enter then blur while saving must not rename twice
   const refocus = useRef<number | null>(null); // after Enter/Escape, keyboard focus goes back to the row
   const fresh = useRef(false); // select all on the input's first focus only, not when the window regains focus
 
   const start = (c: ConversationRow) => {
-    active.current = true;
+    active.current = c.id;
     fresh.current = true;
     setDraft(titleOf(c));
     setEditing(c.id);
   };
   const exit = (keyboard: boolean) => {
-    active.current = false;
+    active.current = null;
     refocus.current = keyboard ? editing : null;
     setEditing(null);
   };
   /** `input` is set for Enter: focus returns to the row only if the input still has it after the save. */
   const commit = async (c: ConversationRow, input: HTMLInputElement | null) => {
-    if (!active.current || busy.current) return;
+    if (active.current !== c.id || busy.current) return;
     const title = draft.trim();
     if (!title || title === titleOf(c)) return exit(!!input);
     busy.current = true;
     try {
       await onRename(c.id, title);
-      exit(!!input && document.activeElement === input);
+      if (active.current === c.id) exit(!!input && document.activeElement === input); // another row may be editing by now
     } catch (e) {
       message.error?.(errorText(e));
     } finally {

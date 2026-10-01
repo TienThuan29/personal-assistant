@@ -5,11 +5,13 @@ import { i18n } from './i18n';
 
 const NOW_ISO = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
 
+const EMPTY_UNNAMED = 'NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id) AND c.title = ?'; // renamed empty chats are kept
+
 /** Reuses the newest conversation without messages, so "new chat" clicks don't pile up empty ones. */
 export function createConversation(db: Db): number {
-  const empty = db
-    .prepare('SELECT id FROM conversations c WHERE NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id) ORDER BY id DESC LIMIT 1')
-    .get() as { id: number } | undefined;
+  const empty = db.prepare(`SELECT id FROM conversations c WHERE ${EMPTY_UNNAMED} ORDER BY id DESC LIMIT 1`).get(DEFAULT_CONVERSATION_TITLE) as
+    | { id: number }
+    | undefined;
   return empty ? empty.id : Number(db.prepare('INSERT INTO conversations DEFAULT VALUES').run().lastInsertRowid);
 }
 
@@ -26,7 +28,7 @@ export function deleteConversation(db: Db, id: number): void {
 }
 
 export function pruneEmptyConversations(db: Db): void {
-  db.prepare('DELETE FROM conversations WHERE id NOT IN (SELECT DISTINCT conversation_id FROM messages)').run();
+  db.prepare(`DELETE FROM conversations AS c WHERE ${EMPTY_UNNAMED}`).run(DEFAULT_CONVERSATION_TITLE);
 }
 
 export function setTitleIfNew(db: Db, id: number, text: string): void {

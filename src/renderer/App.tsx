@@ -132,7 +132,7 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       if (!e.ctrlKey || e.altKey || e.shiftKey || e.repeat) return; // holding Ctrl+N must not make a chat per repeat
       const key = e.key.toLowerCase();
-      const nav = NAV[Number(key) - 1];
+      const nav = e.code.startsWith('Digit') ? NAV[Number(e.code.slice(5)) - 1] : undefined; // the physical key, so AZERTY works too
       const action =
         key === 'n' ? () => newChat().catch(fail)
         : nav ? () => setRoute({ page: nav.page })
@@ -183,7 +183,7 @@ export function App() {
       {!collapsed && (
         <>
           <span className='flex-1 text-left truncate'>{t('chat:newChat')}</span>
-          <kbd className='text-[11px] font-400 [font-family:inherit]'>Ctrl+N</kbd>
+          <kbd aria-hidden className='text-[11px] font-400 [font-family:inherit]'>Ctrl+N</kbd>
         </>
       )}
     </button>

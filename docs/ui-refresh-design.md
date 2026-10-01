@@ -191,9 +191,10 @@ Mỗi giai đoạn một commit, kết thúc bằng test xanh và ảnh chụp m
 
 ## As built
 
-Commit `7fe60e1` → `4ef0bc6` (sau `f9c52db`). Code là bản tham chiếu; mục này ghi những chỗ khác thiết kế.
+Commit `7fe60e1` → các commit sửa sau review cuối (sau `f9c52db`). Code là bản tham chiếu; mục này ghi những chỗ khác thiết kế.
 
 - **Main:**
+  - Hội thoại trống đã đổi tên không bị dùng lại cho "Hội thoại mới" và không bị xóa khi khởi động.
   - IPC tên là `conv:rename` (theo các kênh `conv:*` có sẵn), không phải `conversations:rename`. Chuỗi dài hơn `MAX_TEXT` (20.000) bị từ chối trước khi xử lý. Store chuẩn hóa NFC, gộp khoảng trắng, cắt còn 100 ký tự; không đổi `updated_at` nên đổi tên không làm nhảy thứ tự.
   - `dayBucket` (`shared/dates.ts`) coi thời điểm ở tương lai là "Hôm nay" (`today` cũ sau nửa đêm, lệch đồng hồ).
 - **Nền tảng:**
@@ -204,17 +205,20 @@ Commit `7fe60e1` → `4ef0bc6` (sau `f9c52db`). Code là bản tham chiếu; m�
   - Segmented control: ở theme tối, pill đang chọn dùng `--line` (surface gần như trùng rãnh `sunken`).
   - Nút primary bị disable: chữ `ink-2` (Arco để chữ trắng trên nền `--aou-2` nhạt).
   - Ô nhập, textarea, select, picker của Arco có viền `--line` khi nghỉ và khi hover ở mọi nơi (cùng selector thư viện dùng trong modal); focus, lỗi, cảnh báo, disable giữ màu của Arco. Ô soạn tin vẫn không viền.
+  - Chữ `--danger` là `danger-7` của Arco (chip "Ưu tiên cao", ngày quá hạn): trên nền nhạt của nó 4.76:1 sáng, 5.45:1 tối (`danger-6` chỉ 3.25 / 4.36).
+  - Mục đang chọn trong sidebar (trang và hội thoại) và nút "Hội thoại mới": chữ `--ink` trên `accent-soft` (11.5:1 sáng, 10.6:1 tối), chỉ icon màu accent. Chữ accent trên nền đó chỉ đạt 4.11:1, `--ink-2` 4.05:1.
   - `.page` có `scrollbar-gutter: stable`: mép phải giống nhau dù trang có cuộn hay không.
 - **Toolbar các trang:** Task bỏ dòng gợi ý. Ghi chú bỏ gợi ý, ô tìm kiếm nằm trong toolbar (placeholder tiếng Việt ghi "không cần gõ dấu"). Cài đặt không có toolbar. Hôm nay dùng lời chào thay cho gợi ý.
 - **Hôm nay:**
   - Lưới stat card `minmax(200px, 1fr)` (không phải 160px).
-  - Ngày trống hoàn toàn thì ẩn hàng hành động nhanh; `EmptyState` có "+ Thêm task" và "Hỏi trợ lý".
+  - Ngày trống hoàn toàn thì ẩn stat card, hàng hành động nhanh và hai thẻ danh sách; `EmptyState` có "+ Thêm task" và "Hỏi trợ lý".
   - Số tiền đã chi nằm trong dòng tóm tắt.
   - Nút thêm dùng lại key tiêu đề form (`addTask`, `addExpense`, `addReminder`).
 - **Ghi chú:** nút Sửa/Xóa đặt `absolute` nhưng nằm sau đoạn trích trong DOM (thứ tự Tab). Chỉ nút ảnh nhỏ nằm trên lớp phủ stretched link.
 - **Chi tiêu:**
   - Bảng màu (skill `dataviz`), theo hạng: sáng `#b5552f #099fb1 #a05377 #c4a032 #728ad1 #33936a`, Khác `#b8afa6`; tối `#cf704c #099fb2 #a05377 #ac8909 #728ad1 #29a674`, Khác `#7a7068`. Validator: sáng ΔE CVD kề nhau 10.3, thường 18.4; tối 10.4 / 19.5, mọi màu ≥ 3:1. Sáng `#c4a032` chỉ 2.5:1 trên nền trắng; chú thích (số tiền, phần trăm) là bản đọc được.
   - Một danh mục giữ một màu trên mọi thanh loại tiền (bảng slot theo hạng của thanh đầu; danh mục không có ở đó lấy slot trống thấp nhất của thanh mình).
+  - Tổng tháng lấy từ `totals` (SUM trong SQL); thanh màu và chú thích tính từ danh sách đã tải (tối đa 500 dòng).
   - Lưới chú thích `minmax(240px, 1fr)`. Tên tháng từ `common.monthLong`.
   - Tháng trống chỉ có "+ Thêm" (không có "Hỏi trợ lý").
 - **Chat:**
@@ -227,8 +231,7 @@ Commit `7fe60e1` → `4ef0bc6` (sau `f9c52db`). Code là bản tham chiếu; m�
 - **Bàn phím:**
   - Mở menu "⋯" của hội thoại thì focus vào mục đầu của menu (popup nằm ở `body`, không thì không Tab tới được).
   - Chọn Xóa (hoặc Đổi tên) bằng Enter trong menu có `preventDefault`: Arco xử lý ở keydown, nếu không thì Enter kích hoạt tiếp phần tử nhận focus sau đó (vd nút của hộp xác nhận xóa).
-  - Phím tắt bỏ qua phím lặp khi giữ (`e.repeat`).
-  - Mục đang chọn trong sidebar (trang và hội thoại) và nút "Hội thoại mới": chữ `--ink` trên `accent-soft` (11.5:1 sáng, 10.6:1 tối), chỉ icon màu accent. Chữ accent trên nền đó chỉ đạt 4.11:1, `--ink-2` 4.05:1.
+  - Phím tắt bỏ qua phím lặp khi giữ (`e.repeat`). Ctrl+1…5 theo phím vật lý (`e.code`), chạy cả với bàn phím AZERTY.
 - **Giới hạn đã biết:**
   - Task vừa tick không kịp hiện gạch ngang: `data:changed` tải lại ngay (có từ trước).
   - Hủy hộp xác nhận xóa thì focus về `body` (hành vi của Arco).

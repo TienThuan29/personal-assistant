@@ -11,7 +11,7 @@ body {
   --accent: #ab502d; /* white text 5.4:1; on its 10% tint 4.7:1 (#b5552f was 4.3:1); design U6 */
   --on-accent: #ffffff;
   --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
-  --danger: rgb(var(--danger-6));
+  --danger: rgb(var(--danger-7)); /* text on its tint: 4.76:1 light, 5.45:1 dark (danger-6 is 3.25 / 4.36) */
   --danger-soft: color-mix(in srgb, rgb(var(--danger-6)) 10%, transparent);
   --hover: #f1ede8;
   --shadow-card: 0 1px 2px rgba(43, 38, 34, 0.04), 0 8px 24px -12px rgba(43, 38, 34, 0.14);

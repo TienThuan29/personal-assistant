@@ -106,4 +106,14 @@ describe('store', () => {
     pruneEmptyConversations(db);
     expect(listConversations(db).map((c) => c.id)).toEqual([kept]);
   });
+
+  it('keeps a renamed empty conversation: not reused, not pruned', () => {
+    const { db } = testDb();
+    const named = createConversation(db);
+    renameConversation(db, named, 'Plan');
+    const fresh = createConversation(db);
+    expect(fresh).not.toBe(named);
+    pruneEmptyConversations(db);
+    expect(listConversations(db).map((c) => c.id)).toEqual([named]);
+  });
 });

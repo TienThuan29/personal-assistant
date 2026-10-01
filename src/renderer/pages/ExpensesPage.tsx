@@ -37,6 +37,8 @@ export function ExpensesPage() {
   };
   const sums = (rows: ExpenseRow[]) => breakdown(rows).map((b) => money(b.total, b.currency));
   const summary = breakdown(data.items);
+  // The headline uses the SQL totals: items are capped (list_expenses), so the bar may cover only the loaded rows.
+  const total = (currency: string, fallback: number) => data.totals.find((x) => x.currency === currency)?.total ?? fallback;
   // Slots 1..6 (styles.css --cat-*) by rank in the largest currency, so a category keeps its color in every bar;
   // one missing from that ranking takes the lowest slot still free in its own bar (top = 6, so one always is).
   const ranked = new Map(summary[0]?.parts.flatMap((p, i) => (p.category === null ? [] : [[p.category, i + 1] as const])));
@@ -92,10 +94,10 @@ export function ExpensesPage() {
       {summary.length > 0 && (
         <Card className='p-5 mb-4'>
           <div className='text-3xl font-600 tabular-nums'>
-            {money(summary[0].total, summary[0].currency)}
+            {money(total(summary[0].currency, summary[0].total), summary[0].currency)}
             {summary.slice(1).map((b) => (
               <span key={b.currency} className='ml-2 text-base font-400 text-ink-2'>
-                + {money(b.total, b.currency)}
+                + {money(total(b.currency, b.total), b.currency)}
               </span>
             ))}
           </div>
