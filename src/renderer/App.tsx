@@ -176,13 +176,14 @@ export function App() {
       type='button'
       aria-label={collapsed ? t('chat:newChat') : undefined}
       onClick={() => newChat().catch(fail)}
-      className={`flex items-center gap-2 h-9 px-3 mb-2 rounded-ctl border-0 bg-accent-soft text-accent text-sm font-500 cursor-pointer ${collapsed ? 'justify-center' : ''}`}
+      className={`flex items-center gap-2 h-9 px-3 mb-2 rounded-ctl border-0 bg-accent-soft text-ink text-sm font-500 cursor-pointer ${collapsed ? 'justify-center' : ''}`}
     >
-      <Plus className='flex text-base' />
+      {/* Accent icon, ink text: accent text on this tint is under AA (like the active nav item). */}
+      <Plus className='flex text-base text-accent' />
       {!collapsed && (
         <>
           <span className='flex-1 text-left truncate'>{t('chat:newChat')}</span>
-          <kbd className='text-[11px] font-400 opacity-75 [font-family:inherit]'>Ctrl+N</kbd>
+          <kbd className='text-[11px] font-400 [font-family:inherit]'>Ctrl+N</kbd>
         </>
       )}
     </button>

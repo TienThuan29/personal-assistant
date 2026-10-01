@@ -275,7 +275,7 @@ body {
 }
 .list-row:first-child { border-top: 0; }
 .list-row:hover { background: var(--hover); }
-/* A completed task stays a moment (struck through) before the reload removes it. */
+/* Completed style; data:changed reloads right away, so a just-ticked task barely shows it (design As built). */
 .list-row.is-done { opacity: 0.45; }
 .list-row.is-done .row-main { text-decoration: line-through; }
 .list-row.is-closed { opacity: 0.55; }

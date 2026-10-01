@@ -23,10 +23,11 @@ export function Nav({
             aria-label={collapsed ? n.label : undefined}
             onClick={() => onSelect(n.key)}
             className={`flex items-center gap-3 h-9 px-3 rounded-ctl border-0 cursor-pointer text-sm ${collapsed ? 'justify-center' : ''} ${
-              on ? 'bg-accent-soft text-accent font-500' : 'bg-transparent text-ink-2 hover:bg-[var(--hover)] hover:text-ink'
+              on ? 'bg-accent-soft text-ink font-500' : 'bg-transparent text-ink-2 hover:bg-[var(--hover)] hover:text-ink'
             }`}
           >
-            <span className='flex shrink-0 text-base'>{n.icon}</span>
+            {/* Only the icon is accent: accent text on the tint over sunken is under AA. */}
+            <span className={`flex shrink-0 text-base ${on ? 'text-accent' : ''}`}>{n.icon}</span>
             {!collapsed && <span className='truncate'>{n.label}</span>}
           </button>
         );

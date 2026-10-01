@@ -95,7 +95,7 @@ export function ConversationList({ conversations, selectedId, titleOf, onOpen, o
                   setMenuFor(null);
                   e.currentTarget.querySelector<HTMLElement>('.conv-more')?.focus();
                 }}
-                className={`conv-row flex items-center rounded-ctl ${on ? 'bg-accent-soft text-accent' : 'text-ink hover:bg-[var(--hover)]'}`}>
+                className={`conv-row flex items-center rounded-ctl ${on ? 'bg-accent-soft text-ink' : 'text-ink hover:bg-[var(--hover)]'}`}>
                 <button
                   type='button'
                   ref={(el) => {

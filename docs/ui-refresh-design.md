@@ -228,10 +228,10 @@ Commit `7fe60e1` → `4ef0bc6` (sau `f9c52db`). Code là bản tham chiếu; m�
   - Mở menu "⋯" của hội thoại thì focus vào mục đầu của menu (popup nằm ở `body`, không thì không Tab tới được).
   - Chọn Xóa (hoặc Đổi tên) bằng Enter trong menu có `preventDefault`: Arco xử lý ở keydown, nếu không thì Enter kích hoạt tiếp phần tử nhận focus sau đó (vd nút của hộp xác nhận xóa).
   - Phím tắt bỏ qua phím lặp khi giữ (`e.repeat`).
+  - Mục đang chọn trong sidebar (trang và hội thoại) và nút "Hội thoại mới": chữ `--ink` trên `accent-soft` (11.5:1 sáng, 10.6:1 tối), chỉ icon màu accent. Chữ accent trên nền đó chỉ đạt 4.11:1, `--ink-2` 4.05:1.
 - **Giới hạn đã biết:**
   - Task vừa tick không kịp hiện gạch ngang: `data:changed` tải lại ngay (có từ trước).
   - Hủy hộp xác nhận xóa thì focus về `body` (hành vi của Arco).
   - Ngày vẫn dạng dd/mm/yyyy ở tiếng Anh (quyết định chung của app).
   - Đổi tháng ở Chi tiêu thoáng hiện dữ liệu tháng trước (`useData` chỉ hiện loading ở lần đọc đầu).
-  - Mục đang chọn trong sidebar (chữ accent trên `accent-soft` trên nền `sunken`) đạt 4.11:1, dưới AA cho chữ thường. Đạt 4.5:1 cần accent khoảng `#9f4a2a` hoặc đổi nền mục chọn; chưa làm.
   - Viền `--line` của ô nhập chỉ đậm hơn nền ô một chút (sáng `#e7e1d9` trên fill `#f1ede8`).
