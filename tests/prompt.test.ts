@@ -7,27 +7,27 @@ it('states the current date, weekday and existing categories', () => {
   callTool(ctx, 'create_expense', { amount: 1, category: 'ăn uống' });
   const p = systemPrompt(ctx.db, NOW);
   expect(p).toContain('2026-09-28T09:00');
-  expect(p).toMatch(/thứ hai/i);
-  expect(p).toMatch(/^Ngày tới: .*T6 2026-10-02/m);
+  expect(p).toMatch(/It is now Monday/);
+  expect(p).toMatch(/^Upcoming days: .*Fri 2026-10-02/m);
   expect(p).toContain('ăn uống');
   expect(p).toContain('work, personal'); // fallback while there are no tasks yet
-  expect(p).toContain('tiền tệ mặc định VND');
+  expect(p).toContain('default currency VND');
 });
 
 it('tells the model to ask through ask_user, not in text', () => {
   const p = systemPrompt(testCtx().db, NOW);
-  expect(p).toMatch(/hỏi bằng tool ask_user/);
+  expect(p).toMatch(/ask with the ask_user tool, not in plain text/);
   expect(p).toMatch(/skipped: true/);
 });
 
 it("names the user's default currency", () => {
   const p = systemPrompt(testCtx().db, NOW, { ...DEFAULT_UI, defaultCurrency: 'USD' });
-  expect(p).toContain('tiền tệ mặc định USD');
+  expect(p).toContain('default currency USD');
 });
 
 it('puts the per-round facts after the static rules', () => {
   const p = systemPrompt(testCtx().db, NOW);
-  expect(p.indexOf('Bây giờ là')).toBeGreaterThan(p.indexOf('Quy tắc:'));
+  expect(p.indexOf('It is now')).toBeGreaterThan(p.indexOf('Rules:'));
   expect(p).toContain('ăn uống, đi lại, mua sắm'); // expense fallback
 });
 

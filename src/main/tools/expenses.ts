@@ -22,28 +22,28 @@ const amount = z
   .int()
   .positive()
   .max(1e12)
-  .describe('Số nguyên theo đơn vị nhỏ nhất. VND không có số lẻ: 55k → 55000, 1tr2 → 1200000, "45.000đ" trên hóa đơn → 45000. USD: 12.50 → 1250');
+  .describe('Integer in the smallest currency unit. VND has no decimals: 55k → 55000, "1tr2" (Vietnamese shorthand for 1.2 million) → 1200000, "45.000đ" on a receipt → 45000. USD: 12.50 → 1250');
 const currency = z
   .string()
   .trim()
   .toUpperCase()
   .regex(/^[A-Z]{3}$/, 'errors:currencyFormat')
-  .describe('Mã ISO 4217, vd VND, USD');
+  .describe('ISO 4217 code, e.g. VND, USD');
 const category = z
   .string()
   .trim()
   .min(1)
-  .describe('vd: ăn uống, đi lại, nhà cửa, mua sắm, giải trí, sức khỏe, khác (ưu tiên category đã có)');
+  .describe('e.g. ăn uống (food), đi lại (transport), nhà cửa (housing), mua sắm (shopping), giải trí (entertainment), sức khỏe (health), khác (other); prefer an existing category');
 
 export const expenseTools = [
   readTool({
     name: 'list_expenses',
     description:
-      'Liệt kê khoản chi (tối đa 500, mới nhất trước) theo ngày chi spent_at từ from đến to (tính cả hai đầu), kèm tổng theo tiền tệ (tính trên mọi khoản khớp, không bị giới hạn 500). Số tiền theo đơn vị nhỏ nhất.',
+      'List expenses (max 500, newest first) by spent_at date from `from` to `to` (both inclusive), with totals per currency (over all matching expenses, not capped at 500). Amounts are in the smallest currency unit.',
     schema: z.object({
       from: date,
       to: date,
-      category: z.string().optional().describe('Lọc đúng category, không phân biệt hoa thường và dấu'),
+      category: z.string().optional().describe('Exact category match, ignoring case and diacritics'),
     }),
     run: (a, { db }) => {
       const w = where([
@@ -62,13 +62,13 @@ export const expenseTools = [
 
   writeTool({
     name: 'create_expense',
-    description: 'Ghi một khoản chi (có thể đọc từ ảnh hóa đơn).',
+    description: 'Record an expense (can be read from a receipt photo).',
     schema: z.object({
       amount,
       currency: currency.optional(), // omitted: the user's default currency
       category,
       description: z.string().optional(),
-      spent_at: date.optional().describe('Ngày chi YYYY-MM-DD (luôn gửi, kể cả hôm nay)'),
+      spent_at: date.optional().describe('Date spent, YYYY-MM-DD (always send it, even for today)'),
       attachment_ids: attachmentIds,
     }),
     apply: (a, { db, now, settings }) => {
@@ -83,7 +83,7 @@ export const expenseTools = [
 
   writeTool({
     name: 'update_expenses',
-    description: 'Sửa khoản chi.',
+    description: 'Update expenses.',
     schema: z.object({
       ids,
       patch: z
@@ -107,7 +107,7 @@ export const expenseTools = [
 
   writeTool({
     name: 'delete_expenses',
-    description: 'Xóa hẳn khoản chi (kèm ảnh).',
+    description: 'Permanently delete expenses (and their images).',
     schema: z.object({ ids }),
     preview: (a, { db }) => ({ before: requireRows<ExpenseRow>(db, 'expenses', a.ids) }),
     apply: (a, { db }) => {

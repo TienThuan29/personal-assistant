@@ -3,7 +3,7 @@ import { readTool, UserError } from './common';
 
 const MAX_ROWS = 200;
 const MAX_CELL = 500;
-const SCHEMA = `tasks(id, title, notes, category, priority 1 cao|2 thường|3 thấp, due_date 'YYYY-MM-DD', due_time 'HH:MM', status todo|done|cancelled, recurrence, created_at, completed_at)
+const SCHEMA = `tasks(id, title, notes, category, priority 1 high|2 normal|3 low, due_date 'YYYY-MM-DD', due_time 'HH:MM', status todo|done|cancelled, recurrence, created_at, completed_at)
 reminders(id, task_id, message, remind_at, status pending|fired|dismissed)
 notes(id, kind note|journal, title, body, created_at, updated_at)
 expenses(id, amount INTEGER minor unit, currency, category, description, spent_at 'YYYY-MM-DD', created_at)
@@ -16,10 +16,10 @@ export const sqlTools = [
   readTool({
     name: 'query_readonly_sql',
     description:
-      'Chạy MỘT câu SELECT/WITH chỉ-đọc trên SQLite cho thống kê mà tool khác không làm được. ' +
-      "Cột *_at (trừ spent_at) là ISO UTC: dùng date(x, 'localtime') để lấy ngày địa phương; due_date/spent_at đã là ngày địa phương. " +
-      `Tối đa ${MAX_ROWS} dòng; chuỗi dài bị cắt còn ${MAX_CELL} ký tự (đọc toàn văn ghi chú bằng get_notes). Schema:\n${SCHEMA}`,
-    schema: z.object({ sql: z.string().min(1).describe('Một câu SELECT hoặc WITH ... SELECT') }),
+      'Run ONE read-only SELECT/WITH statement on SQLite, for statistics the other tools cannot do. ' +
+      "Columns *_at (except spent_at) are ISO UTC: use date(x, 'localtime') for the local date; due_date/spent_at are already local dates. " +
+      `At most ${MAX_ROWS} rows; long strings are cut to ${MAX_CELL} characters (read a note's full text with get_notes). Schema:\n${SCHEMA}`,
+    schema: z.object({ sql: z.string().min(1).describe('One SELECT or WITH ... SELECT statement') }),
     run: (a, { ro }) => {
       const sql = a.sql.trim().replace(/;\s*$/, '');
       if (!/^(select|with)\b/i.test(sql)) throw new UserError('sqlSelectOnly');

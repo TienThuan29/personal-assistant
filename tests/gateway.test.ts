@@ -137,9 +137,9 @@ describe('toGatewayMessages', () => {
     expect(out[0].content).toMatch(/^Bạn là trợ lý\.\n[\s\S]*```tool_calls[\s\S]*- create_task: [^\n]*\{"type":"object"/);
     expect(out[1]).toEqual({ role: 'user', content: 'Ảnh này là gì? [ảnh #ab12cd34]' });
     expect(out[2]).toEqual({ role: 'assistant', content: block([{ name: 'list_tasks', arguments: { status: 'todo' } }]) });
-    expect(out[3]).toEqual({ role: 'tool', tool_call_id: 'c1', content: '[Kết quả tool list_tasks]: []' });
+    expect(out[3]).toEqual({ role: 'tool', tool_call_id: 'c1', content: '[Tool result list_tasks]: []' });
     expect(out[4]).toEqual({ role: 'assistant', content: 'Xem tiếp.\n\n```tool_calls\n[{oops\n```' });
-    expect(out[5].content).toBe(`[Kết quả tool ${BAD_BLOCK}]: {"error":"x"}`);
+    expect(out[5].content).toBe(`[Tool result ${BAD_BLOCK}]: {"error":"x"}`);
     expect(out[6]).toEqual({ role: 'assistant', content: 'Bạn không có task nào.' });
     expect(toGatewayMessages(history)[0]).toEqual({ role: 'system', content: 'Bạn là trợ lý.' });
     expect(toGatewayMessages([{ role: 'user', content: '' }])[0].content).toBe('…');
@@ -190,7 +190,7 @@ describe('agent loop over a gateway (prompt-based tools)', () => {
     expect(bodies[0].messages[0].content).toContain('```tool_calls');
     expect(bodies[1].messages.slice(2)).toEqual([
       { role: 'assistant', content: block([{ name: 'get_today_overview', arguments: {} }]) },
-      { role: 'tool', tool_call_id: msgs[2].role === 'tool' ? msgs[2].tool_call_id : '', content: expect.stringMatching(/^\[Kết quả tool get_today_overview\]: \{/) },
+      { role: 'tool', tool_call_id: msgs[2].role === 'tool' ? msgs[2].tool_call_id : '', content: expect.stringMatching(/^\[Tool result get_today_overview\]: \{/) },
     ]);
   });
 
@@ -208,7 +208,7 @@ describe('agent loop over a gateway (prompt-based tools)', () => {
     expect(getMessages(deps.db, conv).at(-1)).toMatchObject({ role: 'assistant', content: 'Đã tạo task Mua sữa.' });
     expect(bodies[1].messages.slice(2).map((m) => m.content)).toEqual([
       `Mình tạo task nhé.\n\n${block([{ name: 'create_task', arguments: { title: 'Mua sữa' } }])}`,
-      expect.stringMatching(/^\[Kết quả tool create_task\]: \{"ok":true/),
+      expect.stringMatching(/^\[Tool result create_task\]: \{"ok":true/),
     ]);
   });
 
@@ -218,7 +218,7 @@ describe('agent loop over a gateway (prompt-based tools)', () => {
     const conv = start(deps, 'Có task nào?');
     await runTurn(deps, conv);
     expect(getMessages(deps.db, conv).map((m) => m.role)).toEqual(['user', 'assistant', 'tool', 'assistant', 'tool', 'assistant']);
-    expect(bodies[1].messages.at(-1)?.content).toMatch(/^\[Kết quả tool invalid_tool_calls\]: \{"error":"Khối tool_calls không hợp lệ/);
+    expect(bodies[1].messages.at(-1)?.content).toMatch(/^\[Tool result invalid_tool_calls\]: \{"error":"Khối tool_calls không hợp lệ/);
     expect(bodies[1].messages.at(-2)?.content).toBe('```tool_calls\n[{"name": "list_tasks", "arguments": {\n```');
   });
 
@@ -228,7 +228,7 @@ describe('agent loop over a gateway (prompt-based tools)', () => {
     const id = newAttachmentId();
     const msg = addMessage(deps.db, conv, { role: 'user', content: 'Hóa đơn', attachment_ids: [id] });
     saveAttachment(deps.db, deps.attachmentsDir, { id, bytes: new Uint8Array([1]), mime: 'image/jpeg', ownerType: 'message', ownerId: msg });
-    expect(buildLlmMessages(deps, conv, true)[1]).toEqual({ role: 'user', content: `Hóa đơn\n[ảnh #${id}] (mô hình này không xem được ảnh, chỉ thấy nhãn)` });
+    expect(buildLlmMessages(deps, conv, true)[1]).toEqual({ role: 'user', content: `Hóa đơn\n[ảnh #${id}] (this model cannot see images, only the labels)` });
     expect(Array.isArray(buildLlmMessages(deps, conv)[1].content)).toBe(true); // Foundry still gets the image
   });
 });

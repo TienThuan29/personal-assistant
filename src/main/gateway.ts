@@ -16,14 +16,14 @@ export const gatewayBaseURL = (endpoint: string): string =>
 export function toolProtocol(tools: ChatCompletionFunctionTool[]): string {
   return [
     '',
-    'Cách gọi tool:',
-    '- Khi cần gọi tool, CHỈ trả lời đúng một khối như sau, không kèm chữ nào khác:',
+    'How to call tools:',
+    '- When you need to call a tool, reply with ONLY a block like this, with no other text:',
     FENCE,
-    '[{"name": "<tên tool>", "arguments": {<tham số theo schema>}}]',
+    '[{"name": "<tool name>", "arguments": {<arguments following the schema>}}]',
     '```',
-    '- Gọi nhiều tool cùng lúc thì đặt nhiều phần tử trong mảng. Kết quả đến ở tin nhắn sau, dạng [Kết quả tool <tên>]: <json>.',
-    '- Không cần tool thì trả lời bình thường, không dùng khối này. Không tự viết kết quả tool.',
-    'Danh sách tool (tên: mô tả. JSON schema của arguments):',
+    '- To call several tools at once, put several elements in the array. The results arrive in the next message, as [Tool result <name>]: <json>.',
+    '- When no tool is needed, reply normally without this block. Never write tool results yourself.',
+    'Tools (name: description. JSON schema of arguments):',
     ...tools.map((t) => `- ${t.function.name}: ${(t.function.description ?? '').replace(/\s+/g, ' ')} ${JSON.stringify(t.function.parameters)}`),
   ].join('\n');
 }
@@ -101,7 +101,7 @@ export function toGatewayMessages(messages: ChatCompletionMessageParam[], tools?
       for (const c of calls) names.set(c.id, c.function.name);
       return { role: 'assistant', content: [text.trim(), toBlocks(calls)].filter(Boolean).join('\n\n') };
     }
-    if (m.role === 'tool') return { role: 'tool', tool_call_id: m.tool_call_id, content: `[Kết quả tool ${names.get(m.tool_call_id) ?? '?'}]: ${text}` };
+    if (m.role === 'tool') return { role: 'tool', tool_call_id: m.tool_call_id, content: `[Tool result ${names.get(m.tool_call_id) ?? '?'}]: ${text}` };
     return { role: m.role, content: text || '…' } as ChatCompletionMessageParam;
   });
 }

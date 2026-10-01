@@ -4,7 +4,7 @@ import { deleteRows, getRows, ids, instant, readTool, requireRows, toInstant, up
 
 const remindAt = z.iso
   .datetime({ local: true, offset: true, error: 'errors:remindAtFormat' })
-  .describe('Thời điểm nhắc theo giờ máy, vd 2026-09-29T09:00; phải ở tương lai');
+  .describe('Reminder time in the local time zone, e.g. 2026-09-29T09:00; must be in the future');
 
 function futureInstant(s: string, now: Date): string {
   const at = toInstant(s);
@@ -15,14 +15,14 @@ function futureInstant(s: string, now: Date): string {
 export const reminderTools = [
   readTool({
     name: 'list_reminders',
-    description: 'Liệt kê nhắc nhở (tối đa 200, theo thời điểm nhắc tăng dần) trong khoảng thời gian, lọc theo trạng thái.',
+    description: 'List reminders (max 200, by reminder time ascending) within a time range, filtered by status.',
     schema: z.object({
-      from: instant.optional().describe('Từ (bao gồm): ngày YYYY-MM-DD = từ 00:00 ngày đó, hoặc thời điểm ISO 8601'),
-      to: instant.optional().describe('Đến: ngày YYYY-MM-DD = tính cả ngày đó; thời điểm ISO 8601 = không bao gồm thời điểm đó'),
+      from: instant.optional().describe('From (inclusive): a YYYY-MM-DD date = from 00:00 that day, or an ISO 8601 time'),
+      to: instant.optional().describe('Until: a YYYY-MM-DD date = through the end of that day; an ISO 8601 time = exclusive'),
       status: z
         .enum(['pending', 'fired', 'dismissed', 'all'])
         .default('pending')
-        .describe('pending = chưa nhắc, fired = đã nhắc, dismissed = đã bỏ qua'),
+        .describe('pending = not fired yet, fired = already fired, dismissed = dismissed'),
     }),
     run: (a, { db }) => {
       const w = where([
@@ -36,11 +36,11 @@ export const reminderTools = [
 
   writeTool({
     name: 'create_reminder',
-    description: 'Tạo nhắc nhở; app sẽ hiện thông báo Windows đúng giờ. Có thể gắn với một task.',
+    description: 'Create a reminder; the app shows a Windows notification on time. Can be linked to a task.',
     schema: z.object({
       message: z.string().min(1),
       remind_at: remindAt,
-      task_id: z.number().int().positive().optional().describe('ID task liên quan; xóa task thì nhắc nhở bị xóa theo'),
+      task_id: z.number().int().positive().optional().describe('ID of the related task; deleting the task deletes its reminders'),
     }),
     apply: (a, { db, now }) => {
       const at = futureInstant(a.remind_at, now());
@@ -53,7 +53,7 @@ export const reminderTools = [
   writeTool({
     name: 'update_reminders',
     description:
-      'Sửa nhắc nhở: nội dung, thời điểm (dời giờ thì nhắc lại, kể cả nhắc đã hiện hoặc đã bỏ qua), hoặc status=dismissed để bỏ qua.',
+      'Update reminders: message, time (moving the time makes it fire again, even if it already fired or was dismissed), or status=dismissed to dismiss.',
     schema: z.object({
       ids,
       patch: z
@@ -75,7 +75,7 @@ export const reminderTools = [
 
   writeTool({
     name: 'delete_reminders',
-    description: 'Xóa hẳn nhắc nhở.',
+    description: 'Permanently delete reminders.',
     schema: z.object({ ids }),
     preview: (a, { db }) => ({ before: requireRows<ReminderRow>(db, 'reminders', a.ids) }),
     apply: (a, { db }) => {

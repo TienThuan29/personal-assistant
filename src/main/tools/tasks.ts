@@ -19,9 +19,9 @@ import {
   writeTool,
 } from './common';
 
-const recurrence = z.string().regex(RECURRENCE_RE).describe("'daily' | 'weekly:1,3,5' (1 = T2 … 7 = CN) | 'monthly:15'");
-const priority = z.union([z.literal(1), z.literal(2), z.literal(3)]).describe('1 cao, 2 thường, 3 thấp');
-const category = z.string().trim().min(1).describe("'work' (công việc) | 'personal' (cá nhân) | category đã có");
+const recurrence = z.string().regex(RECURRENCE_RE).describe("'daily' | 'weekly:1,3,5' (1 = Monday … 7 = Sunday) | 'monthly:15'");
+const priority = z.union([z.literal(1), z.literal(2), z.literal(3)]).describe('1 high, 2 normal, 3 low');
+const category = z.string().trim().min(1).describe("'work' | 'personal' | an existing category");
 
 /** Built-in keys stay as they are (the UI maps them to labels); others snap to an existing spelling. */
 const taskCategory = (db: Db, c: string, exclude?: number[]): string =>
@@ -44,13 +44,13 @@ export const taskTools = [
   readTool({
     name: 'list_tasks',
     description:
-      'Liệt kê task (tối đa 200) theo khoảng ngày đến hạn due_date (from/to tính cả hai đầu), trạng thái, phân loại hoặc từ khóa.',
+      'List tasks (max 200) by due_date range (from/to inclusive), status, category or keyword.',
     schema: z.object({
       from: date.optional(),
       to: date.optional(),
       status: z.enum(['todo', 'done', 'cancelled', 'all']).default('todo'),
       category: category.optional(),
-      query: z.string().optional().describe('Tìm trong tiêu đề và ghi chú, không phân biệt dấu và hoa thường'),
+      query: z.string().optional().describe('Search in title and notes, ignoring diacritics and case'),
     }),
     run: (a, { db }) => {
       const w = where([
@@ -75,7 +75,7 @@ export const taskTools = [
 
   writeTool({
     name: 'create_task',
-    description: 'Tạo một task mới. Người dùng sẽ xác nhận trước khi lưu.',
+    description: 'Create a new task. The user confirms before it is saved.',
     schema: z.object({
       title: z.string().min(1),
       notes: z.string().optional(),
@@ -110,9 +110,9 @@ export const taskTools = [
   writeTool({
     name: 'update_tasks',
     description:
-      'Sửa một hoặc nhiều task: đánh dấu xong (status=done), dời ngày, đổi phân loại, ưu tiên... ' +
-      'Task lặp lại khi xong hoặc hủy (status=cancelled, tức bỏ qua lần này) sẽ tự sinh lần kế tiếp; ' +
-      'muốn dừng chuỗi lặp thì đặt recurrence=null. Đặt lại status=todo không xóa lần kế tiếp đã sinh.',
+      'Update one or more tasks: mark done (status=done), move the date, change the category, priority, ... ' +
+      'A recurring task that is completed or cancelled (status=cancelled, i.e. skip this occurrence) spawns the next occurrence automatically; ' +
+      'to stop the series set recurrence=null. Setting status=todo again does not remove the next occurrence already spawned.',
     schema: z.object({
       ids,
       patch: z
@@ -149,7 +149,7 @@ export const taskTools = [
 
   writeTool({
     name: 'delete_tasks',
-    description: 'Xóa hẳn một hoặc nhiều task (kèm ảnh và nhắc nhở của chúng).',
+    description: 'Permanently delete one or more tasks (with their images and reminders).',
     schema: z.object({ ids }),
     preview: (a, { db }) => ({ before: requireRows<TaskRow>(db, 'tasks', a.ids) }),
     apply: (a, { db }) => {

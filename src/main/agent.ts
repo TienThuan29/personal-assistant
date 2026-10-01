@@ -43,7 +43,7 @@ function toLlm(deps: AgentDeps, m: ChatMessage, withImages: boolean, textOnly: b
   if (m.role === 'assistant') return { role: 'assistant', content: m.content, ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}) };
   if (m.role === 'tool') return { role: 'tool', tool_call_id: m.tool_call_id, content: m.content };
   const ids = m.attachment_ids ?? [];
-  const labels = ids.map((id) => `[ảnh #${id}]`).join(' ') + (textOnly && ids.length ? ' (mô hình này không xem được ảnh, chỉ thấy nhãn)' : '');
+  const labels = ids.map((id) => `[ảnh #${id}]`).join(' ') + (textOnly && ids.length ? ' (this model cannot see images, only the labels)' : '');
   const text = [m.content, labels].filter(Boolean).join('\n');
   const images: ChatCompletionContentPartImage[] = withImages
     ? ids.flatMap((id) => {
@@ -168,8 +168,8 @@ export function resolveAction(deps: AgentDeps, actionId: number, decision: 'conf
       finishAction(deps.db, actionId, 'cancelled', action.args, ask ? { inChat: true } : null);
       respond(
         ask
-          ? { skipped: true, note: 'Người dùng không chọn trên thẻ mà trả lời ở tin nhắn kế tiếp' }
-          : { cancelled: true, message: 'Người dùng đã hủy thao tác này' }
+          ? { skipped: true, note: 'The user did not pick on the card but answered in their next message' }
+          : { cancelled: true, message: 'The user cancelled this action' }
       );
     });
   } else {
@@ -181,7 +181,7 @@ export function resolveAction(deps: AgentDeps, actionId: number, decision: 'conf
       tx(deps.db, () => {
         const result = tool.apply(args, ctxOf(deps));
         finishAction(deps.db, actionId, 'confirmed', args, result);
-        respond({ ok: true, result, ...(editedArgs ? { note: 'Người dùng đã chỉnh sửa trước khi xác nhận' } : {}) });
+        respond({ ok: true, result, ...(editedArgs ? { note: 'The user edited the values before confirming' } : {}) });
       });
     } catch (e) {
       tx(deps.db, () => {

@@ -216,7 +216,7 @@ export function registerIpc(m: MainCtx): void {
   });
   ipcMain.handle('settings:test', async () => {
     try {
-      const reply = await collect(deps.llm().stream({ messages: [{ role: 'user', content: 'Trả lời đúng một từ: OK' }] }), () => {});
+      const reply = await collect(deps.llm().stream({ messages: [{ role: 'user', content: 'Reply with exactly one word: OK' }] }), () => {});
       return reply.content ?? i18n.t('common:empty');
     } catch (e) {
       throw new Error(describeLlmError(e));

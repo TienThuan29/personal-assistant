@@ -38,12 +38,12 @@ export const instant = z
   .union([date, z.iso.datetime({ local: true, offset: true })], {
     error: 'errors:instantFormat',
   })
-  .describe('Ngày YYYY-MM-DD hoặc thời điểm ISO 8601 theo giờ máy, vd 2026-09-29T09:00');
-export const ids = z.array(z.number().int().positive()).min(1).describe('ID lấy từ kết quả tool');
+  .describe('A YYYY-MM-DD date or an ISO 8601 time in the local time zone, e.g. 2026-09-29T09:00');
+export const ids = z.array(z.number().int().positive()).min(1).describe('IDs taken from tool results');
 export const attachmentIds = z
   .array(z.string())
   .optional()
-  .describe('ID ảnh từ tin nhắn của người dùng (nhãn [ảnh #id]) để đính kèm vào bản ghi');
+  .describe("Image IDs from the user's message (labelled [ảnh #id]) to attach to the record");
 
 /** Instant → UTC ISO. A bare date means local midnight ('start') or the next local midnight ('end'). */
 export function toInstant(s: string, edge: 'start' | 'end' = 'start'): string {

@@ -16,7 +16,7 @@ import {
   writeTool,
 } from './common';
 
-const kind = z.enum(['note', 'journal']).describe("'note' ghi chú, 'journal' nhật ký");
+const kind = z.enum(['note', 'journal']).describe("'note' = note, 'journal' = journal entry");
 
 const phrase = (w: string): string => `"${w.replace(/"/g, '""')}"*`;
 
@@ -35,16 +35,16 @@ export const noteTools = [
   readTool({
     name: 'search_notes',
     description:
-      'Tìm ghi chú/nhật ký theo từ khóa và khoảng ngày tạo. Bỏ trống query để lấy mới nhất. Trả về đoạn trích, chỗ khớp được bọc trong ⟦ ⟧; đọc toàn văn bằng get_notes.',
+      'Search notes/journal entries by keyword and creation date range. Leave query empty to get the newest. Returns excerpts with matches wrapped in ⟦ ⟧; read the full text with get_notes.',
     schema: z.object({
       query: z
         .string()
         .optional()
-        .describe('Từ khóa tìm trong tiêu đề và nội dung, không phân biệt dấu và hoa thường, khớp cả đầu từ; mọi từ phải có mặt'),
+        .describe('Keyword to find in title and body, ignoring diacritics and case, also matching word beginnings; every word must be present'),
       kind: kind.optional(),
-      from: date.optional().describe('Ngày tạo từ (tính cả ngày này)'),
-      to: date.optional().describe('Ngày tạo đến (tính cả ngày này)'),
-      limit: z.number().int().min(1).max(100).default(20).describe('Số kết quả tối đa (1-100)'),
+      from: date.optional().describe('Created on or after this date (inclusive)'),
+      to: date.optional().describe('Created on or before this date (inclusive)'),
+      limit: z.number().int().min(1).max(100).default(20).describe('Maximum number of results (1-100)'),
     }),
     run: (a, { db }) => {
       const q = a.query ? ftsQuery(a.query) || undefined : undefined;
@@ -68,14 +68,14 @@ export const noteTools = [
 
   readTool({
     name: 'get_notes',
-    description: 'Đọc toàn văn ghi chú theo ID (sau khi tìm bằng search_notes).',
+    description: 'Read the full text of notes by ID (after finding them with search_notes).',
     schema: z.object({ ids }),
     run: (a, { db }) => getRows<NoteRow>(db, 'notes', a.ids),
   }),
 
   writeTool({
     name: 'create_note',
-    description: 'Tạo ghi chú hoặc nhật ký.',
+    description: 'Create a note or a journal entry.',
     schema: z.object({ kind: kind.default('note'), title: z.string().optional(), body: z.string().min(1), attachment_ids: attachmentIds }),
     apply: (a, { db }) => {
       const r = db.prepare('INSERT INTO notes (kind, title, body) VALUES (?, ?, ?)').run(a.kind, a.title ?? null, a.body);
@@ -87,7 +87,7 @@ export const noteTools = [
 
   writeTool({
     name: 'update_notes',
-    description: 'Sửa ghi chú/nhật ký.',
+    description: 'Update notes/journal entries.',
     schema: z.object({
       ids,
       patch: z
@@ -104,7 +104,7 @@ export const noteTools = [
 
   writeTool({
     name: 'delete_notes',
-    description: 'Xóa hẳn ghi chú/nhật ký (kèm ảnh).',
+    description: 'Permanently delete notes/journal entries (and their images).',
     schema: z.object({ ids }),
     preview: (a, { db }) => ({ before: requireRows<NoteRow>(db, 'notes', a.ids) }),
     apply: (a, { db }) => {

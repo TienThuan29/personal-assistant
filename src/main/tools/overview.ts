@@ -5,7 +5,7 @@ import { readTool } from './common';
 export const overviewTools = [
   readTool({
     name: 'get_today_overview',
-    description: 'Tổng quan hôm nay: task đến hạn hôm nay, task quá hạn (tối đa 50, trễ lâu nhất trước), nhắc nhở hôm nay và tổng chi hôm nay.',
+    description: "Today at a glance: tasks due today, overdue tasks (max 50, longest overdue first), today's reminders and today's total spending.",
     schema: z.object({}),
     run: (_a, { db, now }) => {
       const today = toLocalDate(now());
