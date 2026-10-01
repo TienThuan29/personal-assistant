@@ -125,7 +125,15 @@ function DisplayCard() {
         />
       </PreferenceRow>
       <PreferenceRow label={t('accent')} description={t('accentDesc')}>
-        <AccentPicker value={ui.accent} onPick={(accent) => setUi({ accent })} />
+        <AccentPicker
+          value={ui.accent}
+          onPick={(accent) =>
+            void api.settings.setUi({ accent }).catch((e) => {
+              applyAccent(ui.accent); // drop the picker's preview
+              message.error?.(errorText(e));
+            })
+          }
+        />
       </PreferenceRow>
       <PreferenceRow label={t('moneyStyle')} description={t('moneyStyleDesc')}>
         <AionSelect
