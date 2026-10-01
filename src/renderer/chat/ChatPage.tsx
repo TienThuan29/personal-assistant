@@ -11,8 +11,8 @@ export function ChatPage({ conversationId, autoFocus }: { conversationId: number
   const chat = useChat(conversationId);
   const [message, messageHolder] = Message.useMessage();
   /** The gateway can't see images (design G8): say so when some were sent through it. */
-  const send = async (text: string, images: ImageInput[]) => {
-    const sent = await chat.send(text, images);
+  const send = async (text: string, images: ImageInput[], files: boolean) => {
+    const sent = await chat.send(text, images, files);
     if (sent && images.length)
       api.settings.get().then((s) => s.llm.active === 'gateway' && message.warning?.(t('gatewayNoImages')), () => {});
     return sent;

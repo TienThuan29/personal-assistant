@@ -8,13 +8,14 @@ import { UserError } from './errors';
 export type Db = DatabaseSync;
 export type Params = Record<string, SQLInputValue>;
 
+/** Lowercase without Vietnamese accents, for accent-insensitive search. */
+export const fold = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').replace(/[đĐ]/g, 'd').toLowerCase();
+
 export function openDb(path: string): Db {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
-  // fold(s): lowercase without Vietnamese accents, for accent-insensitive LIKE search.
-  db.function('fold', { deterministic: true }, (s) =>
-    typeof s === 'string' ? s.normalize('NFD').replace(/\p{M}/gu, '').replace(/[đĐ]/g, 'd').toLowerCase() : s
-  );
+  // fold(s) in SQL, for accent-insensitive LIKE search.
+  db.function('fold', { deterministic: true }, (s) => (typeof s === 'string' ? fold(s) : s));
   migrate(db);
   return db;
 }

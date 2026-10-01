@@ -21,12 +21,19 @@ export type WriteTool<S extends z.ZodType = z.ZodType> = Base<S> & {
 };
 /** Asks the user: parked like a write, but answered with their replies instead of applied (see agent.ts answerAction). */
 export type AskTool<S extends z.ZodType = z.ZodType> = Base<S> & { kind: 'ask' };
+/** Reads the user's own files (docs/file-search-design.md): async, run outside any transaction, offered only when the message allows it. */
+export type FsCtx = { home: string; signal?: AbortSignal };
+export type FsTool<S extends z.ZodType = z.ZodType> = Base<S> & {
+  kind: 'fs';
+  run: (args: z.output<S>, ctx: FsCtx) => Promise<unknown>;
+};
 // oxlint-disable-next-line no-explicit-any -- heterogeneous registry; each tool is typed at its definition
-export type Tool = ReadTool<any> | WriteTool<any> | AskTool<any>;
+export type Tool = ReadTool<any> | WriteTool<any> | AskTool<any> | FsTool<any>;
 
 export const readTool = <S extends z.ZodType>(t: Omit<ReadTool<S>, 'kind'>): Tool => ({ ...t, kind: 'read' });
 export const writeTool = <S extends z.ZodType>(t: Omit<WriteTool<S>, 'kind'>): Tool => ({ ...t, kind: 'write' });
 export const askTool = <S extends z.ZodType>(t: Omit<AskTool<S>, 'kind'>): Tool => ({ ...t, kind: 'ask' });
+export const fsTool = <S extends z.ZodType>(t: Omit<FsTool<S>, 'kind'>): Extract<Tool, { kind: 'fs' }> => ({ ...t, kind: 'fs' });
 
 // ---- shared schemas ----
 export const date = z

@@ -1,4 +1,4 @@
-import { app, ipcMain, nativeImage, net } from 'electron';
+import { app, ipcMain, nativeImage, net, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import type { ImageInput, SettingsInput, SettingsView } from '../shared/types';
 import { type AgentDeps, answerAction, cancelOpenActions, resolveAction, runTurn } from './agent';
@@ -20,6 +20,7 @@ import {
   setTitleIfNew,
 } from './store';
 import { findTool, parseArgs } from './tools';
+import { revealTarget } from './tools/files';
 import { canSelfUpdate, installUpdate, type Updater } from './selfupdate';
 import { checkForUpdate, skipVersion } from './update';
 import { te, UserError } from './errors';
@@ -68,6 +69,7 @@ export function registerIpc(m: MainCtx): void {
   const deps: AgentDeps = {
     ...ctx,
     attachmentsDir: m.attachmentsDir,
+    home: app.getPath('home'),
     emit: (e) => m.send('chat:event', e),
     llm: () => {
       const cfg = activeLlm(getLlm(m.db));
@@ -109,7 +111,7 @@ export function registerIpc(m: MainCtx): void {
 
   ipcMain.handle('chat:messages', (_e, convId: unknown) => getMessages(m.db, id(convId)));
   ipcMain.handle('chat:actions', (_e, convId: unknown) => listActions(m.db, id(convId)));
-  ipcMain.handle('chat:send', async (_e, convId: unknown, text: unknown, images: ImageInput[]) => {
+  ipcMain.handle('chat:send', async (_e, convId: unknown, text: unknown, images: ImageInput[], files?: unknown) => {
     const cid = id(convId);
     if (typeof text !== 'string' || text.length > MAX_TEXT) throw new UserError('invalidMessage');
     if (!Array.isArray(images) || images.length > MAX_IMAGES) throw new UserError('tooManyImages', { max: MAX_IMAGES });
@@ -121,7 +123,7 @@ export function registerIpc(m: MainCtx): void {
     // (files already written become orphans, swept at startup).
     tx(m.db, () => {
       cancelOpenActions(deps, cid);
-      const messageId = addMessage(m.db, cid, { role: 'user', content: text, attachment_ids: attachmentIds });
+      const messageId = addMessage(m.db, cid, { role: 'user', content: text, attachment_ids: attachmentIds, ...(files === true ? { files: true } : {}) });
       jpegs.forEach((bytes, i) =>
         saveAttachment(m.db, m.attachmentsDir, { id: attachmentIds[i], bytes, mime: 'image/jpeg', ownerType: 'message', ownerId: messageId })
       );
@@ -153,6 +155,12 @@ export function registerIpc(m: MainCtx): void {
       await stopTurn(action.conversation_id);
       startTurn(action.conversation_id);
     }
+  });
+
+  // Shows a file the assistant found in Explorer/Finder/the file manager, selected. Never opens or runs it.
+  ipcMain.handle('files:reveal', async (_e, path: unknown) => {
+    if (typeof path !== 'string' || path.length > 1000) throw new UserError('invalidValue');
+    shell.showItemInFolder(await revealTarget(deps.home, path));
   });
 
   ipcMain.handle('data:read', (_e, name: unknown, args: unknown) => {

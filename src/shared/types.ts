@@ -54,7 +54,8 @@ export type ConversationRow = { id: number; title: string; updated_at: string };
 export const DEFAULT_CONVERSATION_TITLE = 'Hội thoại mới';
 
 export type ToolCall = { id: string; type: 'function'; function: { name: string; arguments: string } };
-export type UserMessage = { role: 'user'; content: string; attachment_ids?: string[] };
+/** `files`: the user turned on file search for this message (docs/file-search-design.md). */
+export type UserMessage = { role: 'user'; content: string; attachment_ids?: string[]; files?: true };
 export type AssistantMessage = { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] };
 export type ToolMessage = { role: 'tool'; tool_call_id: string; content: string };
 export type StoredMessage = UserMessage | AssistantMessage | ToolMessage;
@@ -80,6 +81,9 @@ export type AskQuestion = { question: string; options: string[]; multiple: boole
 export type AskReply = { picked: string[]; other?: string };
 /** What the model receives, and what an answered card shows. */
 export type AskAnswer = AskReply & { question: string };
+
+/** The read-only file tools (src/main/tools/files.ts); the chat lists what each call searched or read. */
+export const FILE_TOOL_NAMES = ['find_files', 'grep_files', 'read_file'];
 
 export type AgentEvent = { conversationId: number } & (
   | { type: 'text'; delta: string }
@@ -136,7 +140,8 @@ export type Api = {
   chat: {
     messages(id: number): Promise<ChatMessage[]>;
     actions(id: number): Promise<PendingAction[]>;
-    send(id: number, text: string, images: ImageInput[]): Promise<void>;
+    /** `files`: let the assistant search and read files under ~ for this message only. */
+    send(id: number, text: string, images: ImageInput[], files?: boolean): Promise<void>;
     /** Whether a turn is running, for a chat opened mid-turn. */
     running(id: number): Promise<boolean>;
     stop(id: number): Promise<void>;
@@ -145,6 +150,10 @@ export type Api = {
     /** Answers an ask_user card, one reply per question; the turn resumes. */
     answer(actionId: number, replies: AskReply[]): Promise<void>;
     onEvent(cb: (e: AgentEvent) => void): () => void;
+  };
+  files: {
+    /** Shows a ~/… path from a file tool result selected in Explorer/Finder/the file manager; rejects outside ~ or blocked paths. */
+    reveal(path: string): Promise<void>;
   };
   data: {
     read<T = unknown>(tool: string, args: object): Promise<T>;

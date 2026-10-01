@@ -41,6 +41,9 @@ jobs:
         with: { node-version: 22 }
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
+      - name: Tests on macOS (the check job covers Linux; the file tools behave per OS)
+        if: runner.os == 'macOS'
+        run: bun run test
       - run: bun run ${{ matrix.script }}
       - name: Smoke test (starts and creates its database)
         if: runner.os == 'Linux'

@@ -1,6 +1,6 @@
 import { FilePreview, SlashCommandMenu } from '@aionui/ui';
 import { Button, Input, Tooltip } from '@arco-design/web-react';
-import { PauseOne, Pic, Send } from '@icon-park/react';
+import { FolderSearch, PauseOne, Pic, Send } from '@icon-park/react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ImageInput } from '../../shared/types';
@@ -9,7 +9,13 @@ import { ACCEPT, useImagePicker } from '../components/useImagePicker';
 /** Slash commands are just canned prompts; the names stay the same in every language. */
 export const COMMANDS = ['homnay', 'tuannay', 'chitieu'] as const;
 
-type Props = { running: boolean; onSend: (text: string, images: ImageInput[]) => Promise<boolean>; onStop: () => void; autoFocus?: boolean };
+type Props = {
+  running: boolean;
+  /** `files`: file search is on for this message (docs/file-search-design.md). */
+  onSend: (text: string, images: ImageInput[], files: boolean) => Promise<boolean>;
+  onStop: () => void;
+  autoFocus?: boolean;
+};
 
 export function SendBox({ running, onSend, onStop, autoFocus }: Props) {
   const { t } = useTranslation('chat');
@@ -18,6 +24,7 @@ export function SendBox({ running, onSend, onStop, autoFocus }: Props) {
   const [active, setActive] = useState(0);
   const [sending, setSending] = useState(false);
   const [dismissed, setDismissed] = useState<string | null>(null); // the text the slash menu was closed on (Escape)
+  const [files, setFiles] = useState(false); // file search for the next message only; off again once it is sent
   const fileInput = useRef<HTMLInputElement>(null);
   const { images, addFiles, removeImage, clear, toInputs, message, holder: messageHolder } = useImagePicker('chat');
 
@@ -32,7 +39,8 @@ export function SendBox({ running, onSend, onStop, autoFocus }: Props) {
     try {
       const sent = images;
       const payload = await toInputs();
-      if (!(await onSend(value.trim(), payload))) return;
+      if (!(await onSend(value.trim(), payload, files))) return;
+      setFiles(false);
       setText((t) => (t === typed ? '' : t)); // keep anything typed while sending
       clear(sent); // keep any picked while sending
     } catch {
@@ -118,11 +126,21 @@ export function SendBox({ running, onSend, onStop, autoFocus }: Props) {
             }
           }}
           autoSize={{ minRows: 2, maxRows: 8 }}
-          placeholder={t('placeholder')}
+          placeholder={t(files ? 'fileSearchOn' : 'placeholder')}
         />
         <div className='sendbox-actions'>
           <Tooltip content={t('attachImage')}>
             <Button type='text' icon={<Pic />} aria-label={t('attachImage')} onClick={() => fileInput.current?.click()} />
+          </Tooltip>
+          <Tooltip content={t('fileSearch')}>
+            <Button
+              type='text'
+              icon={<FolderSearch />}
+              aria-label={t('fileSearch')}
+              aria-pressed={files}
+              className={`mr-auto ${files ? '!text-accent !bg-accent-soft' : ''}`} // mr-auto: next to the image button, send stays right
+              onClick={() => setFiles((on) => !on)}
+            />
           </Tooltip>
           <input
             ref={fileInput}

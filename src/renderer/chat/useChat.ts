@@ -78,11 +78,11 @@ export function useChat(conversationId: number) {
   const ended = () => last.current === 'error' || last.current === 'pending';
 
   /** True once main has accepted the message; the send box keeps its input otherwise. */
-  const send = (text: string, images: ImageInput[]) =>
+  const send = (text: string, images: ImageInput[], files = false) =>
     guard(async () => {
       setRunning(true);
       last.current = null;
-      await api.chat.send(conversationId, text, images);
+      await api.chat.send(conversationId, text, images, files);
       if (!ended()) setRunning(true);
       void refresh(); // shows the user's message before the first event
     });

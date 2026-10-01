@@ -5,8 +5,9 @@ import { type Db, tx } from './db';
 import { collect, describeLlmError, type Llm } from './llm';
 import { systemPrompt } from './prompt';
 import { addMessage, createAction, finishAction, getAction, getMessages, listActions } from './store';
-import { findTool, parseArgs, toOpenAITools, type ToolCtx } from './tools';
+import { findTool, parseArgs, TOOLS, toOpenAITools, type ToolCtx } from './tools';
 import { ASK_LIMITS } from './tools/ask';
+import { FILE_TOOLS, fileError, findFileTool } from './tools/files';
 import { errMsg, te, UserError } from './errors';
 import { BAD_BLOCK } from './gateway';
 
@@ -21,21 +22,68 @@ export type AgentDeps = {
   settings: () => UiSettings;
   llm: () => Llm;
   emit: (e: AgentEvent) => void;
+  /** The folder the file tools may search and read. */
+  home: string;
 };
 
 const ctxOf = (d: AgentDeps): ToolCtx => ({ db: d.db, ro: d.ro, now: d.now, settings: d.settings });
 
 /**
  * System prompt + roughly the last HISTORY messages, starting on a user message so tool replies never dangle.
- * `textOnly`: the provider can't see images (G8), so none are attached and the labels say so.
+ * `textOnly`: the provider can't see images (G8), so none are attached and the labels say so. `files`: the file tools are on.
  */
-export function buildLlmMessages(deps: AgentDeps, conversationId: number, textOnly = false): ChatCompletionMessageParam[] {
+export function buildLlmMessages(deps: AgentDeps, conversationId: number, textOnly = false, files = false): ChatCompletionMessageParam[] {
   const all = getMessages(deps.db, conversationId);
   let start = Math.max(0, all.length - HISTORY);
   while (start > 0 && all[start].role !== 'user') start--;
   const recent = all.slice(start);
   const lastUser = recent.map((m) => m.role).lastIndexOf('user');
-  return [{ role: 'system', content: systemPrompt(deps.db, deps.now(), deps.settings()) }, ...recent.map((m, i) => toLlm(deps, m, i === lastUser && !textOnly, textOnly))];
+  return [
+    { role: 'system', content: systemPrompt(deps.db, deps.now(), deps.settings(), files) },
+    ...recent.map((m, i) => toLlm(deps, m, i === lastUser && !textOnly, textOnly)),
+  ];
+}
+
+/** Whether the latest user message turned on file search; it holds for the whole turn, also when it resumes after a card. */
+const filesOn = (deps: AgentDeps, conversationId: number): boolean => {
+  const last = getMessages(deps.db, conversationId).findLast((m) => m.role === 'user');
+  return last?.role === 'user' && last.files === true;
+};
+
+/**
+ * Runs the reply's file tool calls before its transaction: they are async and may take seconds. A call while file
+ * access is off gets an error, so the model can never read files the user didn't allow for this message.
+ */
+async function runFileCalls(
+  deps: AgentDeps,
+  conversationId: number,
+  calls: ToolCall[],
+  allowed: boolean,
+  signal?: AbortSignal
+): Promise<Map<ToolCall, unknown>> {
+  const out = new Map<ToolCall, unknown>();
+  for (const c of calls) {
+    const tool = findFileTool(c.function.name);
+    if (!tool) continue;
+    if (!allowed) {
+      out.set(c, { error: te('fileAccessOff') });
+      continue;
+    }
+    let args: unknown;
+    try {
+      args = parseArgs(tool, JSON.parse(c.function.arguments || '{}'));
+    } catch (e) {
+      out.set(c, { error: te('invalidArgs', { error: errMsg(e) }) });
+      continue;
+    }
+    deps.emit({ type: 'tool', conversationId, name: c.function.name }); // shown while it runs
+    try {
+      out.set(c, await tool.run(args, { home: deps.home, signal })); // oxlint-disable-line no-await-in-loop -- one search at a time
+    } catch (e) {
+      out.set(c, { error: errMsg(fileError(e)) });
+    }
+  }
+  return out;
 }
 
 /** Images go only with the latest user message (token cost); older ones stay as [ảnh #id] labels. */
@@ -60,19 +108,21 @@ export async function runTurn(deps: AgentDeps, conversationId: number, signal?: 
     deps.emit({ type: 'pending', conversationId }); // unanswered tool calls would make the API reject the request
     return;
   }
-  const tools = toOpenAITools();
+  const files = filesOn(deps, conversationId);
+  const tools = toOpenAITools(files ? [...TOOLS, ...FILE_TOOLS] : TOOLS);
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const partial = { content: '' };
     let reply: AssistantMessage;
     try {
       const llm = deps.llm();
-      const stream = llm.stream({ messages: buildLlmMessages(deps, conversationId, llm.textOnly), tools, signal });
+      const stream = llm.stream({ messages: buildLlmMessages(deps, conversationId, llm.textOnly, files), tools, signal });
       reply = await collect(stream, (delta) => deps.emit({ type: 'text', conversationId, delta }), partial);
     } catch (e) {
       if (partial.content) addMessage(deps.db, conversationId, { role: 'assistant', content: `${partial.content}\n\n_${te('interrupted')}_` });
       deps.emit(signal?.aborted ? { type: 'done', conversationId } : { type: 'error', conversationId, message: describeLlmError(e) });
       return;
     }
+    const fileResults = signal?.aborted ? new Map() : await runFileCalls(deps, conversationId, reply.tool_calls ?? [], files, signal);
     if (signal?.aborted) {
       // Stop landed right as the stream ended: keep the text, drop the tool calls the user never saw run.
       if (reply.content) addMessage(deps.db, conversationId, { role: 'assistant', content: reply.content });
@@ -88,7 +138,7 @@ export async function runTurn(deps: AgentDeps, conversationId: number, signal?: 
     // One transaction: a tool_calls message is never stored without its replies or parked actions.
     const outcomes = tx(deps.db, () => {
       const messageId = addMessage(deps.db, conversationId, reply);
-      return calls.map((c) => handleCall(deps, conversationId, messageId, c));
+      return calls.map((c) => handleCall(deps, conversationId, messageId, c, fileResults));
     });
     deps.emit({ type: 'saved', conversationId });
     calls.forEach((c, i) => outcomes[i] === 'ran' && deps.emit({ type: 'tool', conversationId, name: c.function.name }));
@@ -108,16 +158,23 @@ export async function runTurn(deps: AgentDeps, conversationId: number, signal?: 
   deps.emit({ type: 'done', conversationId });
 }
 
-/** Runs a read tool now ('ran'), parks a write tool as a pending action ('parked'), or answers with an error. */
-function handleCall(deps: AgentDeps, conversationId: number, messageId: number, c: ToolCall): 'ran' | 'parked' | 'error' {
+/**
+ * Runs a read tool now ('ran'), parks a write tool as a pending action ('parked'), or answers with an error.
+ * File tool calls already ran (runFileCalls); their results are only saved here.
+ */
+function handleCall(deps: AgentDeps, conversationId: number, messageId: number, c: ToolCall, fileResults: Map<ToolCall, unknown>): 'ran' | 'parked' | 'error' {
   const respond = (result: unknown): void =>
     void addMessage(deps.db, conversationId, { role: 'tool', tool_call_id: c.id, content: JSON.stringify(result) });
+  if (fileResults.has(c)) {
+    respond(fileResults.get(c));
+    return 'ran';
+  }
   if (c.function.name === BAD_BLOCK) {
     respond({ error: te('badToolBlock') }); // a gateway reply whose tool_calls block didn't parse (G9)
     return 'error';
   }
   const tool = findTool(c.function.name);
-  if (!tool) {
+  if (!tool || tool.kind === 'fs') {
     respond({ error: te('unknownTool', { name: c.function.name }) });
     return 'error';
   }

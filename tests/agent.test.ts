@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { APIConnectionError } from 'openai';
 import { answerAction, buildLlmMessages, cancelOpenActions, MAX_ROUNDS, resolveAction, runTurn } from '../src/main/agent';
 import type { AssistantMessage } from '../src/shared/types';
@@ -225,6 +227,59 @@ describe('runTurn', () => {
     expect(getMessages(deps.db, conv).at(-1)).not.toHaveProperty('tool_calls');
     expect(listActions(deps.db, conv)).toEqual([]);
     expect(deps.events.at(-1)).toMatchObject({ type: 'done' });
+  });
+});
+
+describe('file tools', () => {
+  /** Records the tool names and system prompt of each LLM call. */
+  function spyDeps(script: AssistantMessage[]) {
+    const seen: { tools: string[]; system: string }[] = [];
+    const inner = fakeLlm(script);
+    const deps = testDeps([], {
+      stream: (p) => {
+        seen.push({ tools: (p.tools ?? []).map((t) => t.function.name), system: String(p.messages[0].content) });
+        return inner.stream(p);
+      },
+    });
+    mkdirSync(deps.home, { recursive: true });
+    writeFileSync(join(deps.home, 'todo.txt'), 'mua sữa');
+    return { deps, seen };
+  }
+  const startWith = (deps: Deps, files: boolean): number => {
+    const conv = createConversation(deps.db);
+    addMessage(deps.db, conv, { role: 'user', content: 'đọc todo', ...(files ? { files: true as const } : {}) });
+    return conv;
+  };
+
+  it('are offered and run only when the user message turned them on', async () => {
+    const { deps, seen } = spyDeps([call('f1', 'read_file', { path: '~/todo.txt' }), say('Bạn cần mua sữa.')]);
+    const conv = startWith(deps, true);
+    await runTurn(deps, conv);
+    expect(seen[0].tools).toEqual(expect.arrayContaining(['read_file', 'find_files', 'grep_files', 'list_tasks']));
+    expect(seen[0].system).toContain('File access is on');
+    expect(toolResults(deps, conv)).toEqual([expect.objectContaining({ path: '~/todo.txt', content: 'mua sữa' })]);
+    expect(deps.events).toContainEqual({ type: 'tool', conversationId: conv, name: 'read_file' });
+  });
+
+  it('a call while off gets an error instead of the file', async () => {
+    const { deps, seen } = spyDeps([call('f1', 'read_file', { path: '~/todo.txt' }), say('Hãy bật nút tìm file.')]);
+    const conv = startWith(deps, false);
+    await runTurn(deps, conv);
+    expect(seen[0].tools).not.toContain('read_file');
+    expect(seen[0].system).not.toContain('File access');
+    expect(toolResults(deps, conv)).toEqual([{ error: expect.stringMatching(/nút tìm file|file search button/) }]);
+  });
+
+  it('stay on when the turn resumes after a confirm card, and go off with the next message', async () => {
+    const { deps, seen } = spyDeps([call('w1', 'create_task', { title: 'x' }), say('Xong.'), say('Ok.')]);
+    const conv = startWith(deps, true);
+    await runTurn(deps, conv);
+    resolveAction(deps, listActions(deps.db, conv, 'pending')[0].id, 'confirm');
+    await runTurn(deps, conv);
+    expect(seen[1].tools).toContain('read_file');
+    addMessage(deps.db, conv, { role: 'user', content: 'cảm ơn' });
+    await runTurn(deps, conv);
+    expect(seen[2].tools).not.toContain('read_file');
   });
 });
 

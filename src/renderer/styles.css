@@ -198,6 +198,16 @@ body {
   white-space: pre-wrap;
 }
 .msg-assistant { display: flex; flex-direction: column; gap: 8px; }
+/* File tool calls under a reply: what was searched/read, then clickable ~/… paths (docs/file-search-design.md). */
+.file-call { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--ink-2); }
+summary.file-call { cursor: pointer; }
+.file-call-group ul { margin: 4px 0 0 20px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.file-ref {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;
+  padding: 0; border: 0; background: none; cursor: pointer;
+  font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; color: var(--accent);
+}
+.file-ref:hover, .file-ref:focus-visible { text-decoration: underline; }
 
 .thumbs { display: flex; gap: 8px; flex-wrap: wrap; }
 .thumb { padding: 0; border: 0; background: none; border-radius: 8px; cursor: zoom-in; }

@@ -47,6 +47,11 @@ mac:
   identity: '-'
   hardenedRuntime: false
   artifactName: PersonalAssistant-mac-${arch}.${ext}
+  # Shown when macOS asks for access the first time file search walks these folders (docs/file-search-design.md).
+  extendInfo:
+    NSDesktopFolderUsageDescription: Personal Assistant searches and reads your files only when you turn on file search for a message.
+    NSDocumentsFolderUsageDescription: Personal Assistant searches and reads your files only when you turn on file search for a message.
+    NSDownloadsFolderUsageDescription: Personal Assistant searches and reads your files only when you turn on file search for a message.
 linux:
   target:
     - target: AppImage

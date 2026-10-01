@@ -25,8 +25,8 @@ export function parseArgs(tool: Tool, raw: unknown): unknown {
   return r.data;
 }
 
-export function toOpenAITools(): ChatCompletionFunctionTool[] {
-  return TOOLS.map((t) => {
+export function toOpenAITools(tools: Tool[] = TOOLS): ChatCompletionFunctionTool[] {
+  return tools.map((t) => {
     // io: 'input' keeps fields with .default() optional for the model.
     const { $schema: _drop, ...parameters } = z.toJSONSchema(t.schema, { io: 'input' }) as Record<string, unknown>;
     return { type: 'function', function: { name: t.name, description: t.description, parameters } };

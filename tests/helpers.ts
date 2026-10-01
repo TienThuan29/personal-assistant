@@ -33,7 +33,7 @@ export function callTool<T = unknown>(ctx: ToolCtx, name: string, args: object):
   const tool = findTool(name);
   if (!tool) throw new Error(`no tool ${name}`);
   const parsed = parseArgs(tool, args);
-  if (tool.kind === 'ask') throw new Error(`${name} asks the user; it has nothing to run`);
+  if (tool.kind === 'ask' || tool.kind === 'fs') throw new Error(`${name} is not a database tool`);
   return (tool.kind === 'read' ? tool.run(parsed, ctx) : tool.apply(parsed, ctx)) as T;
 }
 
@@ -68,5 +68,15 @@ export const call = (id: string, name: string, args: object): AssistantMessage =
 export function testDeps(script: AssistantMessage[], llm: Llm = fakeLlm(script)): AgentDeps & { events: AgentEvent[] } {
   const { db, ro, dir } = testDb();
   const events: AgentEvent[] = [];
-  return { db, ro, attachmentsDir: join(dir, 'att'), now: () => NOW, settings: () => DEFAULT_UI, llm: () => llm, emit: (e) => void events.push(e), events };
+  return {
+    db,
+    ro,
+    attachmentsDir: join(dir, 'att'),
+    home: join(dir, 'home'),
+    now: () => NOW,
+    settings: () => DEFAULT_UI,
+    llm: () => llm,
+    emit: (e) => void events.push(e),
+    events,
+  };
 }

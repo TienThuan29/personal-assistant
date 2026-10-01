@@ -20,13 +20,16 @@ const api: Api = {
   chat: {
     messages: (id) => invoke('chat:messages', id),
     actions: (id) => invoke('chat:actions', id),
-    send: (id, text, images) => invoke('chat:send', id, text, images),
+    send: (id, text, images, files) => invoke('chat:send', id, text, images, files),
     running: (id) => invoke('chat:running', id),
     stop: (id) => invoke('chat:stop', id),
     retry: (id) => invoke('chat:retry', id),
     resolve: (actionId, decision, args) => invoke('chat:resolve', actionId, decision, args),
     answer: (actionId, replies) => invoke('chat:answer', actionId, replies),
     onEvent: listen('chat:event'),
+  },
+  files: {
+    reveal: (path) => invoke('files:reveal', path),
   },
   data: {
     read: (tool, args) => invoke('data:read', tool, args),

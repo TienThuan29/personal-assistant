@@ -1,10 +1,11 @@
 import { ThoughtDisplay } from '@aionui/ui';
 import { Markdown } from '@aionui/ui/markdown';
-import { Alert, Button } from '@arco-design/web-react';
-import { CalendarThirtyTwo, Sun, Wallet } from '@icon-park/react';
-import { memo, useEffect, useRef, useState } from 'react';
+import { Alert, Button, Message } from '@arco-design/web-react';
+import { CalendarThirtyTwo, FolderSearch, Sun, Wallet } from '@icon-park/react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ASK_TOOL, type ChatMessage, type PendingAction } from '../../shared/types';
+import { ASK_TOOL, type ChatMessage, FILE_TOOL_NAMES, type PendingAction, type ToolCall } from '../../shared/types';
+import { api, errorText } from '../api';
 import { Thumbs } from '../components/Thumbs';
 import { AskCard } from './AskCard';
 import { ConfirmCard } from './ConfirmCard';
@@ -13,17 +14,84 @@ import type { ChatState } from './useChat';
 
 const SUGGESTION_ICONS = { homnay: <Sun />, tuannay: <CalendarThirtyTwo />, chitieu: <Wallet /> };
 
+/** What a file tool call searched or read, e.g. `~/Documents/a.txt` or `~/Work · "budget"`, so the user sees what left the machine. */
+function fileCallText(c: ToolCall): string {
+  let a: { path?: string; pattern?: string; query?: string; under?: string; from_line?: number } = {};
+  try {
+    a = JSON.parse(c.function.arguments);
+  } catch {}
+  if (c.function.name === 'read_file') return `${a.path ?? ''}${a.from_line && a.from_line > 1 ? ` :${a.from_line}` : ''}`;
+  return `${a.under ?? '~'} · ${c.function.name === 'grep_files' ? `"${a.query ?? ''}"` : (a.pattern ?? '')}`;
+}
+
+/** A file tool result as the chat uses it: find/grep list `results`, read_file has one `path`. */
+type FileResult = { error?: string; path?: string; results?: { path: string; line?: number }[] };
+type Reveal = (path: string) => void;
+
+/** A ~/… path the user can click to see the file selected in Explorer/Finder/the file manager. */
+function PathLink({ path, suffix = '', reveal }: { path: string; suffix?: string; reveal: Reveal }) {
+  const { t } = useTranslation('chat');
+  return (
+    <button type='button' title={t('revealFile')} className='file-ref' onClick={() => reveal(path)}>
+      {path}
+      {suffix}
+    </button>
+  );
+}
+
+/** One file tool call: what it searched or read, then the files it found (open by default when there are few). */
+function FileCall({ c, result, reveal }: { c: ToolCall; result?: FileResult; reveal: Reveal }) {
+  const icon = <FolderSearch aria-hidden className='text-accent shrink-0' />;
+  if (c.function.name === 'read_file')
+    return (
+      <div className='file-call'>
+        {icon}
+        {result?.path ? <PathLink path={result.path} reveal={reveal} /> : <code className='truncate'>{fileCallText(c)}</code>}
+      </div>
+    );
+  const items = result?.results ?? [];
+  if (!items.length)
+    return (
+      <div className='file-call'>
+        {icon}
+        <code className='truncate'>{fileCallText(c)}</code>
+        {result && !result.error && <span>(0)</span>}
+      </div>
+    );
+  return (
+    <details className='file-call-group' open={items.length <= 5}>
+      <summary className='file-call'>
+        {icon}
+        <code className='truncate'>{fileCallText(c)}</code>
+        <span>({items.length})</span>
+      </summary>
+      <ul>
+        {items.map((x, i) => (
+          <li key={i}>
+            <PathLink path={x.path} suffix={x.line ? `:${x.line}` : ''} reveal={reveal} />
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 /** One message; memoized (with its card edits kept here) so streaming and typing don't re-render every Markdown block. */
 const MessageRow = memo(function MessageRow({
   m,
   actions,
   resolve,
   answer,
+  fileResults,
+  reveal,
 }: {
   m: ChatMessage;
   actions: PendingAction[];
   resolve: ChatState['resolve'];
   answer: ChatState['answer'];
+  /** This message's file tool results by tool_call_id. */
+  fileResults?: Record<string, FileResult>;
+  reveal: Reveal;
 }) {
   const { t } = useTranslation('chat');
   const [edits, setEdits] = useState<Record<number, Record<string, unknown>>>({});
@@ -33,10 +101,16 @@ const MessageRow = memo(function MessageRow({
   if (m.role === 'user')
     return (
       <div className='msg-user'>
+        {m.files && (
+          <div className='flex items-center gap-1 text-xs opacity-75 mb-1'>
+            <FolderSearch aria-hidden /> {t('fileTag')}
+          </div>
+        )}
         {m.content}
         <Thumbs ids={m.attachment_ids} />
       </div>
     );
+  const fileCalls = (m.tool_calls ?? []).filter((c) => FILE_TOOL_NAMES.includes(c.function.name));
 
   // By message: tool_call_ids repeat across turns with some gateways. Rows from before migration 2 have no message_id.
   const callIds = new Set((m.tool_calls ?? []).map((c) => c.id));
@@ -56,6 +130,9 @@ const MessageRow = memo(function MessageRow({
   return (
     <div className='msg-assistant'>
       {m.content && <Markdown>{m.content}</Markdown>}
+      {fileCalls.map((c) => (
+        <FileCall key={c.id} c={c} result={fileResults?.[c.id]} reveal={reveal} />
+      ))}
       {cards.map((a) =>
         a.tool_name === ASK_TOOL ? (
           <AskCard key={a.id} action={a} onAnswer={(replies) => answer(a.id, replies)} />
@@ -80,10 +157,36 @@ const MessageRow = memo(function MessageRow({
   );
 });
 
+/**
+ * File tool results per assistant message id, keyed by tool_call_id. A result is a tool message after its call and before
+ * the next assistant/user message (ids repeat across turns with some gateways).
+ */
+function fileResultsByMessage(messages: ChatMessage[]): Map<number, Record<string, FileResult>> {
+  const out = new Map<number, Record<string, FileResult>>();
+  let cur: { results: Record<string, FileResult>; ids: Set<string> } | null = null;
+  for (const m of messages) {
+    if (m.role === 'assistant') {
+      const ids = new Set((m.tool_calls ?? []).filter((c) => FILE_TOOL_NAMES.includes(c.function.name)).map((c) => c.id));
+      cur = ids.size ? { results: {}, ids } : null;
+      if (cur) out.set(m.id, cur.results);
+    } else if (m.role === 'tool') {
+      if (cur?.ids.has(m.tool_call_id)) {
+        try {
+          cur.results[m.tool_call_id] = JSON.parse(m.content) as FileResult;
+        } catch {}
+      }
+    } else cur = null;
+  }
+  return out;
+}
+
 export function MessageList({ chat }: { chat: ChatState }) {
   const { t } = useTranslation('chat');
   const tools = t('tool', { returnObjects: true }) as Record<string, string>;
   const ref = useRef<HTMLDivElement>(null);
+  const fileResults = useMemo(() => fileResultsByMessage(chat.messages), [chat.messages]);
+  const [message, messageHolder] = Message.useMessage();
+  const reveal = useCallback((path: string) => void api.files.reveal(path).catch((e: unknown) => message.error?.(errorText(e))), [message]);
   // Follow new content while the user is at the bottom. This watches the list's size, not its content (as useAutoScroll
   // does): Markdown fills its shadow root a render after it mounts, so a content check scrolls too early and stops short.
   useEffect(() => {
@@ -128,7 +231,10 @@ export function MessageList({ chat }: { chat: ChatState }) {
             </div>
           </div>
         )}
-        {chat.messages.map((m) => <MessageRow key={m.id} m={m} actions={chat.actions} resolve={chat.resolve} answer={chat.answer} />)}
+        {messageHolder}
+        {chat.messages.map((m) => (
+          <MessageRow key={m.id} m={m} actions={chat.actions} resolve={chat.resolve} answer={chat.answer} fileResults={fileResults.get(m.id)} reveal={reveal} />
+        ))}
         {chat.streaming && (
           <div className='msg-assistant'>
             <Markdown>{chat.streaming}</Markdown>
