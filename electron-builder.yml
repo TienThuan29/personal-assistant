@@ -38,6 +38,8 @@ nsis:
   artifactName: PersonalAssistant-win-x64-setup.${ext}
 mac:
   target:
+    - target: dmg
+      arch: [arm64, x64]
     - target: zip
       arch: [arm64, x64]
   icon: assets/app-icons/icon-1024.png

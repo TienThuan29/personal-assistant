@@ -12,8 +12,8 @@ No install needed: download, then run. Always the latest release:
 |---|---|---|
 | Windows (x64) | [Portable .exe](../../releases/latest/download/PersonalAssistant-win-x64-portable.exe) | Just run it |
 | Windows (x64) | [Installer](../../releases/latest/download/PersonalAssistant-win-x64-setup.exe) | Per-user, no admin rights; use this if you want reminder pop-ups |
-| macOS, Apple Silicon | [.zip](../../releases/latest/download/PersonalAssistant-mac-arm64.zip) | M1 and newer |
-| macOS, Intel | [.zip](../../releases/latest/download/PersonalAssistant-mac-x64.zip) | |
+| macOS, Apple Silicon | [.dmg](../../releases/latest/download/PersonalAssistant-mac-arm64.dmg) | M1 and newer ([.zip](../../releases/latest/download/PersonalAssistant-mac-arm64.zip) also available) |
+| macOS, Intel | [.dmg](../../releases/latest/download/PersonalAssistant-mac-x64.dmg) | ([.zip](../../releases/latest/download/PersonalAssistant-mac-x64.zip) also available) |
 | Linux (x64) | [AppImage](../../releases/latest/download/PersonalAssistant-linux-x64.AppImage) | |
 
 All versions and release notes: [Releases](../../releases).
@@ -22,7 +22,7 @@ The apps are not code-signed, so each OS warns you the first time:
 
 - **Windows:** SmartScreen says "Windows protected your PC" → **More info** → **Run anyway**. The portable file unpacks
   itself on start, so the first launch can take 30 seconds or more.
-- **macOS:** unzip, move **Personal Assistant** to Applications (or anywhere), then **right-click → Open → Open**.
+- **macOS:** open the .dmg and drag **Personal Assistant** to Applications (or unzip the .zip and move it), then **right-click → Open → Open**.
   If macOS says the app is damaged, run `xattr -cr "/path/to/Personal Assistant.app"` once and open it again.
 - **Linux:** `chmod +x PersonalAssistant-linux-x64.AppImage && ./PersonalAssistant-linux-x64.AppImage`. If it does not
   start (Ubuntu 24.04+ restricts the sandbox it needs), add `--no-sandbox`. If FUSE is missing, add
