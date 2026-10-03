@@ -32,7 +32,7 @@ jobs:
       matrix:
         include:
           - { os: windows-latest, script: 'pack:win', files: 'release/PersonalAssistant-win-x64-*.exe' }
-          - { os: macos-latest, script: 'pack:mac', files: 'release/*.zip' }
+          - { os: macos-latest, script: 'pack:mac', files: 'release/*.{dmg,zip}' }
           - { os: ubuntu-latest, script: 'pack:linux', files: 'release/*.AppImage' }
     runs-on: ${{ matrix.os }}
     steps:
