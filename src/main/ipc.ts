@@ -21,6 +21,7 @@ import {
 } from './store';
 import { findTool, parseArgs } from './tools';
 import { revealTarget } from './tools/files';
+import { downloadInstaller, installerName } from './installer';
 import { canSelfUpdate, installUpdate, type Updater } from './selfupdate';
 import { checkForUpdate, skipVersion } from './update';
 import { te, UserError } from './errors';
@@ -226,14 +227,31 @@ export function registerIpc(m: MainCtx): void {
     m.send('ui:changed', ui);
     return ui;
   });
-  const canInstall = () => canSelfUpdate({ packaged: app.isPackaged, platform: process.platform, env: process.env });
+  const autoInstall = () => canSelfUpdate({ packaged: app.isPackaged, platform: process.platform, env: process.env });
+  // macOS and the Windows portable exe cannot replace themselves: download the file and open it instead (installer.ts)
+  const manualFile = () => (app.isPackaged ? installerName({ platform: process.platform, arch: process.arch, env: process.env }) : undefined);
   ipcMain.handle('update:check', async (_e, manual: unknown) => ({
     ...(await checkForUpdate(m.db, { fetch: netFetch, version: app.getVersion(), now: Date.now(), manual: manual === true })),
-    canInstall: canInstall(),
+    canInstall: autoInstall() || !!manualFile(),
+    manualInstall: !autoInstall() && !!manualFile(),
   }));
-  ipcMain.handle('update:install', () => {
-    if (!canInstall()) throw new UserError('installFailed');
-    return installUpdate(autoUpdater as unknown as Updater, (percent) => m.send('update:progress', percent));
+  ipcMain.handle('update:install', async () => {
+    if (autoInstall()) return installUpdate(autoUpdater as unknown as Updater, (percent) => m.send('update:progress', percent));
+    const name = manualFile();
+    if (!name) throw new UserError('installFailed');
+    const { latest } = await checkForUpdate(m.db, { fetch: netFetch, version: app.getVersion(), now: Date.now(), manual: true }).catch(() => ({ latest: null }));
+    if (!latest) throw new UserError('installFailed');
+    await downloadInstaller(latest, name, {
+      fetch: netFetch,
+      dir: app.getPath('downloads'),
+      progress: (percent) => m.send('update:progress', percent),
+      open: async (file) => {
+        if (process.platform === 'darwin') {
+          await shell.openPath(file); // mounts the .dmg; the running app cannot be replaced, so quit and let the user drag it over
+          app.quit();
+        } else shell.showItemInFolder(file);
+      },
+    });
   });
   ipcMain.handle('update:skip', (_e, version: unknown) => skipVersion(m.db, version));
   ipcMain.handle('settings:test', async () => {
