@@ -1,9 +1,10 @@
 import { FilePreview, SlashCommandMenu } from '@aionui/ui';
-import { Button, Input, Tooltip } from '@arco-design/web-react';
+import { Input } from '@arco-design/web-react';
 import { FolderSearch, PauseOne, Pic, Send } from '@icon-park/react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ImageInput } from '../../shared/types';
+import { IconButton } from '../components/ui';
 import { ACCEPT, useImagePicker } from '../components/useImagePicker';
 
 /** Slash commands are just canned prompts; the names stay the same in every language. */
@@ -129,19 +130,15 @@ export function SendBox({ running, onSend, onStop, autoFocus }: Props) {
           placeholder={t(files ? 'fileSearchOn' : 'placeholder')}
         />
         <div className='sendbox-actions'>
-          <Tooltip content={t('attachImage')}>
-            <Button type='text' icon={<Pic />} aria-label={t('attachImage')} onClick={() => fileInput.current?.click()} />
-          </Tooltip>
-          <Tooltip content={t('fileSearch')}>
-            <Button
-              type='text'
-              icon={<FolderSearch />}
-              aria-label={t('fileSearch')}
-              aria-pressed={files}
-              className={`mr-auto ${files ? '!text-accent !bg-accent-soft' : ''}`} // mr-auto: next to the image button, send stays right
-              onClick={() => setFiles((on) => !on)}
-            />
-          </Tooltip>
+          <IconButton type='text' icon={<Pic />} label={t('attachImage')} onClick={() => fileInput.current?.click()} />
+          <IconButton
+            type='text'
+            icon={<FolderSearch />}
+            label={t('fileSearch')}
+            aria-pressed={files}
+            className={`mr-auto ${files ? '!text-accent !bg-accent-soft' : ''}`} // mr-auto: next to the image button, send stays right
+            onClick={() => setFiles((on) => !on)}
+          />
           <input
             ref={fileInput}
             type='file'
@@ -154,9 +151,9 @@ export function SendBox({ running, onSend, onStop, autoFocus }: Props) {
             }}
           />
           {running ? (
-            <Button shape='circle' status='warning' icon={<PauseOne />} aria-label={t('stop')} onClick={onStop} />
+            <IconButton shape='circle' status='warning' icon={<PauseOne />} label={t('stop')} onClick={onStop} />
           ) : (
-            <Button shape='circle' type='primary' icon={<Send />} aria-label={t('send')} loading={sending} onClick={() => void submit()} />
+            <IconButton shape='circle' type='primary' icon={<Send />} label={t('send')} loading={sending} onClick={() => void submit()} />
           )}
         </div>
       </div>

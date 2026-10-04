@@ -1,6 +1,6 @@
 import { ThoughtDisplay } from '@aionui/ui';
 import { Markdown } from '@aionui/ui/markdown';
-import { Alert, Button, Message } from '@arco-design/web-react';
+import { Alert, Button, Message, Tooltip } from '@arco-design/web-react';
 import { CalendarThirtyTwo, FolderSearch, Sun, Wallet } from '@icon-park/react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -32,10 +32,12 @@ type Reveal = (path: string) => void;
 function PathLink({ path, suffix = '', reveal }: { path: string; suffix?: string; reveal: Reveal }) {
   const { t } = useTranslation('chat');
   return (
-    <button type='button' title={t('revealFile')} className='file-ref' onClick={() => reveal(path)}>
-      {path}
-      {suffix}
-    </button>
+    <Tooltip content={t('revealFile')}>
+      <button type='button' className='file-ref' onClick={() => reveal(path)}>
+        {path}
+        {suffix}
+      </button>
+    </Tooltip>
   );
 }
 

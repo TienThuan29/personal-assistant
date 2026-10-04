@@ -14,6 +14,7 @@ export const en: Resources = {
     crash: { title: 'Something went wrong', reload: 'Reload' },
     nav: { today: 'Today', tasks: 'Tasks', notes: 'Notes', expenses: 'Expenses', reminders: 'Reminders', settings: 'Settings' },
     category: { work: 'Work', personal: 'Personal' },
+    edit: 'Edit',
     delete: 'Delete',
     deleteConfirm: 'Delete?',
     image: 'Image',

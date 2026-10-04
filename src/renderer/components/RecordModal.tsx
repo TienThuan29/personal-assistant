@@ -2,6 +2,7 @@ import { AionModal } from '@aionui/ui';
 import { Alert, Modal } from '@arco-design/web-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { confirmDanger } from './ui';
 
 type Props = {
   title: ReactNode;
@@ -22,7 +23,7 @@ export function RecordModal({ title, visible, dirty, saving, error, onSave, onCl
     saving
       ? undefined // the save may still land; closing now would hide its result
       : dirty
-      ? modal.confirm?.({ title: t('discardChanges'), okText: t('discard'), okButtonProps: { status: 'danger' }, onOk: onClose })
+      ? confirmDanger(modal, { title: t('discardChanges'), okText: t('discard'), onOk: onClose })
       : onClose();
   const save = () => {
     if (!saving) onSave();

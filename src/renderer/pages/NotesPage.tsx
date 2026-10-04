@@ -1,12 +1,12 @@
 import { AionSearchInput } from '@aionui/ui';
 import { Button } from '@arco-design/web-react';
-import { Delete, Edit, Notes, Plus, Search } from '@icon-park/react';
+import { Notes, Plus, Search } from '@icon-park/react';
 import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { NoteRow } from '../../shared/types';
 import { api } from '../api';
 import { Thumbs } from '../components/Thumbs';
-import { Chip, EmptyState, PageToolbar } from '../components/ui';
+import { Chip, EmptyState, PageToolbar, RowActions } from '../components/ui';
 import { Skeleton, useData } from '../useData';
 import { NoteForm } from './NoteForm';
 
@@ -72,18 +72,7 @@ export function NotesPage() {
                 {title}
               </button>
               <div className='text-ink-2 text-[13px] line-clamp-4'>{highlight(n.snippet ?? '')}</div>
-              <div className='row-actions absolute top-4 right-4 z-1 flex'>
-                <Button size='mini' type='text' icon={<Edit />} aria-label={t('editNoteLabel', { what: title })} disabled={isBusy} onClick={() => openNote(n)} />
-                <Button
-                  size='mini'
-                  type='text'
-                  status='danger'
-                  icon={<Delete />}
-                  aria-label={t('deleteNote', { what: title })}
-                  disabled={isBusy}
-                  onClick={() => remove(n.id, 'delete_notes', n.title || n.snippet?.replace(/[⟦⟧]/g, '') || '')}
-                />
-              </div>
+              <RowActions className='absolute top-4 right-4 z-1' editLabel={t('editNoteLabel', { what: title })} deleteLabel={t('deleteNote', { what: title })} disabled={isBusy} onEdit={() => openNote(n)} onDelete={() => remove(n.id, 'delete_notes', n.title || n.snippet?.replace(/[⟦⟧]/g, '') || '')} />
               <Thumbs ids={n.attachment_ids} />
               <div className='mt-auto text-xs text-ink-2'>{when(n.created_at)}</div>
             </article>

@@ -1,5 +1,5 @@
 import { Button, DatePicker } from '@arco-design/web-react';
-import { Delete, Edit, Left, Plus, Right, Wallet } from '@icon-park/react';
+import { Left, Plus, Right, Wallet } from '@icon-park/react';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toLocalDate } from '../../shared/dates';
@@ -7,7 +7,7 @@ import { breakdown, formatMoney } from '../../shared/money';
 import type { ExpenseList, ExpenseRow } from '../../shared/types';
 import { api, useUiSettings } from '../api';
 import { Thumbs } from '../components/Thumbs';
-import { Card, Chip, dayTitle, EmptyState, PageToolbar } from '../components/ui';
+import { Card, Chip, dayTitle, EmptyState, IconButton, PageToolbar, RowActions } from '../components/ui';
 import { Skeleton, useData } from '../useData';
 import { ExpenseForm } from './ExpenseForm';
 
@@ -69,7 +69,7 @@ export function ExpensesPage() {
       <PageToolbar
         hint={
           <div className='flex items-center gap-1'>
-            <Button type='text' icon={<Left />} aria-label={t('prevMonth')} onClick={() => changeMonth(shiftMonth(month, -1))} />
+            <IconButton type='text' icon={<Left />} label={t('prevMonth')} onClick={() => changeMonth(shiftMonth(month, -1))} />
             <DatePicker.MonthPicker
               value={month}
               onChange={(v: string) => v && changeMonth(v)}
@@ -79,7 +79,7 @@ export function ExpensesPage() {
                 </button>
               }
             />
-            <Button type='text' icon={<Right />} aria-label={t('nextMonth')} onClick={() => changeMonth(shiftMonth(month, 1))} />
+            <IconButton type='text' icon={<Right />} label={t('nextMonth')} onClick={() => changeMonth(shiftMonth(month, 1))} />
           </div>
         }
       >
@@ -161,25 +161,7 @@ export function ExpensesPage() {
                   </div>
                   <Thumbs ids={r.attachment_ids} />
                   <span className='ml-auto tabular-nums font-500 whitespace-nowrap'>{money(r.amount, r.currency)}</span>
-                  <div className='row-actions flex'>
-                    <Button
-                      size='mini'
-                      type='text'
-                      icon={<Edit />}
-                      aria-label={t('editExpenseLabel', { what })}
-                      disabled={isBusy}
-                      onClick={() => setEditing(r)}
-                    />
-                    <Button
-                      size='mini'
-                      type='text'
-                      status='danger'
-                      icon={<Delete />}
-                      aria-label={t('deleteExpense', { what })}
-                      disabled={isBusy}
-                      onClick={() => remove(r.id, 'delete_expenses', `${what}: ${money(r.amount, r.currency)}`)}
-                    />
-                  </div>
+                  <RowActions editLabel={t('editExpenseLabel', { what })} deleteLabel={t('deleteExpense', { what })} disabled={isBusy} onEdit={() => setEditing(r)} onDelete={() => remove(r.id, 'delete_expenses', `${what}: ${money(r.amount, r.currency)}`)} />
                 </div>
               );
             })}

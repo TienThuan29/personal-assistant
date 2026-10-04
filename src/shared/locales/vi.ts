@@ -13,6 +13,7 @@ export const vi = {
     crash: { title: 'Đã xảy ra lỗi', reload: 'Tải lại' },
     nav: { today: 'Hôm nay', tasks: 'Task', notes: 'Ghi chú', expenses: 'Chi tiêu', reminders: 'Nhắc nhở', settings: 'Cài đặt' },
     category: { work: 'Công việc', personal: 'Cá nhân' },
+    edit: 'Sửa',
     delete: 'Xóa',
     deleteConfirm: 'Xóa?',
     image: 'Ảnh',

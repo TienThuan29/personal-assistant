@@ -1,5 +1,5 @@
 import { FilePreview } from '@aionui/ui';
-import { Button } from '@arco-design/web-react';
+import { Button, Tooltip } from '@arco-design/web-react';
 import { Close, Pic, Undo } from '@icon-park/react';
 import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -50,11 +50,11 @@ export function ImageField({ existing, removed, onToggleRemove, picker }: Props)
             return (
               <div key={id} className={off ? 'field-thumb is-removed' : 'field-thumb'}>
                 <img src={attUrl(id)} alt={t('attachment')} />
-                <button type='button' aria-label={t(off ? 'undoRemove' : 'removeImage')} title={t(off ? 'undoRemove' : 'removeImage')}
-                  disabled={off && full}
-                  onClick={() => onToggleRemove(id)}>
-                  {off ? <Undo /> : <Close />}
-                </button>
+                <Tooltip content={t(off ? 'undoRemove' : 'removeImage')}>
+                  <button type='button' aria-label={t(off ? 'undoRemove' : 'removeImage')} disabled={off && full} onClick={() => onToggleRemove(id)}>
+                    {off ? <Undo /> : <Close />}
+                  </button>
+                </Tooltip>
               </div>
             );
           })}
