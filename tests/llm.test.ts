@@ -154,6 +154,30 @@ describe('createLlm', () => {
     expect(JSON.parse(seen[0].body)).not.toHaveProperty('model');
   });
 
+  it('LM Studio needs no key, sends tools like Azure does, and does not retry', async () => {
+    const lm: LlmConfig = { provider: 'lmstudio', endpoint: 'http://localhost:1234', model: 'qwen2.5-7b-instruct', apiVersion: '' };
+    const { f, seen } = stubFetch([sse('xin chào'), DONE]);
+    const tools = [{ type: 'function' as const, function: { name: 'list_tasks', parameters: { type: 'object', properties: {} } } }];
+    const llm = createLlm(lm, '', { fetch: f });
+    expect(llm.textOnly).toBe(false);
+    const msg = await collect(llm.stream({ messages: [{ role: 'user', content: 'hi' }], tools }), () => {});
+    expect(msg.content).toBe('xin chào');
+    expect(seen[0].url).toBe('http://localhost:1234/v1/chat/completions');
+    expect(seen[0].headers.get('authorization')).toBe('Bearer lm-studio');
+    const body = JSON.parse(seen[0].body);
+    expect(body.model).toBe('qwen2.5-7b-instruct');
+    expect(body.tools).toHaveLength(1); // native tool calling: no prompt adapter
+    expect(() => createLlm({ ...lm, endpoint: '' }, '')).toThrow(/Cài đặt/);
+  });
+
+  it('LM Studio without a model omits the field so the loaded model answers', async () => {
+    const { f, seen } = stubFetch([sse('ok'), DONE]);
+    const lm: LlmConfig = { provider: 'lmstudio', endpoint: 'http://localhost:1234/v1', model: '', apiVersion: '' };
+    await collect(createLlm(lm, '', { fetch: f }).stream({ messages: [] }), () => {});
+    expect(seen[0].url).toBe('http://localhost:1234/v1/chat/completions');
+    expect(JSON.parse(seen[0].body)).not.toHaveProperty('model');
+  });
+
   it("lists a gateway's models with the bearer token", async () => {
     const seen: { url: string; auth: string | null }[] = [];
     const f = (async (url: string | URL | Request, init?: RequestInit) => {

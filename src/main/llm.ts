@@ -6,16 +6,22 @@ import { fromGateway, gatewayBaseURL, toGatewayMessages } from './gateway';
 
 export type StreamParams = { messages: ChatCompletionMessageParam[]; tools?: ChatCompletionFunctionTool[]; signal?: AbortSignal };
 /** `textOnly`: the provider takes no images (the gateway, design G8). */
+/** LM Studio's server ignores the key but the SDK insists on one. */
+export const LOCAL_KEY = 'lm-studio';
 export type Llm = { stream: (p: StreamParams) => AsyncIterable<ChatCompletionChunk>; textOnly?: boolean };
 
 /**
- * One client for both providers; both speak OpenAI chat completions (design D2). The gateway ignores `tools`, so its
- * requests and replies go through the prompt-based adapter in gateway.ts (G4). `opts.fetch` is Electron's net.fetch or a test stub.
+ * One client for every provider; all speak OpenAI chat completions (design D2). The gateway ignores `tools`, so its
+ * requests and replies go through the prompt-based adapter in gateway.ts (G4). LM Studio takes `tools` and images like Azure,
+ * and shares the gateway's `<host>/v1` base URL. `opts.fetch` is Electron's net.fetch or a test stub.
  */
 export function createLlm(cfg: LlmConfig, apiKey: string, opts: { fetch?: typeof fetch } = {}): Llm {
-  if (!cfg.endpoint || !apiKey || (cfg.provider === 'azure' && (!cfg.model || !cfg.apiVersion)))
+  const local = cfg.provider === 'lmstudio';
+  const key = apiKey || (local ? LOCAL_KEY : '');
+  if (!cfg.endpoint || !key || (cfg.provider === 'azure' && (!cfg.model || !cfg.apiVersion)))
     throw new UserError('llmNotConfigured');
-  const common = { apiKey, maxRetries: 2, timeout: 60_000, fetch: opts.fetch };
+  // A local model may need a minute to load before the first token, and a retry would just load it again.
+  const common = { apiKey: key, maxRetries: local ? 0 : 2, timeout: local ? 300_000 : 60_000, fetch: opts.fetch };
   // A pasted Azure/Foundry "v1" URL (…/openai/v1[/responses]) has no deployment path or api-version: use the plain client
   // on …/openai/v1 with the deployment as `model`; Azure takes the key as api-key (Bearer is also sent by the SDK).
   const v1 = cfg.provider === 'azure' ? /^(.*?\/openai\/v1)(?:\/|$)/i.exec(cfg.endpoint.trim())?.[1] : undefined;
@@ -39,7 +45,7 @@ export function createLlm(cfg: LlmConfig, apiKey: string, opts: { fetch?: typeof
   };
 }
 
-/** A gateway's model ids: GET <host>/v1/models with the key as a bearer token (design G2). */
+/** A gateway's or LM Studio's model ids: GET <host>/v1/models with the key as a bearer token (design G2). */
 export async function listModels(endpoint: string, apiKey: string, opts: { fetch?: typeof fetch } = {}): Promise<string[]> {
   if (!endpoint || !apiKey) throw new UserError('modelsNeedConfig');
   const client = new OpenAI({ apiKey, baseURL: gatewayBaseURL(endpoint), maxRetries: 1, timeout: 20_000, fetch: opts.fetch });
