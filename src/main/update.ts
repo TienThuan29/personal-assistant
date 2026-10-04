@@ -2,9 +2,9 @@
 import type { Db } from './db';
 import { UserError } from './errors';
 import type { UpdateStatus } from '../shared/types';
+import { REPO } from './installer';
 import { getSetting, getUi, setSetting } from './settings';
 
-const REPO = 'TienThuan29/personal-assistant';
 const DAY = 24 * 60 * 60 * 1000;
 
 type State = { checkedAt?: number; found?: string; skipped?: string };
@@ -27,9 +27,9 @@ type Opts = { fetch: typeof fetch; version: string; now: number; manual: boolean
  * meanwhile) and hides a skipped version. Manual: always asks, shows a skipped version too, and throws when it cannot.
  * Everything lives in the settings row 'update', so a reloaded window shows the same banner.
  */
-export async function checkForUpdate(db: Db, o: Opts): Promise<Omit<UpdateStatus, 'canInstall'>> {
+export async function checkForUpdate(db: Db, o: Opts): Promise<Omit<UpdateStatus, 'canInstall' | 'manualInstall'>> {
   const st = getSetting<State>(db, 'update', {});
-  const result = (found: string | undefined, hideSkipped: boolean): Omit<UpdateStatus, 'canInstall'> => {
+  const result = (found: string | undefined, hideSkipped: boolean): Omit<UpdateStatus, 'canInstall' | 'manualInstall'> => {
     const latest = found && isNewer(found, o.version) && !(hideSkipped && found === st.skipped) ? found : null;
     // The link is built here, never taken from the response (a response must not choose what the app opens).
     return { current: o.version, latest, url: latest ? `https://github.com/${REPO}/releases/tag/v${latest}` : null };

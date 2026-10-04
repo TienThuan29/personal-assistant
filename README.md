@@ -42,8 +42,10 @@ The app checks GitHub once a day when it opens and shows a banner when a newer v
 Release page. Check by hand or switch it off under Settings → Updates.
 
 The Windows installer and the Linux AppImage can update themselves: the banner's **Update and restart** downloads the new
-version, installs it and reopens the app. The Windows portable file and macOS only link to the Release page: download the
-new file and replace the old one. Your data stays either way.
+version, installs it and reopens the app. On macOS (the app is not signed, so it cannot replace itself) and the Windows
+portable file, the banner's **Download and open installer** saves the new file to your Downloads folder: on macOS it opens
+the .dmg and closes the app so you can drag **Personal Assistant** over the old one in Applications; on Windows it shows
+the new .exe in its folder. Your data stays either way.
 
 ## Where your data lives
 
@@ -66,7 +68,7 @@ The app was designed for Windows. macOS and Linux builds are provided as they ar
   Some desktops (e.g. stock GNOME) show no tray icon, so closing the window to the tray may leave no way to reopen it.
 - **Linux:** the window uses Windows-style minimise/maximise/close buttons, and the "start at login"
   option does not apply.
-- No automatic updates: download a new release to upgrade. Your data is kept.
+- macOS updates are semi-automatic (see Updating). Your data is kept.
 
 ## Build from source
 

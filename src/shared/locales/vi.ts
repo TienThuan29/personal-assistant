@@ -9,7 +9,7 @@ export const vi = {
     monthLong: { '1': 'Tháng 1', '2': 'Tháng 2', '3': 'Tháng 3', '4': 'Tháng 4', '5': 'Tháng 5', '6': 'Tháng 6', '7': 'Tháng 7', '8': 'Tháng 8', '9': 'Tháng 9', '10': 'Tháng 10', '11': 'Tháng 11', '12': 'Tháng 12' },
     weekdayLong: { '1': 'Thứ Hai', '2': 'Thứ Ba', '3': 'Thứ Tư', '4': 'Thứ Năm', '5': 'Thứ Sáu', '6': 'Thứ Bảy', '7': 'Chủ Nhật' },
     appName: 'Trợ lý cá nhân',
-    update: { banner: 'Có phiên bản {{latest}} (bạn đang dùng {{current}})', download: 'Tải về', install: 'Cập nhật và khởi động lại', downloading: 'Đang tải {{percent}}%', skip: 'Bỏ qua bản này' },
+    update: { banner: 'Có phiên bản {{latest}} (bạn đang dùng {{current}})', download: 'Tải về', installManual: 'Tải bản cài và mở', install: 'Cập nhật và khởi động lại', downloading: 'Đang tải {{percent}}%', skip: 'Bỏ qua bản này' },
     crash: { title: 'Đã xảy ra lỗi', reload: 'Tải lại' },
     nav: { today: 'Hôm nay', tasks: 'Task', notes: 'Ghi chú', expenses: 'Chi tiêu', reminders: 'Nhắc nhở', settings: 'Cài đặt' },
     category: { work: 'Công việc', personal: 'Cá nhân' },

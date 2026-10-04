@@ -63,7 +63,7 @@ jobs:
       matrix:
         include:
           - { os: windows-latest, script: 'pack:win', files: 'release/PersonalAssistant-win-x64-*.exe' }
-          - { os: macos-latest, script: 'pack:mac', files: 'release/*.{dmg,zip}' }
+          - { os: macos-latest, script: 'pack:mac', files: 'release/*.dmg' }
           - { os: ubuntu-latest, script: 'pack:linux', files: 'release/*.AppImage' }
     runs-on: ${{ matrix.os }}
     steps:
@@ -88,8 +88,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.os }}
+          # upload-artifact globs have no brace expansion: .dmg is in matrix.files, .zip is listed here (macOS only matches)
           path: |
             ${{ matrix.files }}
+            release/*.zip
             release/latest*.yml
             release/*.blockmap
           if-no-files-found: error
@@ -106,6 +108,11 @@ jobs:
           path: dist
           merge-multiple: true
       - run: ls -l dist
+      - name: Every installer is present
+        run: |
+          for f in PersonalAssistant-win-x64-setup.exe PersonalAssistant-win-x64-portable.exe PersonalAssistant-mac-arm64.dmg PersonalAssistant-mac-x64.dmg PersonalAssistant-mac-arm64.zip PersonalAssistant-mac-x64.zip PersonalAssistant-linux-x64.AppImage latest.yml latest-mac.yml latest-linux.yml; do
+            test -f "dist/$f" || { echo "missing $f"; exit 1; }
+          done
       - name: Create the Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

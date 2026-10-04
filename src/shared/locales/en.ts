@@ -10,7 +10,7 @@ export const en: Resources = {
     monthLong: { '1': 'January', '2': 'February', '3': 'March', '4': 'April', '5': 'May', '6': 'June', '7': 'July', '8': 'August', '9': 'September', '10': 'October', '11': 'November', '12': 'December' },
     weekdayLong: { '1': 'Monday', '2': 'Tuesday', '3': 'Wednesday', '4': 'Thursday', '5': 'Friday', '6': 'Saturday', '7': 'Sunday' },
     appName: 'Personal Assistant',
-    update: { banner: 'Version {{latest}} is available (you have {{current}})', download: 'Download', install: 'Update and restart', downloading: 'Downloading {{percent}}%', skip: 'Skip this version' },
+    update: { banner: 'Version {{latest}} is available (you have {{current}})', download: 'Download', installManual: 'Download and open installer', install: 'Update and restart', downloading: 'Downloading {{percent}}%', skip: 'Skip this version' },
     crash: { title: 'Something went wrong', reload: 'Reload' },
     nav: { today: 'Today', tasks: 'Tasks', notes: 'Notes', expenses: 'Expenses', reminders: 'Reminders', settings: 'Settings' },
     category: { work: 'Work', personal: 'Personal' },

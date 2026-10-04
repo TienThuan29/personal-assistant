@@ -122,8 +122,9 @@ export type SettingsView = { llm: LlmSettings; hasKey: Record<Provider, boolean>
 /**
  * `latest` is the newer version to announce (null: none); `url` is the page to open for it; `canInstall` says whether this
  * build can download and install it itself (Windows installer, Linux AppImage) or only send the user to `url`.
+ * `manualInstall` is the macOS / Windows portable case: the app downloads the file and opens it, the user finishes the install.
  */
-export type UpdateStatus = { current: string; latest: string | null; url: string | null; canInstall: boolean };
+export type UpdateStatus = { current: string; latest: string | null; url: string | null; canInstall: boolean; manualInstall: boolean };
 /** `apiKey` is for the active provider. */
 export type SettingsInput = { llm: LlmSettings; apiKey?: string };
 

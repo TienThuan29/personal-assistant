@@ -95,3 +95,13 @@ Rủi ro đã nhận: bản installer không ký, nên không có kiểm tra ch�
 - Chưa kiểm tra: toàn bộ luồng với hai Release thật (cần phát hành bản sau 0.1.1), "Bỏ qua bản này" bằng click thật (chỉ có test đơn vị).
 - Tự cập nhật: `src/main/selfupdate.ts` + `tests/selfupdate.test.ts` (10 test, `autoUpdater` giả), IPC `update:install` / sự kiện `update:progress`, `UpdateStatus.canInstall`, nút trong banner, `publish` trong `electron-builder.yml`, CI tải `latest*.yml` + `*.blockmap`.
 - Đã kiểm tra trên bản đóng gói thật (`release/win-unpacked`, thư mục dữ liệu tạm): `bun run pack` sinh `latest.yml` (chỉ liệt kê installer) và `app-update.yml`; `electron-updater` nằm trong `out/main/index.js`, app khởi động bình thường; `canInstall` là true; bấm nút → "Đang tải 0%" → lỗi (Release v0.1.1 chưa có `latest.yml`) → banner về "Tải về". **Chưa** kiểm tra tải và cài thành công: cần Release có `latest.yml` (0.1.2) rồi một Release nữa (0.1.3).
+
+## Cài tay có hỗ trợ cho macOS và Windows portable (cùng PR sửa Release thiếu .dmg)
+
+| # | Quyết định | Phương án khác | Lý do |
+|---|---|---|---|
+| U18 | macOS và Windows portable: nút banner "Tải bản cài và mở" tải file đúng của bản mới vào Downloads (`src/main/installer.ts`), mở .dmg (macOS, rồi thoát app) hoặc hiện .exe trong thư mục (portable) | Ký và notarize để dùng `electron-updater`; chỉ mở trang Release | Không cần Apple Developer ID; người dùng chỉ còn kéo thả một lần |
+| U19 | URL dựng từ phiên bản `x.y.z` đã kiểm tra regex và tên file cố định theo `electron-builder.yml`; tải qua `.part` rồi đổi tên, kiểm tra đủ byte | Lấy URL từ phản hồi API | Cùng nguyên tắc U10 |
+| U20 | `UpdateStatus.manualInstall` cho renderer chọn nhãn nút; lỗi nào cũng về `installFailed` và nút "Tải về" như U16 | Thêm trạng thái riêng | Dùng lại đường lui sẵn có |
+
+Rủi ro: file .dmg không ký nên macOS vẫn hỏi "right-click → Open" ở lần đầu; chưa chạy thật trên máy mac qua một bản phát hành (cần v0.1.6 rồi v0.1.7).
