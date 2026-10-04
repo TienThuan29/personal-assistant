@@ -11,9 +11,10 @@ import { appIcon } from './icon';
 import { i18n, setLanguage } from './i18n';
 import { registerIpc } from './ipc';
 import { createScheduler } from './reminders';
-import { type Cipher, getUi } from './settings';
+import { createCipher } from './cipher';
+import { getUi } from './settings';
 import { pruneEmptyConversations } from './store';
-import { errMsg, te, UserError } from './errors';
+import { errMsg, te } from './errors';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'att', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
@@ -35,14 +36,6 @@ const loginItem = {
   set: (openAtLogin: boolean): void => {
     if (app.isPackaged) app.setLoginItemSettings({ openAtLogin, args: loginArgs });
   },
-};
-
-const cipher: Cipher = {
-  encrypt: (s) => {
-    if (!safeStorage.isEncryptionAvailable()) throw new UserError('noEncryption');
-    return safeStorage.encryptString(s);
-  },
-  decrypt: (b) => safeStorage.decryptString(b),
 };
 
 function showWindow(): void {
@@ -163,7 +156,7 @@ async function start(): Promise<void> {
     ro,
     attachmentsDir,
     secretsFile: join(dataDir, 'secrets.bin'),
-    cipher,
+    cipher: createCipher(safeStorage, join(dataDir, 'secrets.key')),
     send,
     loginItem,
     onDataChanged: () => {
