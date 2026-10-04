@@ -64,7 +64,7 @@ The app was designed for Windows. macOS and Linux builds are provided as they ar
   version still lists and tracks reminders; it just cannot show the pop-up.
 - **Linux:** saving an LLM key needs a system keyring (GNOME Keyring or KWallet); without one the app refuses to store it.
   Some desktops (e.g. stock GNOME) show no tray icon, so closing the window to the tray may leave no way to reopen it.
-- **Linux:** the window uses Windows-style minimise/maximise/close buttons. On macOS and Linux the "start with Windows"
+- **Linux:** the window uses Windows-style minimise/maximise/close buttons, and the "start at login"
   option does not apply.
 - No automatic updates: download a new release to upgrade. Your data is kept.
 
