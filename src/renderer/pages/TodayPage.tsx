@@ -1,12 +1,12 @@
 import { Button, Checkbox } from '@arco-design/web-react';
-import { Caution, CheckOne, Comment, Delete, Plus, Remind, Sun, Wallet } from '@icon-park/react';
+import { Caution, CheckOne, Comment, Plus, Remind, Sun, Wallet } from '@icon-park/react';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { addDays, parseLocalDate, partOfDay, toLocalDate } from '../../shared/dates';
 import { formatMoney } from '../../shared/money';
 import type { ReminderRow, TaskRow } from '../../shared/types';
 import { api, useUiSettings } from '../api';
-import { Card, Chip, EmptyState, StatCard } from '../components/ui';
+import { Card, Chip, EmptyState, RowActions, StatCard } from '../components/ui';
 import { Skeleton, useData } from '../useData';
 import { ExpenseForm } from './ExpenseForm';
 import { ReminderForm } from './ReminderForm';
@@ -73,16 +73,7 @@ export function TodayPage({ go }: { go: (page: 'chat') => void }) {
         <Button size='mini' disabled={busy.includes(r.id)} onClick={() => void write(r.id, 'update_reminders', { ids: [r.id], patch: { status: 'dismissed' } })}>
           {t('dismiss')}
         </Button>
-        <Button
-          className='row-actions'
-          size='mini'
-          type='text'
-          status='danger'
-          icon={<Delete />}
-          aria-label={t('deleteReminder', { what: r.message })}
-          disabled={busy.includes(r.id)}
-          onClick={() => remove(r.id, 'delete_reminders', r.message)}
-        />
+        <RowActions deleteLabel={t('deleteReminder', { what: r.message })} disabled={busy.includes(r.id)} onDelete={() => remove(r.id, 'delete_reminders', r.message)} />
       </div>
     ));
 

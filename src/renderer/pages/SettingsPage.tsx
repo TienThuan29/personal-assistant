@@ -7,6 +7,7 @@ import { formatMoney } from '../../shared/money';
 import { DEFAULT_LLM, type LlmSettings, type Provider, PROVIDER_NAMES, type SettingsView, type UiSettings, type UpdateStatus } from '../../shared/types';
 import { adjustAccent, applyAccent, PRESETS } from '../accent';
 import { api, errorText, useUiSettings } from '../api';
+import { IconButton } from '../components/ui';
 
 const CURRENCIES = ['VND', 'USD', 'EUR', 'JPY'];
 const EXAMPLE_AMOUNT = 1_234_500; // minor units: 1.234.500 ₫ or $12,345.00
@@ -327,7 +328,7 @@ export function SettingsPage() {
                 style={{ width: 344 }}
                 options={[...new Set([...models, ...(cfg.model ? [cfg.model] : [])])]}
               />
-              <Button aria-label={t('reloadModels')} title={t('reloadModels')} icon={<Refresh />} loading={loadingModels} onClick={() => loadModels(false)} />
+              <IconButton label={t('reloadModels')} icon={<Refresh />} loading={loadingModels} onClick={() => loadModels(false)} />
             </Space>
           )}
         </PreferenceRow>

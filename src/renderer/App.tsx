@@ -10,6 +10,7 @@ import { api, errorText } from './api';
 import { ChatPage } from './chat/ChatPage';
 import { ConversationList } from './components/ConversationList';
 import { Nav } from './components/Nav';
+import { confirmDanger } from './components/ui';
 import { ExpensesPage } from './pages/ExpensesPage';
 import { NotesPage } from './pages/NotesPage';
 import { RemindersPage } from './pages/RemindersPage';
@@ -157,10 +158,10 @@ export function App() {
   };
 
   const removeConversation = (c: ConversationRow) =>
-    modal.confirm?.({
+    confirmDanger(modal, {
       title: t('chat:deleteConversation'),
       content: titleOf(c),
-      okButtonProps: { status: 'danger' },
+      okText: t('delete'),
       onOk: async () => {
         try {
           await api.conversations.remove(c.id);
