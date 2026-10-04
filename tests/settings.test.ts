@@ -39,10 +39,11 @@ describe('settings', () => {
     expect(readSecrets(file, cipher)).toEqual({ azure: 'sk-new' });
   });
 
-  const settings = (active: 'azure' | 'gateway', azure = {}, gateway = {}) => ({
+  const settings = (active: 'azure' | 'gateway' | 'lmstudio', azure = {}, gateway = {}, lmstudio = {}) => ({
     active,
     azure: { endpoint: '', model: '', apiVersion: '2024-10-21', ...azure },
     gateway: { endpoint: '', model: '', ...gateway },
+    lmstudio: { endpoint: 'http://localhost:1234', model: '', ...lmstudio },
   });
   const errors = (v: unknown) => llmSettingsSchema.safeParse(v).error?.issues.map((i) => tr(i.message));
 
@@ -60,6 +61,7 @@ describe('settings', () => {
   it('only the active provider must be complete; the other may be empty but not invalid', () => {
     const gw = settings('gateway', {}, { endpoint: 'https://gw.example/v1', model: ' ' });
     expect(llmSettingsSchema.safeParse(gw).data).toEqual({ ...gw, gateway: { endpoint: 'https://gw.example/v1', model: '' } });
+    expect(errors({ ...gw, active: 'lmstudio', lmstudio: { endpoint: '', model: '' } })).toEqual(['Endpoint chưa đúng dạng URL (vd https://…)']);
     expect(errors({ ...gw, active: 'azure' })).toEqual(['Endpoint chưa đúng dạng URL (vd https://…)', 'Chưa nhập model/deployment']);
     expect(errors({ ...gw, azure: { endpoint: 'http://example.com', model: '', apiVersion: '' } })).toEqual(['Endpoint phải dùng https']);
     expect(errors(settings('azure', { endpoint: 'https://r', model: 'm', apiVersion: ' ' }))).toEqual(['Chưa nhập API version']);
@@ -88,6 +90,25 @@ describe('settings', () => {
     for (const m of ['gpt-4o', 'anthropic.claude-3-5-sonnet-20240620-v1:0', 'gemini-1.5-pro', '']) expect(errors(gw(m))).toBeUndefined();
   });
 
+  it('accepts LM Studio on a local http address with no key and no model, and defaults its endpoint', () => {
+    const lm = settings('lmstudio', {}, {}, { endpoint: ' http://127.0.0.1:1234/ ', model: ' ' });
+    expect(llmSettingsSchema.safeParse(lm).data?.lmstudio).toEqual({ endpoint: 'http://127.0.0.1:1234', model: '' });
+    expect(errors(settings('lmstudio', {}, {}, { endpoint: 'http://example.com' }))).toEqual(['Endpoint phải dùng https']);
+    expect(errors(settings('lmstudio', {}, {}, { model: 'sk-abc' }))).toEqual(['Ô Model trông giống API key/token. Hãy dán key vào ô Access token/API key và để trống hoặc nhập tên model ở ô Model.']);
+    // A payload without the lmstudio block (an older renderer) still validates and gets the default local address.
+    const { lmstudio: _drop, ...old } = settings('gateway', {}, { endpoint: 'https://gw.example/v1' });
+    expect(llmSettingsSchema.safeParse(old).data?.lmstudio).toEqual(DEFAULT_LLM.lmstudio);
+    expect(() => parseLlmSettings(settings('gateway', {}, { endpoint: 'https://gw.example/v1' }, { endpoint: 'http://example.com' }))).toThrow(/LM Studio: Endpoint phải dùng https/);
+  });
+
+  it('reads and activates the lmstudio provider', () => {
+    const { db } = testDb();
+    expect(getLlm(db).lmstudio).toEqual({ endpoint: 'http://localhost:1234', model: '' });
+    setSetting(db, 'llm', { active: 'lmstudio', lmstudio: { model: 'qwen2.5-7b-instruct' } });
+    expect(getLlm(db).active).toBe('lmstudio');
+    expect(activeLlm(getLlm(db))).toEqual({ provider: 'lmstudio', endpoint: 'http://localhost:1234', model: 'qwen2.5-7b-instruct', apiVersion: '' });
+  });
+
   it('migrates the old flat llm row to per-provider settings on read (G3)', () => {
     const { db } = testDb();
     expect(getLlm(db)).toEqual(DEFAULT_LLM);
@@ -97,7 +118,7 @@ describe('settings', () => {
     setSetting(db, 'llm', { provider: 'azure', endpoint: 'https://r', model: 'gpt-4o', apiVersion: '2025-01-01' });
     expect(getLlm(db)).toEqual({ ...DEFAULT_LLM, active: 'azure', azure: { endpoint: 'https://r', model: 'gpt-4o', apiVersion: '2025-01-01' } });
     // The new shape round-trips; a partial row fills in the defaults and a junk row reads as them.
-    const saved = { active: 'azure', azure: { endpoint: 'https://r', model: 'd', apiVersion: 'v' }, gateway: { endpoint: 'https://g', model: '' } };
+    const saved = { ...DEFAULT_LLM, active: 'azure', azure: { endpoint: 'https://r', model: 'd', apiVersion: 'v' }, gateway: { endpoint: 'https://g', model: '' } };
     setSetting(db, 'llm', saved);
     expect(getLlm(db)).toEqual(saved);
     setSetting(db, 'llm', { gateway: { endpoint: 'https://g' } });

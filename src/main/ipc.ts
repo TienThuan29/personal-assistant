@@ -5,7 +5,7 @@ import { type AgentDeps, answerAction, cancelOpenActions, resolveAction, runTurn
 import { newAttachmentId, saveAttachment } from './attachments';
 import { type Db, tx } from './db';
 import { i18n, setLanguage } from './i18n';
-import { collect, createLlm, describeLlmError, listModels } from './llm';
+import { collect, createLlm, describeLlmError, listModels, LOCAL_KEY } from './llm';
 import { MAX_IMAGES, SAVE_TOOLS, saveRecord } from './save';
 import { activeLlm, type Cipher, getLlm, getUi, parseLlmSettings, readSecrets, saveUi, setSetting, writeSecret } from './settings';
 import {
@@ -195,7 +195,7 @@ export function registerIpc(m: MainCtx): void {
     }
     return {
       llm: getLlm(m.db),
-      hasKey: { azure: !!secrets.azure, gateway: !!secrets.gateway },
+      hasKey: { azure: !!secrets.azure, gateway: !!secrets.gateway, lmstudio: !!secrets.lmstudio },
       openAtLogin: m.loginItem.get(),
       ui,
       version: app.getVersion(),
@@ -209,9 +209,9 @@ export function registerIpc(m: MainCtx): void {
     if (key) writeSecret(m.secretsFile, m.cipher, llm.active, key);
   });
   ipcMain.handle('settings:listModels', async (_e, provider: unknown) => {
-    if (provider !== 'gateway') throw new UserError('invalidValue'); // only a gateway lists its models (design G2)
-    const key = readSecrets(m.secretsFile, m.cipher).gateway ?? '';
-    return listModels(getLlm(m.db).gateway.endpoint, key, { fetch: netFetch }).catch((e: unknown) => {
+    if (provider !== 'gateway' && provider !== 'lmstudio') throw new UserError('invalidValue'); // Azure has deployments, not a list (design G2)
+    const key = readSecrets(m.secretsFile, m.cipher)[provider] || (provider === 'lmstudio' ? LOCAL_KEY : '');
+    return listModels(getLlm(m.db)[provider].endpoint, key, { fetch: netFetch }).catch((e: unknown) => {
       throw e instanceof UserError ? e : new Error(te('modelsFailed', { error: describeLlmError(e) }));
     });
   });

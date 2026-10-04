@@ -223,11 +223,11 @@ export function SettingsPage() {
     message[type]?.(text);
   };
 
-  /** The saved gateway's model ids. `quiet` (automatic loads) skips the error toast when nothing is set up yet or offline. */
+  /** The saved endpoint's model ids (gateway or LM Studio). `quiet` (automatic loads) skips the error toast when nothing is set up yet or offline. */
   const loadModels = (quiet: boolean) => {
     setLoadingModels(true);
     api.settings
-      .listModels('gateway')
+      .listModels(llm.active)
       .then(setModels, (e) => {
         setModels([]); // don't offer models of an endpoint that no longer answers
         if (!quiet) message.error?.(errorText(e));
@@ -246,11 +246,13 @@ export function SettingsPage() {
       .catch((e) => setStatus({ type: 'error', text: errorText(e) }));
   }, []);
 
-  // Load the list once the gateway is shown and set up (on open, on switching to it, after saving its key).
-  const gatewayReady = llm.active === 'gateway' && !!view?.hasKey.gateway && !!view.llm.gateway.endpoint;
+  // Load the list once a listing provider is shown and set up (on open, on switching to it, after saving it). A gateway also
+  // needs its token; LM Studio is ready with its default local address.
+  const modelsReady =
+    llm.active === 'gateway' ? !!view?.hasKey.gateway && !!view.llm.gateway.endpoint : llm.active === 'lmstudio' && !!view?.llm.lmstudio.endpoint;
   useEffect(() => {
-    if (gatewayReady) loadModels(true);
-  }, [gatewayReady, view]); // not loadModels: a new closure each render
+    if (modelsReady) loadModels(true);
+  }, [modelsReady, llm.active, view]); // not loadModels: a new closure each render
 
   const active = llm.active;
   const set = (patch: Partial<LlmSettings[Provider]>) => setLlm((l) => ({ ...l, [l.active]: { ...l[l.active], ...patch } }));
@@ -278,6 +280,7 @@ export function SettingsPage() {
       </div>
     ) : null;
   const azure = active === 'azure';
+  const local = active === 'lmstudio';
   const cfg = llm[active];
   const keyLabel = azure ? 'API key' : 'Access token';
   return (
@@ -292,18 +295,20 @@ export function SettingsPage() {
             onChange={(v: Provider) => {
               setLlm((l) => ({ ...l, active: v }));
               setApiKey('');
+              setModels([]); // the previous provider's list does not apply
             }}
             style={{ width: 380 }}
             options={[
               { label: PROVIDER_NAMES.azure, value: 'azure' },
               { label: PROVIDER_NAMES.gateway, value: 'gateway' },
+              { label: PROVIDER_NAMES.lmstudio, value: 'lmstudio' },
             ]}
           />
         </PreferenceRow>
-        <PreferenceRow label='Endpoint' description={azure ? t('endpointAzure') : t('endpointGateway')}>
-          <Input aria-label='Endpoint' placeholder='https://…' value={cfg.endpoint} onChange={(v) => set({ endpoint: v })} style={{ width: 380 }} />
+        <PreferenceRow label='Endpoint' description={azure ? t('endpointAzure') : local ? t('endpointLmstudio') : t('endpointGateway')}>
+          <Input aria-label='Endpoint' placeholder={local ? 'http://localhost:1234' : 'https://…'} value={cfg.endpoint} onChange={(v) => set({ endpoint: v })} style={{ width: 380 }} />
         </PreferenceRow>
-        <PreferenceRow label={azure ? 'Deployment' : 'Model'} description={azure ? t('modelDesc') : t('modelDescGateway')}>
+        <PreferenceRow label={azure ? 'Deployment' : 'Model'} description={azure ? t('modelDesc') : local ? t('modelDescLmstudio') : t('modelDescGateway')}>
           {azure ? (
             <Input
               aria-label='Deployment'
@@ -314,7 +319,7 @@ export function SettingsPage() {
             />
           ) : (
             <Space size={4}>
-              {/* allowCreate: a name the list lacks can still be typed; allowClear: empty lets the gateway pick. */}
+              {/* allowCreate: a name the list lacks can still be typed; allowClear: empty lets the gateway (or LM Studio's loaded model) pick. */}
               <Select
                 aria-label='Model'
                 placeholder={t('modelOptional')}
@@ -336,18 +341,20 @@ export function SettingsPage() {
             <Input aria-label='API version' value={llm.azure.apiVersion} onChange={(v) => set({ apiVersion: v })} style={{ width: 380 }} />
           </PreferenceRow>
         )}
-        <PreferenceRow
-          label={keyLabel}
-          description={view.hasKey[active] ? t('keySaved') : t('keyMissing')}
-        >
-          <Input.Password
-            aria-label={keyLabel}
-            placeholder={view.hasKey[active] ? t('keySavedPlaceholder') : undefined}
-            value={apiKey}
-            onChange={setApiKey}
-            style={{ width: 380 }}
-          />
-        </PreferenceRow>
+        {!local && (
+          <PreferenceRow
+            label={keyLabel}
+            description={view.hasKey[active] ? t('keySaved') : t('keyMissing')}
+          >
+            <Input.Password
+              aria-label={keyLabel}
+              placeholder={view.hasKey[active] ? t('keySavedPlaceholder') : undefined}
+              value={apiKey}
+              onChange={setApiKey}
+              style={{ width: 380 }}
+            />
+          </PreferenceRow>
+        )}
       </SectionCard>
       <UpdateCard version={view.version} />
       <SectionCard title={t('system')}>
