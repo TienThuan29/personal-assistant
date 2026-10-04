@@ -51,6 +51,7 @@ const api: Api = {
     install: () => invoke('update:install'),
     onProgress: listen<number>('update:progress'),
   },
+  platform: process.platform,
   win: {
     minimize: () => invoke('win:minimize'),
     toggleMaximize: () => invoke('win:toggleMaximize'),
