@@ -1,9 +1,13 @@
 # Push a tag vX.Y.Z (matching package.json's version) to build all three OSes and publish a GitHub Release.
+# Pushing to main releases too: if package.json's version is already tagged, `check` bumps the patch number, commits it
+# to main as github-actions[bot] (with GITHUB_TOKEN, so that commit does not re-trigger this workflow), and builds that
+# commit; the Release creates the tag. Bump minor/major yourself in a normal commit.
 # Run it by hand (Actions → Release → Run workflow) for a dry run: builds and uploads artifacts, publishes nothing.
 name: Release
 
 on:
   push:
+    branches: [main]
     tags: ['v*']
   workflow_dispatch:
 
@@ -13,6 +17,12 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # to push the version bump to main
+    outputs:
+      tag: ${{ steps.ver.outputs.tag }}
+      sha: ${{ steps.ver.outputs.sha }}
+      publish: ${{ steps.ver.outputs.publish }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,9 +34,30 @@ jobs:
         run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
       - run: bun run typecheck
       - run: bun run test
+      - name: Pick the release tag (bump the patch version on main if it is already tagged)
+        id: ver
+        run: |
+          tagged() { git ls-remote --exit-code --tags origin "refs/tags/v$1" >/dev/null; }
+          ver=$(node -p "require('./package.json').version")
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/main ]]; then
+            if tagged "$ver"; then
+              while tagged "$ver"; do ver=$(echo "$ver" | awk -F. '{print $1"."$2"."$3+1}'); done
+              VER=$ver node -e "const f='package.json',fs=require('fs');fs.writeFileSync(f,fs.readFileSync(f,'utf8').replace(/(\"version\": \")[^\"]+/,(_,k)=>k+process.env.VER))"
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git commit -am "chore: release $ver"
+              git push origin HEAD:main
+            fi
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=v$ver" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   build:
     needs: check
+    if: github.event_name == 'workflow_dispatch' || needs.check.outputs.publish == 'true'
     strategy:
       fail-fast: false # let the other OSes finish so every failure shows up in one run
       matrix:
@@ -37,6 +68,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with: { ref: '${{ needs.check.outputs.sha }}' }
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - uses: oven-sh/setup-bun@v2
@@ -63,8 +95,8 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    if: github.event_name != 'workflow_dispatch' && needs.check.outputs.publish == 'true'
+    needs: [check, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write # the only job that can write to the repo
@@ -77,4 +109,4 @@ jobs:
       - name: Create the Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+        run: gh release create "${{ needs.check.outputs.tag }}" dist/* --repo "$GITHUB_REPOSITORY" --target "${{ needs.check.outputs.sha }}" --title "${{ needs.check.outputs.tag }}" --generate-notes
