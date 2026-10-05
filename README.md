@@ -45,6 +45,30 @@ The Windows installer and the Linux AppImage can update themselves: the banner's
 version, installs it and reopens the app. The Windows portable file and macOS only link to the Release page: download the
 new file and replace the old one. Your data stays either way.
 
+## Run in Docker (no desktop app)
+
+For a machine where a background `PersonalAssistant.exe` is not allowed: the same assistant in a container, used from a
+browser tab. Needs Docker with Compose; the image is `ghcr.io/tienthuan29/personal-assistant`.
+
+```bash
+cd docker
+docker compose up -d          # behind a TLS-inspecting proxy (Zscaler): see below
+docker compose logs assistant # prints http://localhost:3000/?token=… , open that once; the browser remembers it
+```
+
+- **Update:** `docker/update.ps1` (or `docker compose pull && docker compose up -d`). Your data stays in the `pa-data`
+  volume. Updating restarts the container, so open tabs reload by themselves.
+- **Corporate root CA:** copy the CA file to `docker/certs/zscaler-root-ca.crt` (it is gitignored), then add
+  `-f docker-compose.yml -f docker-compose.certs.yml` to the compose commands (`update.ps1` does it when the file exists).
+  Without it the LLM calls fail certificate checks on such a network. Never turn certificate checks off.
+- **Port, time zone:** `PA_PORT` (default 3000) and `TZ` (default `Asia/Ho_Chi_Minh`; "today" and reminder times follow it).
+- **Access:** the port is published on `127.0.0.1` only, and the token is required. `PA_TOKEN` sets your own; otherwise one
+  is generated once and kept in the volume.
+- **Back up:** `docker cp personal-assistant-assistant-1:/data ./pa-backup`.
+- **Differences from the desktop app:** no file search, no tray, no start with Windows, no in-app install of updates.
+  Reminders show as browser notifications while a tab is open (Settings → System → Enable); a reminder that comes due with
+  no tab open is only marked as fired. Images are resized in the browser before upload.
+
 ## Where your data lives
 
 | OS | Folder |

@@ -79,5 +79,16 @@ The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-
 - [ ] Tự cập nhật (cần hai Release có `latest.yml`, vd 0.1.2 rồi 0.1.3): cài bản NSIS 0.1.2, phát hành 0.1.3, mở app → banner có "Cập nhật và khởi động lại". Bấm → nút thành "Đang tải N%", app thoát rồi tự mở lại ở 0.1.3 (Settings → Phiên bản), dữ liệu còn nguyên. Bản portable và macOS chỉ có "Tải về". Linux AppImage: cùng luồng, thư mục chứa file phải ghi được. Mất mạng khi bấm → toast lỗi và nút về "Tải về".
 - [ ] Switch off "Tự kiểm tra khi mở app" → no banner after a restart (the manual button still works). Switching Windows offline never shows an error at startup.
 
+**Docker mode** (docs/docker-design.md; Docker only, never the Electron app)
+- [ ] `docker build -t pa-app .`, then `cd docker` and `PA_IMAGE=pa-app docker compose up -d`; `docker compose logs assistant` prints the URL with the token. Open it: the app loads with no window buttons in the title bar, and the chat composer has no file-search button.
+- [ ] DevTools console on first load: no CSP violations, no failed requests. Network tab: `/events` stays open (EventSource), calls go to `/rpc/…`.
+- [ ] Without the token (a private window at `http://localhost:3000/`) → "Unauthorized" text, nothing else. Visiting by `127.0.0.1` works, by another name does not.
+- [ ] Settings: type an LLM key → Save and test works against the real gateway/Azure (behind Zscaler: with the certs file, `docker compose exec assistant printenv NODE_EXTRA_CA_CERTS` shows `/certs/ca.crt`). The key is not shown again; `docker compose restart assistant` and it is still saved.
+- [ ] Attach a PNG and a large photo to a chat message and to a task: both arrive as JPEGs (thumbnails show, via `/att/…`); a text file renamed `.png` is rejected with the translated message.
+- [ ] Settings → System → "Thông báo trình duyệt" → Bật → allow. Create a reminder for 1–2 minutes ahead by chat, keep the tab open (background tab is fine): a browser notification "Nhắc nhở" appears; clicking it focuses the tab on Today. With the tab closed, the reminder is only marked fired.
+- [ ] `docker compose stop` takes a couple of seconds (clean SIGTERM); `up -d` again → data, key and the same URL token are unchanged. With the tab open during the restart, it reloads by itself when the server is back.
+- [ ] A reminder at 08:00 fires at 08:00 local time (TZ), not 7 hours off. Today shows today's date in dd/mm/yyyy.
+- [ ] `docker/update.ps1` with a newer image published: pulls, restarts, prints the URL line. The update banner (when a newer GitHub Release exists) says to run `docker compose pull`; there is no install button.
+
 Toasts need the Start-menu shortcut carrying the AppUserModelID `com.personal-assistant.app`, which the installer
 creates. `release/win-unpacked/Personal Assistant.exe` run directly may show no toasts.

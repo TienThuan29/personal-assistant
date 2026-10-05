@@ -1,6 +1,6 @@
 # Docker mode: thiết kế
 
-Ngày: 2026-10-05. Trạng thái: thiết kế đã duyệt, chưa code. Kế hoạch: `docs/docker-plan.md` (8 task).
+Ngày: 2026-10-05. Trạng thái: đã làm (xem "Đã làm" ở cuối). Kế hoạch: `docs/docker-plan.md` (8 task).
 
 ## Hiểu yêu cầu
 
@@ -75,3 +75,20 @@ Ngày: 2026-10-05. Trạng thái: thiết kế đã duyệt, chưa code. Kế ho
 - Cần kiểm tra ở bước plan: `electron-vite build` chạy được khi bỏ tải binary Electron; CSP trong `index.html` (`connect-src 'self'`, `img-src 'self'`) cho phép SSE và `/att` cùng origin.
 - Package ghcr phải chuyển Public bằng tay một lần.
 - Docker Desktop vẫn là tiến trình nền (đã được người dùng chấp nhận).
+
+## Đã làm (As built)
+
+Trạng thái 2026-10-05: Task 0–8 của `docs/docker-plan.md` đã làm và commit (`22a280a`..`f4e1dbe` + tài liệu). Kiểm tra bằng container, không bao giờ chạy Electron trên máy này (người dùng cấm).
+
+- **Kiểm tra:** `docker build --target test -t pa-test .` chạy `bun run typecheck` và vitest trên Node 22 thuần, `--exclude tests/smoke.test.ts` (nó khẳng định đang chạy trong Electron; job `check` của CI vẫn chạy) và `--testTimeout 30000` (`tests/db.test.ts` quá 5 s khi laptop bận). Kết quả cuối: 332 test pass, 21 skipped (eval LLM và seed, opt-in).
+- **Khác kế hoạch:**
+  - `src/server/` tách `server.ts` (`startServer`, `validateJpeg`, test gọi được) khỏi `index.ts` (đọc env, in URL, SIGTERM).
+  - `scripts/server-build.config.mjs` tách khỏi `scripts/build-server.mjs` để `tests/server-bundle.test.ts` dùng cùng cấu hình esbuild. `esbuild` thêm vào devDependencies chỉ bằng một dòng trong `bun.lock` (gói đã có sẵn qua vite).
+  - Compose nhận `PA_IMAGE` (ghim bản hoặc thử image local) và `PA_PUBLIC_PORT` (chỉ để URL trong log hiện đúng cổng đã publish).
+  - Stage `deps` cài `ca-certificates` bằng apt (`node:22-slim` không có `update-ca-certificates`) rồi tin `docker/certs/*.crt`; stage runtime không chứa cert.
+  - `settings:test`, `update:check` v.v. chạy nguyên văn qua `registerIpc`; chỉ `files:reveal`, `update:install`, `settings:setOpenAtLogin` là desktop-only (`src/main/ipc-desktop.ts`).
+- **Đã xác nhận bằng chạy thật (Docker Desktop):** image build (`electron-vite build` chạy được khi bỏ tải binary Electron), 401 không cookie, 403 sai Host và sai Origin, `?token=` → cookie + 302, RPC `conv:create`/`data:save`, `docker stop` mất ~2 s và thoát mã 0, dữ liệu và token còn sau restart, user `node`, `TZ=Asia/Ho_Chi_Minh` cho offset -420, compose chạy với và không có file certs.
+- **Chưa xác nhận:**
+  - Giao diện trong trình duyệt thật (CSP với SSE và `/att`, nén ảnh bằng canvas, Web Notification): extension Chrome không kết nối được lúc làm; nằm trong mục Docker của `docs/smoke-test.md`.
+  - Cert Zscaler: từ trong container thấy chứng chỉ công khai thật (Sectigo, Google Trust Services), nghĩa là trên mạng lúc đó lưu lượng của Docker không bị chặn TLS, nên chưa chứng minh được cert override là cần. Nó có sẵn cho mạng công ty, và `bun install` trong build cũng chạy với CA được tin. Cần thử với gateway LLM thật.
+  - Job `docker` trong `release.yml` (YAML hợp lệ, chưa chạy): lần chạy đầu trên GitHub, rồi đặt package ghcr thành Public một lần. Chưa kiểm chứng `docker pull` từ ghcr qua Zscaler.
