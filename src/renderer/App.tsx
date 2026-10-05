@@ -16,6 +16,7 @@ import { RemindersPage } from './pages/RemindersPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TasksPage } from './pages/TasksPage';
 import { TodayPage } from './pages/TodayPage';
+import { hasMod, shortcutLabel } from './shortcuts';
 
 type Route = { page: 'chat'; id: number; focus?: boolean } | { page: Exclude<Page, 'chat'> };
 
@@ -135,7 +136,7 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!e.ctrlKey || e.altKey || e.shiftKey || e.repeat) return; // holding Ctrl+N must not make a chat per repeat
+      if (!hasMod(e, mac) || e.altKey || e.shiftKey || e.repeat) return; // holding the shortcut for a new chat must not make a chat per repeat
       const key = e.key.toLowerCase();
       const nav = e.code.startsWith('Digit') ? NAV[Number(e.code.slice(5)) - 1] : undefined; // the physical key, so AZERTY works too
       const action =
@@ -150,7 +151,7 @@ export function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [newChat]);
+  }, [newChat, mac]);
 
   const renameConversation = async (id: number, title: string) => {
     await api.conversations.rename(id, title);
@@ -188,7 +189,7 @@ export function App() {
       {!collapsed && (
         <>
           <span className='flex-1 text-left truncate'>{t('chat:newChat')}</span>
-          <kbd aria-hidden className='text-[11px] font-400 [font-family:inherit]'>Ctrl+N</kbd>
+          <kbd aria-hidden className='text-[11px] font-400 [font-family:inherit]'>{shortcutLabel('N', mac)}</kbd>
         </>
       )}
     </button>
@@ -205,7 +206,7 @@ export function App() {
             {mac && <div className='drag h-7 shrink-0' />} {/* room for the traffic lights, which are wider than the collapsed sider */}
             <div className='drag h-11 shrink-0 flex items-center gap-2 px-3'>
               {!collapsed && <span className='flex-1 min-w-0 truncate font-600'>{t('appName')}</span>}
-              <Tooltip position='right' content={`${siderLabel} (Ctrl+B)`}>
+              <Tooltip position='right' content={`${siderLabel} (${shortcutLabel('B', mac)})`}>
                 <button
                   type='button'
                   aria-label={siderLabel}
@@ -218,7 +219,7 @@ export function App() {
             </div>
             <div className='flex-1 min-h-0 flex flex-col gap-1 px-3 pb-3'>
               {collapsed ? (
-                <Tooltip position='right' content={`${t('chat:newChat')} (Ctrl+N)`}>
+                <Tooltip position='right' content={`${t('chat:newChat')} (${shortcutLabel('N', mac)})`}>
                   {newChatButton}
                 </Tooltip>
               ) : (
@@ -226,7 +227,7 @@ export function App() {
               )}
               <Nav
                 label={t('mainNav')}
-                items={NAV.map((n, i) => ({ key: n.page, icon: n.icon, label: t(`nav.${n.page}`), shortcut: `Ctrl+${i + 1}` }))}
+                items={NAV.map((n, i) => ({ key: n.page, icon: n.icon, label: t(`nav.${n.page}`), shortcut: shortcutLabel(String(i + 1), mac) }))}
                 selected={route?.page}
                 collapsed={collapsed}
                 onSelect={(k) => go(k as Page).catch(fail)}
@@ -245,7 +246,7 @@ export function App() {
               )}
               <Nav
                 label={t('nav.settings')}
-                items={[{ key: 'settings', icon: <SettingTwo />, label: t('nav.settings'), shortcut: 'Ctrl+,' }]}
+                items={[{ key: 'settings', icon: <SettingTwo />, label: t('nav.settings'), shortcut: shortcutLabel(',', mac) }]}
                 selected={route?.page}
                 collapsed={collapsed}
                 onSelect={() => setRoute({ page: 'settings' })}

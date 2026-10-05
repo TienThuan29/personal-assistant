@@ -19,7 +19,8 @@ import { errMsg, te } from './errors';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'att', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
-const startHidden = process.argv.includes('--hidden');
+/** Started by the login item: Windows/Linux pass --hidden; macOS ignores login-item args but reports it. */
+const startedHidden = (): boolean => process.argv.includes('--hidden') || (process.platform === 'darwin' && app.getLoginItemSettings().wasOpenedAtLogin);
 let win: BrowserWindow | undefined;
 let tray: Tray | undefined; // module scope keeps the tray from being garbage-collected
 let quitting = false;
@@ -53,7 +54,7 @@ function createWindow(): BrowserWindow {
     minWidth: 800,
     minHeight: 560,
     ...chromeOptions(process.platform),
-    show: !startHidden,
+    show: !startedHidden(),
     icon: appIcon,
     webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: true },
   });
