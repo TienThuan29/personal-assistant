@@ -3,3 +3,4 @@ out/
 release/
 *.db
 *.db-*
+/index.js
