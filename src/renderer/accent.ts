@@ -1,40 +1,31 @@
 // App colour → CSS tokens (docs/accent-color-design.md §2). Pure except applyAccent.
 
 import { generate } from '@arco-design/color';
-import { DEFAULT_UI } from '../shared/types';
 
 type Theme = 'light' | 'dark';
 type Rgb = [number, number, number];
 export type Oklch = [l: number, c: number, h: number];
 
-/** Each passes light-theme AA as is; dark is adjusted. */
-export const PRESETS = [
-  { key: 'terracotta', hex: '#ab502d' },
-  { key: 'ocean', hex: '#2f6b86' },
-  { key: 'sage', hex: '#4f6e52' },
-  { key: 'plum', hex: '#7e4a72' },
-  { key: 'rose', hex: '#a3485e' },
-  { key: 'amber', hex: '#8a5a1c' },
-  { key: 'indigo', hex: '#4e57a0' },
-  { key: 'slate', hex: '#56616e' },
-] as const;
+/**
+ * The design's six accents (docs/ui-redesign-design.md): each has a light and a dark colour in OKLCH. The hex values are
+ * worked out below, nudged only as far as needed to read at AA, so a preset is always legible.
+ */
+const PRESET_SOURCES = [
+  { key: 'ocean', light: [0.52, 0.12, 235], dark: [0.76, 0.11, 235] },
+  { key: 'terracotta', light: [0.53, 0.14, 40], dark: [0.75, 0.12, 45] },
+  { key: 'sage', light: [0.5, 0.09, 155], dark: [0.77, 0.09, 155] },
+  { key: 'plum', light: [0.5, 0.13, 340], dark: [0.76, 0.11, 340] },
+  { key: 'indigo', light: [0.5, 0.15, 275], dark: [0.75, 0.12, 275] },
+  { key: 'amber', light: [0.55, 0.12, 70], dark: [0.81, 0.12, 78] },
+] as const satisfies readonly { key: string; light: Oklch; dark: Oklch }[];
 
-// Neutrals from styles.css; gray-* are written back as "r, g, b".
-const NEUTRALS: Record<Theme, Record<string, string>> = {
-  light: {
-    canvas: '#faf8f5', sunken: '#f3efea', line: '#e7e1d9', hover: '#f1ede8', ink: '#2b2622', 'ink-2': '#746a62',
-    'gray-1': '#f7f5f2', 'gray-2': '#f1ede8', 'gray-3': '#e7e1d9', 'gray-4': '#d6cec5', 'gray-5': '#beb5ab',
-    'gray-6': '#9e958b', 'gray-7': '#80776e', 'gray-8': '#635b53', 'gray-9': '#453e38', 'gray-10': '#2b2622',
-  },
-  dark: {
-    canvas: '#1a1714', surface: '#23201c', sunken: '#1f1c19', line: '#34302b', hover: '#2a2622', ink: '#ede7e1',
-    'ink-2': '#a39a91', 'color-bg-3': '#2a2622', 'color-bg-4': '#302b27', 'color-bg-5': '#36312c',
-    'gray-1': '#1a1714', 'gray-2': '#23201c', 'gray-3': '#34302b', 'gray-4': '#443f39', 'gray-5': '#5a544d',
-    'gray-6': '#766e66', 'gray-7': '#968d84', 'gray-8': '#b4aba2', 'gray-9': '#d2cbc4', 'gray-10': '#ede7e1',
-  },
+// The neutrals of styles.css, which the accent has to read on (they are not emitted: styles.css owns them).
+export const NEUTRALS: Record<Theme, { canvas: string; surface: string; sunken: string }> = {
+  light: { canvas: '#eaeae7', surface: '#ffffff', sunken: '#f4f4f2' },
+  dark: { canvas: '#0e0f11', surface: '#17181b', sunken: '#1c1d21' },
 };
-// --accent-soft over --surface, where accent text sits on it; on --sunken (sidebar) the app uses ink text.
-const TINT = { light: 0.1, dark: 0.16 };
+// --accent-soft over --surface, where accent text sits on it (styles.css mixes 11% in both themes).
+const TINT = 0.11;
 
 const clamp = (v: number) => Math.min(1, Math.max(0, v));
 const parse = (hex: string): Rgb => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as Rgb;
@@ -101,23 +92,9 @@ export const mix = (a: string, b: string, p: number) => {
   return toHex(x.map((v, i) => v * p + y[i] * (1 - p)));
 };
 
-// Neutrals keep L and C with the pick's hue; near-gray picks fade them to gray.
-function tint(hex: string, theme: Theme): Record<string, string> {
-  const [, Cp, H] = toOklch(hex);
-  const k = Math.min(1, Cp / 0.03);
-  const out: Record<string, string> = {};
-  for (const [name, v] of Object.entries(NEUTRALS[theme])) {
-    const [L, C] = toOklch(v);
-    out[name] = fromOklch([L, C * k, H]);
-  }
-  return out;
-}
-
-function solve(hex: string, theme: Theme) {
-  const n = tint(hex, theme);
-  const surface = n.surface ?? '#ffffff';
-  const ok = (a: string) =>
-    [n.canvas, surface, mix(a, surface, TINT[theme])].every((bg) => contrast(a, bg) >= 4.5);
+function solve(hex: string, theme: Theme): string {
+  const n = NEUTRALS[theme];
+  const ok = (a: string) => [n.canvas, n.surface, mix(a, n.surface, TINT)].every((bg) => contrast(a, bg) >= 4.5);
   const [, C, H] = toOklch(hex);
   let [L] = toOklch(hex);
   let accent = hex;
@@ -126,43 +103,39 @@ function solve(hex: string, theme: Theme) {
     L = clamp(L + (theme === 'light' ? -0.005 : 0.005));
     accent = fromOklch([L, C, H]);
   }
-  return { n, accent };
+  return accent;
 }
 
-export const adjustAccent = (hex: string, theme: Theme) => solve(hex, theme).accent;
+export const adjustAccent = (hex: string, theme: Theme) => solve(hex, theme);
 
-function block({ n, accent }: ReturnType<typeof solve>, theme: Theme, lightAccent: string) {
+export const PRESETS = PRESET_SOURCES.map((p) => ({
+  key: p.key,
+  hex: adjustAccent(fromOklch(p.light), 'light'),
+  dark: adjustAccent(fromOklch(p.dark), 'dark'),
+}));
+
+function block(accent: string, theme: Theme, lightAccent: string) {
   const dark = theme === 'dark';
   // Dark ramp from the light colour, as Arco does: its step 6 lands near the lightened accent.
   const ramp = generate(dark ? lightAccent : accent, { list: true, dark, format: 'rgb' });
   const vars: Record<string, string> = {
     accent,
-    'on-accent': dark ? n.canvas : '#ffffff',
-    ...Object.fromEntries(Object.entries(n).map(([k, v]) => [k, k.startsWith('gray-') ? triple(v) : v])),
+    'on-accent': dark ? NEUTRALS.dark.canvas : '#ffffff',
     ...Object.fromEntries(ramp.map((c, i) => [`primary-${i + 1}`, i === 5 ? triple(accent) : c.slice(4, -1)])),
-    'thought-gradient': dark
-      ? 'linear-gradient(135deg, color-mix(in srgb, var(--accent) 16%, var(--canvas)) 0%, var(--surface) 100%)'
-      : 'linear-gradient(90deg, color-mix(in srgb, var(--accent) 8%, var(--canvas)) 0%, var(--sunken) 100%)',
   };
-  if (!dark) {
-    const ink = triple(n.ink);
-    vars['shadow-card'] = `0 1px 2px rgba(${ink}, 0.04), 0 8px 24px -12px rgba(${ink}, 0.14)`;
-  }
   return Object.entries(vars).map(([k, v]) => `--${k}:${v};`).join('');
 }
 
 let last: [string, string] | undefined;
 
-/** Two blocks overriding styles.css; '' for the default, whose tokens are hand-tuned there. */
+/** Two blocks of accent variables for the light and the dark theme; they follow styles.css, which holds the neutrals. */
 export function accentCss(hex: string): string {
   const h = hex.toLowerCase();
   if (last?.[0] === h) return last[1];
-  let css = '';
-  if (h !== DEFAULT_UI.accent) {
-    const light = solve(h, 'light');
-    const dark = block(solve(h, 'dark'), 'dark', light.accent);
-    css = `body{${block(light, 'light', light.accent)}}\nbody[arco-theme='dark']{${dark}}`;
-  }
+  const preset = PRESETS.find((p) => p.hex === h);
+  const light = solve(h, 'light');
+  const dark = preset ? preset.dark : solve(h, 'dark');
+  const css = `body{${block(light, 'light', light)}}\nbody[arco-theme='dark']{${block(dark, 'dark', light)}}`;
   last = [h, css];
   return css;
 }

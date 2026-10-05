@@ -1,18 +1,22 @@
 import { ThoughtDisplay } from '@aionui/ui';
 import { Markdown } from '@aionui/ui/markdown';
-import { Alert, Button, Message, Tooltip } from '@arco-design/web-react';
-import { CalendarThirtyTwo, FolderSearch, Sun, Wallet } from '@icon-park/react';
+import { Alert, Button, Message, Progress, Tooltip } from '@arco-design/web-react';
+import { CalendarDays, Check, FolderSearch, Sun, Wallet } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ASK_TOOL, type ChatMessage, FILE_TOOL_NAMES, type PendingAction, type ToolCall } from '../../shared/types';
+import { ASK_TOOL, type ChatMessage, FILE_TOOL_NAMES, type PdfProgress, type PendingAction, type ToolCall } from '../../shared/types';
 import { api, errorText } from '../api';
+import logo from '../assets/logo.png';
+import { PdfCard } from '../components/PdfViewer';
 import { Thumbs } from '../components/Thumbs';
+import { ICON } from '../components/ui';
 import { AskCard } from './AskCard';
 import { ConfirmCard } from './ConfirmCard';
+import { ReasoningBlock } from './ReasoningBlock';
 import { COMMANDS } from './SendBox';
 import type { ChatState } from './useChat';
 
-const SUGGESTION_ICONS = { homnay: <Sun />, tuannay: <CalendarThirtyTwo />, chitieu: <Wallet /> };
+const SUGGESTION_ICONS = { homnay: <Sun {...ICON} />, tuannay: <CalendarDays {...ICON} />, chitieu: <Wallet {...ICON} /> };
 
 /** What a file tool call searched or read, e.g. `~/Documents/a.txt` or `~/Work · "budget"`, so the user sees what left the machine. */
 function fileCallText(c: ToolCall): string {
@@ -43,7 +47,7 @@ function PathLink({ path, suffix = '', reveal }: { path: string; suffix?: string
 
 /** One file tool call: what it searched or read, then the files it found (open by default when there are few). */
 function FileCall({ c, result, reveal }: { c: ToolCall; result?: FileResult; reveal: Reveal }) {
-  const icon = <FolderSearch aria-hidden className='text-accent shrink-0' />;
+  const icon = <FolderSearch {...ICON} aria-hidden className='text-accent shrink-0' />;
   if (c.function.name === 'read_file')
     return (
       <div className='file-call'>
@@ -86,6 +90,7 @@ const MessageRow = memo(function MessageRow({
   answer,
   fileResults,
   reveal,
+  partLabel,
 }: {
   m: ChatMessage;
   actions: PendingAction[];
@@ -94,21 +99,25 @@ const MessageRow = memo(function MessageRow({
   /** This message's file tool results by tool_call_id. */
   fileResults?: Record<string, FileResult>;
   reveal: Reveal;
+  /** 'from–to/total' when this reply is the notes of one batch of a PDF. */
+  partLabel?: string;
 }) {
   const { t } = useTranslation('chat');
   const [edits, setEdits] = useState<Record<number, Record<string, unknown>>>({});
   const [confirmingAll, setConfirmingAll] = useState(false);
 
   if (m.role === 'tool') return null;
+  if (m.role === 'user' && (m.batch || m.final)) return null; // the steps of a PDF run: the notes they produce are shown, not the prompts
   if (m.role === 'user')
     return (
       <div className='msg-user'>
         {m.files && (
           <div className='flex items-center gap-1 text-xs opacity-75 mb-1'>
-            <FolderSearch aria-hidden /> {t('fileTag')}
+            <FolderSearch {...ICON} aria-hidden /> {t('fileTag')}
           </div>
         )}
         {m.content}
+        {m.document && <PdfCard doc={m.document} />}
         <Thumbs ids={m.attachment_ids} />
       </div>
     );
@@ -129,8 +138,28 @@ const MessageRow = memo(function MessageRow({
     }
   };
 
+  // Read tools that ran (no card, not a file search) show as small "Looked up tasks" chips, as in the design.
+  const carded = new Set(cards.map((a) => a.tool_call_id));
+  const lookups = (m.tool_calls ?? []).filter((c) => !carded.has(c.id) && !FILE_TOOL_NAMES.includes(c.function.name));
+  const done = t('toolDone', { returnObjects: true }) as Record<string, string>;
+
   return (
     <div className='msg-assistant'>
+      <img src={logo} alt='' className='msg-avatar' />
+      <div className='msg-col'>
+      {partLabel && <div className='text-xs text-ink-2 mb-1'>{t('pdfNotes', { range: partLabel })}</div>}
+      {lookups.length > 0 && (
+        <div className='flex flex-wrap gap-1.5'>
+          {lookups.map((c) => (
+            <span key={c.id} className='flex items-center gap-[5px] px-2 py-0.5 rounded-full bg-pill text-ink-2 text-[11.5px]'>
+              <span aria-hidden className='flex text-ok'>
+                <Check {...ICON} strokeWidth={2.4} />
+              </span>
+              {done[c.function.name] ?? c.function.name}
+            </span>
+          ))}
+        </div>
+      )}
       {m.content && <Markdown>{m.content}</Markdown>}
       {fileCalls.map((c) => (
         <FileCall key={c.id} c={c} result={fileResults?.[c.id]} reveal={reveal} />
@@ -155,6 +184,7 @@ const MessageRow = memo(function MessageRow({
           {t('confirmAll', { count: open.length })}
         </Button>
       )}
+      </div>
     </div>
   );
 });
@@ -182,11 +212,34 @@ function fileResultsByMessage(messages: ChatMessage[]): Map<number, Record<strin
   return out;
 }
 
+/** Labels the reply that follows each batch message of a PDF run, e.g. '11–20/40'. */
+function partLabelsByMessage(messages: ChatMessage[]): Map<number, string> {
+  const out = new Map<number, string>();
+  messages.forEach((m, i) => {
+    const prev = messages[i - 1];
+    if (m.role === 'assistant' && prev?.role === 'user' && prev.batch) out.set(m.id, `${prev.batch.from}–${prev.batch.to}/${prev.batch.total}`);
+  });
+  return out;
+}
+
+/** The run's progress from the saved messages, for a chat opened mid-run (no `progress` event has arrived for it). */
+function progressFromMessages(messages: ChatMessage[]): PdfProgress | null {
+  const u = messages.findLast((m) => m.role === 'user');
+  if (u?.role !== 'user') return null;
+  if (u.batch) return { phase: 'batch', part: u.batch.part, parts: u.batch.parts, from: u.batch.from, to: u.batch.to, total: u.batch.total };
+  const doc = u.final ? messages.findLast((m) => m.role === 'user' && m.document) : undefined;
+  const total = doc?.role === 'user' ? (doc.document?.pages.length ?? 0) : 0;
+  return u.final && total ? { phase: 'final', part: 0, parts: 0, from: 1, to: total, total } : null;
+}
+
 export function MessageList({ chat }: { chat: ChatState }) {
   const { t } = useTranslation('chat');
   const tools = t('tool', { returnObjects: true }) as Record<string, string>;
   const ref = useRef<HTMLDivElement>(null);
   const fileResults = useMemo(() => fileResultsByMessage(chat.messages), [chat.messages]);
+  const partLabels = useMemo(() => partLabelsByMessage(chat.messages), [chat.messages]);
+  const progress = chat.progress ?? (chat.running ? progressFromMessages(chat.messages) : null);
+  const waiting = chat.running && !chat.streaming;
   const [message, messageHolder] = Message.useMessage();
   const reveal = useCallback((path: string) => void api.files.reveal(path).catch((e: unknown) => message.error?.(errorText(e))), [message]);
   // Follow new content while the user is at the bottom. This watches the list's size, not its content (as useAutoScroll
@@ -218,15 +271,18 @@ export function MessageList({ chat }: { chat: ChatState }) {
       <div className='msg-list' aria-live='polite'>
         {!chat.messages.length && !chat.running && (
           <div className='chat-empty'>
-            <h2>{t('emptyTitle')}</h2>
-            <p>{t('emptyHint')}</p>
+            <img src={logo} alt='' className='w-11 h-11 rounded-[11px] shadow-sm' />
+            <div>
+              <h2>{t('emptyTitle')}</h2>
+              <p>{t('emptyHint')}</p>
+            </div>
             <div className='grid grid-cols-1 sm:grid-cols-3 gap-2.5'>
               {COMMANDS.map((key) => (
                 <button key={key} type='button' className='suggestion' onClick={() => void chat.send(t(`cmd.${key}.prompt`), [])}>
-                  <span aria-hidden className='flex items-center justify-center w-8 h-8 mb-1.5 rounded-ctl bg-accent-soft text-accent text-base'>
+                  <span aria-hidden className='flex text-[17px] text-accent'>
                     {SUGGESTION_ICONS[key]}
                   </span>
-                  <span>{t(`cmd.${key}.description`)}</span>
+                  <span className='font-600 text-[13.5px]'>{t(`cmd.${key}.description`)}</span>
                   <code>/{key}</code>
                 </button>
               ))}
@@ -235,16 +291,32 @@ export function MessageList({ chat }: { chat: ChatState }) {
         )}
         {messageHolder}
         {chat.messages.map((m) => (
-          <MessageRow key={m.id} m={m} actions={chat.actions} resolve={chat.resolve} answer={chat.answer} fileResults={fileResults.get(m.id)} reveal={reveal} />
+          <MessageRow key={m.id} m={m} actions={chat.actions} resolve={chat.resolve} answer={chat.answer} fileResults={fileResults.get(m.id)} reveal={reveal} partLabel={partLabels.get(m.id)} />
         ))}
-        {chat.streaming && (
-          <div className='msg-assistant'>
-            <Markdown>{chat.streaming}</Markdown>
-            <span className='caret' aria-hidden='true' />
+        {chat.running && progress && (
+          <div className='text-xs text-ink-2' role='status'>
+            {progress.phase === 'final' ? t('pdfFinal') : t('pdfBatch', { part: progress.part, parts: progress.parts, from: progress.from, to: progress.to })}
+            <Progress percent={progress.phase === 'final' ? 100 : Math.round(((progress.part - 1) / progress.parts) * 100)} size='small' showText={false} />
           </div>
         )}
-        {chat.running && !chat.streaming && (
-          <ThoughtDisplay running statusText={chat.tool ? (tools[chat.tool] ?? t('toolRunning', { name: chat.tool })) : t('thinking')} />
+        {chat.reasoning && <ReasoningBlock text={chat.reasoning} />}
+        {chat.streaming && (
+          <div className='msg-assistant'>
+            <img src={logo} alt='' className='msg-avatar' />
+            <div className='msg-col'>
+              <Markdown>{chat.streaming}</Markdown>
+              <span className='caret' aria-hidden='true' />
+            </div>
+          </div>
+        )}
+        {waiting && (
+          // ThoughtDisplay counts the seconds itself, from when it mounts: the key remounts it with every new step (a tool
+          // call, the next batch), so the clock shows how long this step has taken.
+          <ThoughtDisplay
+            key={`${progress?.phase}-${progress?.part}-${chat.tool}`}
+            running
+            statusText={chat.tool ? (tools[chat.tool] ?? t('toolRunning', { name: chat.tool })) : t('thinking')}
+          />
         )}
         {chat.error && (
           <Alert

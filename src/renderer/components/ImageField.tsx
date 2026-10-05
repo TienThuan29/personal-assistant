@@ -1,6 +1,6 @@
 import { FilePreview } from '@aionui/ui';
 import { Button, Tooltip } from '@arco-design/web-react';
-import { Close, Pic, Undo } from '@icon-park/react';
+import { Image as ImageIcon, RotateCcw, X } from 'lucide-react';
 import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { attUrl } from '../api';
@@ -52,7 +52,7 @@ export function ImageField({ existing, removed, onToggleRemove, picker }: Props)
                 <img src={attUrl(id)} alt={t('attachment')} />
                 <Tooltip content={t(off ? 'undoRemove' : 'removeImage')}>
                   <button type='button' aria-label={t(off ? 'undoRemove' : 'removeImage')} disabled={off && full} onClick={() => onToggleRemove(id)}>
-                    {off ? <Undo /> : <Close />}
+                    {off ? <RotateCcw size={12} /> : <X size={12} />}
                   </button>
                 </Tooltip>
               </div>
@@ -63,7 +63,7 @@ export function ImageField({ existing, removed, onToggleRemove, picker }: Props)
           ))}
         </div>
       )}
-      <Button type='text' size='small' icon={<Pic />} disabled={full} onClick={() => fileInput.current?.click()}>
+      <Button type='text' size='small' icon={<ImageIcon size={14} />} disabled={full} onClick={() => fileInput.current?.click()}>
         {t('addImage')}
       </Button>
       <input

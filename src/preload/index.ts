@@ -20,7 +20,7 @@ const api: Api = {
   chat: {
     messages: (id) => invoke('chat:messages', id),
     actions: (id) => invoke('chat:actions', id),
-    send: (id, text, images, files) => invoke('chat:send', id, text, images, files),
+    send: (id, text, images, files, document) => invoke('chat:send', id, text, images, files, document),
     running: (id) => invoke('chat:running', id),
     stop: (id) => invoke('chat:stop', id),
     retry: (id) => invoke('chat:retry', id),
@@ -44,6 +44,8 @@ const api: Api = {
     listModels: (provider) => invoke('settings:listModels', provider),
     setOpenAtLogin: (on) => invoke('settings:setOpenAtLogin', on),
     setUi: (patch) => invoke('settings:setUi', patch),
+    dataPath: () => invoke('settings:dataPath'),
+    revealData: () => invoke('settings:revealData'),
   },
   update: {
     check: (manual) => invoke('update:check', manual),

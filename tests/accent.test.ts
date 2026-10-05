@@ -1,4 +1,4 @@
-import { PRESETS, accentCss, adjustAccent, contrast, fromOklch, mix, toOklch } from '../src/renderer/accent';
+import { NEUTRALS, PRESETS, accentCss, adjustAccent, contrast, fromOklch, mix, toOklch } from '../src/renderer/accent';
 import { DEFAULT_UI } from '../src/shared/types';
 
 // Reads back what applyAccent would inject: { light: {name: value}, dark: {...} }.
@@ -8,42 +8,42 @@ function parseCss(css: string) {
   return { light: vars(light), dark: vars(dark) };
 }
 
-const lab = (hex: string) => {
-  const [L, C, H] = toOklch(hex);
-  return [L, C * Math.cos((H * Math.PI) / 180), C * Math.sin((H * Math.PI) / 180)];
-};
-const deltaE = (a: string, b: string) => Math.hypot(...lab(a).map((v, i) => (v - lab(b)[i]) * 100));
-
-const PICKS = [...PRESETS.map((p) => p.hex).slice(1), '#ffff00', '#000080', '#000000', '#ffffff', '#00ff00', '#808080', '#3366aa'];
+const PICKS = [...PRESETS.map((p) => p.hex), '#ffff00', '#000080', '#000000', '#ffffff', '#00ff00', '#808080', '#3366aa'];
 
 describe('accent', () => {
   it.each(PICKS)('%s reads at AA in both themes', (hex) => {
     const css = parseCss(accentCss(hex));
-    for (const [theme, v] of Object.entries(css)) {
-      const surface = theme === 'light' ? '#ffffff' : v.surface;
-      const tint = mix(v.accent, surface, theme === 'light' ? 0.1 : 0.16);
-      for (const bg of [v.canvas, surface, tint]) expect(contrast(v.accent, bg), `${theme} on ${bg}`).toBeGreaterThanOrEqual(4.5);
+    for (const [theme, v] of Object.entries(css) as ['light' | 'dark', Record<string, string>][]) {
+      const n = NEUTRALS[theme];
+      const tint = mix(v.accent, n.surface, 0.11);
+      for (const bg of [n.canvas, n.surface, tint]) expect(contrast(v.accent, bg), `${theme} on ${bg}`).toBeGreaterThanOrEqual(4.5);
       expect(contrast(v['on-accent'], v.accent), `${theme} on-accent`).toBeGreaterThanOrEqual(4.5);
       expect(v['primary-6']).toBe(v.accent.slice(1).match(/../g)!.map((x) => parseInt(x, 16)).join(', '));
-      expect(Object.keys(v).filter((k) => /^(primary|gray)-\d+$/.test(k))).toHaveLength(20);
+      expect(Object.keys(v).filter((k) => /^primary-\d+$/.test(k))).toHaveLength(10);
     }
   });
 
-  it('injects nothing for the default', () => {
-    expect(accentCss(DEFAULT_UI.accent)).toBe('');
-    expect(accentCss(DEFAULT_UI.accent.toUpperCase())).toBe('');
+  it('has the design six, ocean first, and the default is ocean', () => {
+    expect(PRESETS.map((p) => p.key)).toEqual(['ocean', 'terracotta', 'sage', 'plum', 'indigo', 'amber']);
+    expect(DEFAULT_UI.accent).toBe(PRESETS[0].hex);
   });
 
-  it('keeps presets as they are in the light theme', () => {
-    expect(PRESETS[0]).toEqual({ key: 'terracotta', hex: DEFAULT_UI.accent });
-    expect(PRESETS).toHaveLength(8);
-    for (const p of PRESETS) expect(adjustAccent(p.hex, 'light')).toBe(p.hex);
+  it('keeps a preset as it is in the light theme and uses its own dark colour', () => {
+    for (const p of PRESETS) {
+      expect(adjustAccent(p.hex, 'light')).toBe(p.hex);
+      expect(parseCss(accentCss(p.hex)).dark.accent).toBe(p.dark);
+    }
   });
 
-  it('tints the canvas by hue only', () => {
-    // '#ab502e': terracotta's hue without hitting the default's early return.
-    expect(deltaE(parseCss(accentCss('#ab502e')).light.canvas, '#faf8f5')).toBeLessThan(2);
-    expect(toOklch(parseCss(accentCss('#808080')).light.canvas)[1]).toBeLessThan(0.002);
+  it('solves a custom colour for the dark theme on its own', () => {
+    const dark = parseCss(accentCss('#3366aa')).dark.accent;
+    expect(PRESETS.map((p) => p.dark)).not.toContain(dark);
+    expect(toOklch(dark)[0]).toBeGreaterThan(toOklch('#3366aa')[0]); // lightened to read on the dark surface
+  });
+
+  it('does not emit neutrals: styles.css owns them', () => {
+    const { light } = parseCss(accentCss('#3366aa'));
+    expect(Object.keys(light).filter((k) => !/^(accent|on-accent|primary-\d+)$/.test(k))).toEqual([]);
   });
 
   it('round-trips through OKLCH', () => {

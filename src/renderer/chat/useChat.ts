@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AgentEvent, AskReply, ChatMessage, ImageInput, PendingAction } from '../../shared/types';
+import type { AgentEvent, AskReply, ChatMessage, ImageInput, PdfInput, PdfProgress, PendingAction } from '../../shared/types';
 import { api, errorText } from '../api';
 
 /** `turn`: the agent's turn failed (Retry helps). Otherwise an IPC call failed. */
@@ -12,6 +12,8 @@ export function useChat(conversationId: number) {
   const [streaming, setStreaming] = useState('');
   const [running, setRunning] = useState(false);
   const [tool, setTool] = useState<string | null>(null);
+  const [reasoning, setReasoning] = useState(''); // streamed by providers that send it (LM Studio); gone once the reply is saved
+  const [progress, setProgress] = useState<PdfProgress | null>(null);
   const [error, setError] = useState<ChatError | null>(null);
   const last = useRef<AgentEvent['type'] | null>(null);
   const seq = useRef(0); // events received so far, so a slow reply can tell whether an event already set the state
@@ -47,9 +49,23 @@ export function useChat(conversationId: number) {
         setTool(e.name);
         return;
       }
-      if (e.type !== 'saved') {
+      if (e.type === 'reasoning') {
+        setRunning(true);
+        setReasoning((r) => r + e.delta);
+        return;
+      }
+      if (e.type === 'progress') {
+        const { type: _t, conversationId: _c, ...p } = e;
+        setRunning(true);
+        setProgress(p);
+        return;
+      }
+      if (e.type === 'saved') setReasoning('');
+      else {
         setRunning(false);
         setTool(null);
+        setReasoning('');
+        setProgress(null);
       }
       if (e.type === 'error') setError({ message: e.message, turn: true });
       // Drop the streamed text only once the saved message is on screen, so it doesn't flash away and back.
@@ -78,11 +94,12 @@ export function useChat(conversationId: number) {
   const ended = () => last.current === 'error' || last.current === 'pending';
 
   /** True once main has accepted the message; the send box keeps its input otherwise. */
-  const send = (text: string, images: ImageInput[], files = false) =>
+  const send = (text: string, images: ImageInput[], files = false, document?: PdfInput) =>
     guard(async () => {
       setRunning(true);
       last.current = null;
-      await api.chat.send(conversationId, text, images, files);
+      setProgress(null);
+      await api.chat.send(conversationId, text, images, files, document);
       if (!ended()) setRunning(true);
       void refresh(); // shows the user's message before the first event
     });
@@ -119,7 +136,7 @@ export function useChat(conversationId: number) {
   );
   const answer = useCallback((actionId: number, replies: AskReply[]) => settle(actionId, () => api.chat.answer(actionId, replies)), [settle]);
 
-  return { messages, actions, streaming, running, tool, error, send, stop, retry, resolve, answer };
+  return { messages, actions, streaming, running, tool, reasoning, progress, error, send, stop, retry, resolve, answer };
 }
 
 export type ChatState = ReturnType<typeof useChat>;

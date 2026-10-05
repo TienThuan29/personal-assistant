@@ -26,6 +26,27 @@ describe('expense tools', () => {
     expect(r.totals).toEqual([{ currency: 'VND', total: 75_000 }]);
   });
 
+  it('totals each month per currency for a trend, oldest first, skipping empty months', () => {
+    const ctx = testCtx();
+    const add = (amount: number, spent_at: string, currency?: string) => callTool(ctx, 'create_expense', { amount, category: 'x', spent_at, currency });
+    add(100, '2026-05-31');
+    add(200, '2026-07-01');
+    add(300, '2026-07-31');
+    add(50, '2026-07-10', 'USD');
+    add(400, '2026-09-28');
+    add(999, '2026-04-30'); // before the window
+    add(999, '2026-10-01'); // after it
+    const months = callTool<{ month: string; currency: string; total: number }[]>(ctx, 'expense_months', { to: '2026-09', months: 5 });
+    expect(months).toEqual([
+      { month: '2026-05', currency: 'VND', total: 100 },
+      { month: '2026-07', currency: 'USD', total: 50 },
+      { month: '2026-07', currency: 'VND', total: 500 },
+      { month: '2026-09', currency: 'VND', total: 400 },
+    ]);
+    expect(() => callTool(ctx, 'expense_months', { to: '2026-13' })).toThrow();
+    expect(callTool<unknown[]>(ctx, 'expense_months', { to: '2025-01' })).toEqual([]); // months defaults to 6
+  });
+
   it('requires a positive integer amount', () => {
     const tool = findTool('create_expense')!;
     expect(() => parseArgs(tool, { amount: 12.5, category: 'x' })).toThrow();
