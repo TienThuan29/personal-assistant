@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "electron-vite dev --watch",
     "build": "electron-vite build",
+    "build:server": "node scripts/build-server.mjs",
+    "build:web": "electron-vite build && node scripts/build-server.mjs",
     "typecheck": "tsc --noEmit",
     "test": "ELECTRON_RUN_AS_NODE=1 electron node_modules/vitest/vitest.mjs run",
     "pack": "electron-vite build && electron-builder --config electron-builder.yml --win -c.electronDist=node_modules/electron/dist --publish never",
@@ -30,6 +32,7 @@
     "electron-builder": "^26.15.3",
     "electron-updater": "^6.8.9",
     "electron-vite": "^5.0.0",
+    "esbuild": "^0.25.12",
     "i18next": "^26.4.2",
     "json5": "^2.2.3",
     "katex": "^0.16.22",
