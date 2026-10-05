@@ -60,3 +60,12 @@ Ngày: 2026-10-01. Liên quan: `electron-builder.yml`, `docs/smoke-test.md` (Rem
 - `afterPack` chạy sau khi electron-builder in "executable resource editing … skipped"; đã kiểm tra bằng cách trích biểu tượng từ `.exe` và trình cài đặt (cả hai ra biểu tượng mới), và bản đóng gói khởi động bình thường sau khi ghi.
 - electron-builder gợi ý `signExecutable: false` thay cho `signAndEditExecutable: false` (vẫn sửa biểu tượng/metadata, chỉ bỏ ký); cách đó cũng cần winCodeSign nên không dùng.
 - Chưa kiểm tự động: thanh tác vụ, khay, lối tắt Start menu (bước thủ công trong smoke test).
+
+## Đổi logo (2026-10-04)
+
+Logo mới (hành tinh có vành và ngôi sao, nền xanh đen) thay bong bóng chat. Nguồn: `aura-1b-orb-1024.png` (1024 px, nền trong suốt, lề tự có của squircle).
+
+- `icon-1024.png` giữ nguyên ảnh gốc: macOS cần lề quanh squircle.
+- `icon-16…512.png` và `personal-assistant.ico` (16/32/48/64/128/256) cắt sát squircle (ô vuông 860 px), để biểu tượng nhỏ ở khay và thanh tác vụ không bị lề làm nhỏ đi.
+- Bỏ `personal-assistant.svg` (logo cũ, không ai dùng lúc chạy); ảnh nguồn mới không có bản vector.
+- Windows và macOS lưu đệm biểu tượng: lối tắt đã ghim có thể còn hiện logo cũ tới khi gỡ ghim và ghim lại.
