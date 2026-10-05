@@ -10,6 +10,7 @@ import { api, errorText } from './api';
 import { ChatPage } from './chat/ChatPage';
 import { ConversationList } from './components/ConversationList';
 import { Nav } from './components/Nav';
+import { showReminders } from './notify';
 import { ExpensesPage } from './pages/ExpensesPage';
 import { NotesPage } from './pages/NotesPage';
 import { RemindersPage } from './pages/RemindersPage';
@@ -54,7 +55,7 @@ function useSystemTheme(): 'light' | 'dark' {
 }
 
 export function App() {
-  const { t, i18n } = useTranslation(['common', 'chat']);
+  const { t, i18n } = useTranslation(['common', 'chat', 'system']);
   const lang = i18n.language === 'en' ? 'en' : 'vi';
   const theme = useSystemTheme();
   /** The DB default title is Vietnamese; show it in the current language. User-set and auto titles stay as they are. */
@@ -131,6 +132,13 @@ export function App() {
     ];
     return () => offs.forEach((off) => off());
   }, [openLatest, go, refresh]);
+
+  // Docker mode: the browser shows the reminder toast that the Electron main process shows otherwise.
+  useEffect(() => {
+    if (!api.web) return;
+    const title = (n: number) => (n === 1 ? t('system:reminder') : t('system:reminders', { count: n }));
+    return api.onReminder((rows) => showReminders(rows, title, () => void go('today').catch(fail)));
+  }, [go, t]); // oxlint-disable-line react-hooks/exhaustive-deps -- fail is a fresh closure each render
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -253,21 +261,23 @@ export function App() {
           <div className='flex-1 min-w-0 flex flex-col'>
             <header className='drag h-11 shrink-0 flex items-center justify-between gap-4 pl-6'>
               <h1 className='m-0 text-[15px] font-600 truncate'>{title}</h1>
-              <WindowControls
-                isMaximized={maximized}
-                onMinimize={() => void api.win.minimize()}
-                onToggleMaximize={() => void api.win.toggleMaximize()}
-                onClose={() => void api.win.close()}
-              />
+              {!api.web && (
+                <WindowControls
+                  isMaximized={maximized}
+                  onMinimize={() => void api.win.minimize()}
+                  onToggleMaximize={() => void api.win.toggleMaximize()}
+                  onClose={() => void api.win.close()}
+                />
+              )}
             </header>
             {update?.latest && (
               <div className='px-6 pb-2'>
                 <Alert
                   type='info'
-                  content={t('update.banner', { latest: update.latest, current: update.current })}
+                  content={t('update.banner', { latest: update.latest, current: update.current }) + (api.web ? ` ${t('update.docker')}` : '')}
                   action={
                     <Space>
-                      {update.canInstall ? (
+                      {api.web ? null : update.canInstall ? (
                         <Button
                           size='mini'
                           type='primary'

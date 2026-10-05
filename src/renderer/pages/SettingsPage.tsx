@@ -7,6 +7,7 @@ import { formatMoney } from '../../shared/money';
 import { DEFAULT_LLM, type LlmSettings, type Provider, PROVIDER_NAMES, type SettingsView, type UiSettings, type UpdateStatus } from '../../shared/types';
 import { adjustAccent, applyAccent, PRESETS } from '../accent';
 import { api, errorText, useUiSettings } from '../api';
+import { type NotifyState, notifyState } from '../notify';
 
 const CURRENCIES = ['VND', 'USD', 'EUR', 'JPY'];
 const EXAMPLE_AMOUNT = 1_234_500; // minor units: 1.234.500 ₫ or $12,345.00
@@ -206,6 +207,24 @@ function UpdateCard({ version }: { version: string }) {
   );
 }
 
+/** Docker mode: reminders come as browser notifications, which the browser only allows after a click here. */
+function BrowserNotifications() {
+  const { t } = useTranslation('settings');
+  const [state, setState] = useState<NotifyState>(notifyState());
+  return (
+    <PreferenceRow label={t('browserNotifications')} description={t('browserNotificationsDesc')}>
+      <Space>
+        <span>{t(`notifyState.${state}`)}</span>
+        {state === 'default' && (
+          <Button size='small' onClick={() => void Notification.requestPermission().then(() => setState(notifyState()))}>
+            {t('notifyEnable')}
+          </Button>
+        )}
+      </Space>
+    </PreferenceRow>
+  );
+}
+
 export function SettingsPage() {
   const { t } = useTranslation('settings');
   const [view, setView] = useState<SettingsView | null>(null);
@@ -351,15 +370,19 @@ export function SettingsPage() {
       </SectionCard>
       <UpdateCard version={view.version} />
       <SectionCard title={t('system')}>
-        <PreferenceRow label={t('openAtLogin')} description={t('openAtLoginDesc')}>
-          <Switch
-            aria-label={t('openAtLogin')}
-            checked={openAtLogin}
-            onChange={(on: boolean) =>
-              api.settings.setOpenAtLogin(on).then(setOpenAtLogin, (e) => report('error', errorText(e)))
-            }
-          />
-        </PreferenceRow>
+        {api.web ? (
+          <BrowserNotifications />
+        ) : (
+          <PreferenceRow label={t('openAtLogin')} description={t('openAtLoginDesc')}>
+            <Switch
+              aria-label={t('openAtLogin')}
+              checked={openAtLogin}
+              onChange={(on: boolean) =>
+                api.settings.setOpenAtLogin(on).then(setOpenAtLogin, (e) => report('error', errorText(e)))
+              }
+            />
+          </PreferenceRow>
+        )}
       </SectionCard>
       <Space>
         <Button

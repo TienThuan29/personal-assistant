@@ -190,6 +190,10 @@ export type Api = {
     isMaximized(): Promise<boolean>;
     onMaximizedChange(cb: (maximized: boolean) => void): () => void;
   };
+  /** True when the UI runs in a browser against the Docker server (docs/docker-design.md); false in the Electron window. */
+  web: boolean;
+  /** Reminders that just came due; only the Docker server emits this (Electron shows a system toast itself). */
+  onReminder(cb: (rows: ReminderRow[]) => void): () => void;
   onNavigate(cb: (page: Page) => void): () => void;
   onUiChanged(cb: (ui: UiSettings) => void): () => void;
 };

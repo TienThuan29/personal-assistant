@@ -4,6 +4,7 @@ import { FolderSearch, PauseOne, Pic, Send } from '@icon-park/react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ImageInput } from '../../shared/types';
+import { api } from '../api';
 import { ACCEPT, useImagePicker } from '../components/useImagePicker';
 
 /** Slash commands are just canned prompts; the names stay the same in every language. */
@@ -130,18 +131,26 @@ export function SendBox({ running, onSend, onStop, autoFocus }: Props) {
         />
         <div className='sendbox-actions'>
           <Tooltip content={t('attachImage')}>
-            <Button type='text' icon={<Pic />} aria-label={t('attachImage')} onClick={() => fileInput.current?.click()} />
-          </Tooltip>
-          <Tooltip content={t('fileSearch')}>
             <Button
               type='text'
-              icon={<FolderSearch />}
-              aria-label={t('fileSearch')}
-              aria-pressed={files}
-              className={`mr-auto ${files ? '!text-accent !bg-accent-soft' : ''}`} // mr-auto: next to the image button, send stays right
-              onClick={() => setFiles((on) => !on)}
+              icon={<Pic />}
+              aria-label={t('attachImage')}
+              className={api.web ? 'mr-auto' : ''} // in a browser there is no file-search button to push send right
+              onClick={() => fileInput.current?.click()}
             />
           </Tooltip>
+          {!api.web && (
+            <Tooltip content={t('fileSearch')}>
+              <Button
+                type='text'
+                icon={<FolderSearch />}
+                aria-label={t('fileSearch')}
+                aria-pressed={files}
+                className={`mr-auto ${files ? '!text-accent !bg-accent-soft' : ''}`} // mr-auto: next to the image button, send stays right
+                onClick={() => setFiles((on) => !on)}
+              />
+            </Tooltip>
+          )}
           <input
             ref={fileInput}
             type='file'

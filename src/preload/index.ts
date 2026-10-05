@@ -58,6 +58,8 @@ const api: Api = {
     isMaximized: () => invoke('win:isMaximized'),
     onMaximizedChange: listen<boolean>('win:maximized'),
   },
+  web: false,
+  onReminder: listen('reminder'),
   onNavigate: listen('nav'),
   onUiChanged: listen<UiSettings>('ui:changed'),
 };
