@@ -1,19 +1,17 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, Notification, powerMonitor, protocol, safeStorage, shell, Tray } from 'electron';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import type { ReminderRow } from '../shared/types';
-import { attachmentFile, cleanupOrphans } from './attachments';
-import { backupDb, openDb } from './db';
+import { attachmentFile } from './attachments';
+import { openData } from './bootstrap';
 import { appIcon } from './icon';
-import { i18n, setLanguage } from './i18n';
-import { registerIpc } from './ipc';
+import { i18n } from './i18n';
+import { type MainCtx, registerIpc } from './ipc';
+import { desktopCanInstall, registerDesktopIpc, toJpeg } from './ipc-desktop';
 import { createScheduler } from './reminders';
 import { createCipher } from './cipher';
-import { getUi } from './settings';
-import { pruneEmptyConversations } from './store';
 import { errMsg, te } from './errors';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'att', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
@@ -125,20 +123,7 @@ async function start(): Promise<void> {
   app.setAppUserModelId(app.isPackaged ? 'com.personal-assistant.app' : process.execPath);
   if (app.isPackaged) Menu.setApplicationMenu(null); // no DevTools/reload shortcuts
   const dataDir = app.getPath('userData');
-  const dbPath = join(dataDir, 'assistant.db');
-  const attachmentsDir = join(dataDir, 'attachments');
-  mkdirSync(attachmentsDir, { recursive: true });
-
-  const db = openDb(dbPath);
-  setLanguage(getUi(db).language);
-  const ro = new DatabaseSync(dbPath, { readOnly: true });
-  try {
-    backupDb(db, join(dataDir, 'backups'), new Date());
-  } catch (e) {
-    console.error('Backup failed, continuing without it', e); // a backup must never block startup
-  }
-  pruneEmptyConversations(db);
-  cleanupOrphans(db, attachmentsDir);
+  const { db, ro, attachmentsDir } = openData(dataDir, new Date());
 
   protocol.handle('att', (req) => {
     const f = attachmentFile(db, attachmentsDir, new URL(req.url).hostname);
@@ -151,7 +136,7 @@ async function start(): Promise<void> {
   ipcMain.handle('win:isMaximized', () => win?.isMaximized() ?? false);
 
   const scheduler = createScheduler({ db, now: () => new Date(), notify });
-  registerIpc({
+  const ctx: MainCtx = {
     db,
     ro,
     attachmentsDir,
@@ -163,7 +148,18 @@ async function start(): Promise<void> {
       scheduler.refresh();
       send('data:changed');
     },
-  });
+    handle: (channel, fn) => ipcMain.handle(channel, (_e, ...args) => fn(...args)),
+    toJpeg,
+    // Chromium's network stack: trusts the Windows certificate store and uses the system proxy, so corporate TLS inspection
+    // works. Node's own fetch fails there with UNABLE_TO_GET_ISSUER_CERT_LOCALLY.
+    fetch: net.fetch as unknown as typeof fetch,
+    home: app.getPath('home'),
+    version: app.getVersion(),
+    fileSearch: true,
+    canInstall: desktopCanInstall,
+  };
+  registerIpc(ctx);
+  registerDesktopIpc(ctx);
 
   // Dev-only: PA_THEME=light|dark overrides the OS theme; the renderer's prefers-color-scheme follows.
   if (!app.isPackaged && (process.env.PA_THEME === 'light' || process.env.PA_THEME === 'dark')) nativeTheme.themeSource = process.env.PA_THEME;
