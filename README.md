@@ -30,8 +30,9 @@ The apps are not code-signed, so each OS warns you the first time:
 
 ## First run
 
-1. Open **Settings** (bottom of the sidebar) and add an LLM: either Azure AI Foundry or any OpenAI-compatible gateway
-   (endpoint, model, key).
+1. Open **Settings** (bottom of the sidebar) and add an LLM: Azure AI Foundry, any OpenAI-compatible gateway
+   (endpoint, model, key), or a model running locally in [LM Studio](https://lmstudio.ai) (turn on its Local Server, load a
+   model, pick **LM Studio**; no key needed, and your chats never leave the machine).
 2. Ask "What do I have today?" or say "remind me to call Minh tomorrow at 9". Review the confirmation card, then confirm.
 
 The interface is in Vietnamese or English (Settings → Display), and you can pick your own accent colour there too.
