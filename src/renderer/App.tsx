@@ -64,6 +64,7 @@ export function App() {
   }, [t]);
   const [route, setRoute] = useState<Route | null>(null);
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
+  const mac = api.platform === 'darwin'; // native traffic lights instead of WindowControls
   const [maximized, setMaximized] = useState(false);
   const [percent, setPercent] = useState<number | null>(null); // download progress while the app updates itself
   const [update, setUpdate] = useState<UpdateStatus | null>(null); // a newer version, when there is one (docs/update-design.md)
@@ -201,6 +202,7 @@ export function App() {
         {messageHolder}
         <div className='flex h-full bg-canvas text-ink'>
           <aside className={`sider box-border flex flex-col shrink-0 bg-sunken border-r border-r-solid border-line ${collapsed ? 'w-16' : 'w-60'}`}>
+            {mac && <div className='drag h-7 shrink-0' />} {/* room for the traffic lights, which are wider than the collapsed sider */}
             <div className='drag h-11 shrink-0 flex items-center gap-2 px-3'>
               {!collapsed && <span className='flex-1 min-w-0 truncate font-600'>{t('appName')}</span>}
               <Tooltip position='right' content={`${siderLabel} (Ctrl+B)`}>
@@ -253,12 +255,14 @@ export function App() {
           <div className='flex-1 min-w-0 flex flex-col'>
             <header className='drag h-11 shrink-0 flex items-center justify-between gap-4 pl-6'>
               <h1 className='m-0 text-[15px] font-600 truncate'>{title}</h1>
-              <WindowControls
-                isMaximized={maximized}
-                onMinimize={() => void api.win.minimize()}
-                onToggleMaximize={() => void api.win.toggleMaximize()}
-                onClose={() => void api.win.close()}
-              />
+              {!mac && (
+                <WindowControls
+                  isMaximized={maximized}
+                  onMinimize={() => void api.win.minimize()}
+                  onToggleMaximize={() => void api.win.toggleMaximize()}
+                  onClose={() => void api.win.close()}
+                />
+              )}
             </header>
             {update?.latest && (
               <div className='px-6 pb-2'>

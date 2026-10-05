@@ -184,6 +184,8 @@ export type Api = {
     /** Download progress 0–100 while `install` runs. */
     onProgress(cb: (percent: number) => void): () => void;
   };
+  /** `process.platform` of the main process: 'darwin' draws the native traffic lights, so the app's own buttons are hidden. */
+  platform: string;
   win: {
     minimize(): Promise<void>;
     toggleMaximize(): Promise<void>;

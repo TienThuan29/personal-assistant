@@ -51,6 +51,7 @@ The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-
 - [ ] Reminder 2 minutes ahead → Windows toast on time, **with the window hidden in the tray**. Click → opens the Hôm nay page.
 - [ ] Reminder while the app is quit → on next start one grouped "Bạn có N nhắc nhở" toast.
 - [ ] Sleep the PC past a reminder, wake → toast fires shortly after resume.
+- [ ] **macOS:** native red/yellow/green buttons at the top-left (no Windows-style buttons at the right); the sidebar header sits below them, also when collapsed. Red button hides the window, the app stays in the Dock and the menu bar shows its icon; clicking the Dock icon or the menu-bar icon brings the window back; a reminder still fires while hidden. Cmd+Q quits for real; Cmd+C / Cmd+V work in inputs; Cmd+W hides the window.
 - [ ] Tray: close hides the window, tray click shows it, right-click menu "Mở Trợ lý" / "Thoát" work; a second launch focuses the running instance.
 - [ ] "Khởi động cùng Windows" (Settings or tray menu) on → sign out/in → app runs hidden in the tray. The Settings switch applies at once (no "Lưu"), even with no LLM configured, and "Lưu" later does not undo a tray change.
 - [ ] Dark mode follows Windows.
