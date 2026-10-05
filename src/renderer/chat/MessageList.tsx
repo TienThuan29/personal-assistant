@@ -1,14 +1,16 @@
 import { ThoughtDisplay } from '@aionui/ui';
 import { Markdown } from '@aionui/ui/markdown';
-import { Alert, Button, Message } from '@arco-design/web-react';
+import { Alert, Button, Message, Progress } from '@arco-design/web-react';
 import { CalendarThirtyTwo, FolderSearch, Sun, Wallet } from '@icon-park/react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ASK_TOOL, type ChatMessage, FILE_TOOL_NAMES, type PendingAction, type ToolCall } from '../../shared/types';
+import { ASK_TOOL, type ChatMessage, FILE_TOOL_NAMES, type PdfProgress, type PendingAction, type ToolCall } from '../../shared/types';
 import { api, errorText } from '../api';
+import { PdfCard } from '../components/PdfViewer';
 import { Thumbs } from '../components/Thumbs';
 import { AskCard } from './AskCard';
 import { ConfirmCard } from './ConfirmCard';
+import { ReasoningBlock } from './ReasoningBlock';
 import { COMMANDS } from './SendBox';
 import type { ChatState } from './useChat';
 
@@ -84,6 +86,7 @@ const MessageRow = memo(function MessageRow({
   answer,
   fileResults,
   reveal,
+  partLabel,
 }: {
   m: ChatMessage;
   actions: PendingAction[];
@@ -92,12 +95,15 @@ const MessageRow = memo(function MessageRow({
   /** This message's file tool results by tool_call_id. */
   fileResults?: Record<string, FileResult>;
   reveal: Reveal;
+  /** 'from–to/total' when this reply is the notes of one batch of a PDF. */
+  partLabel?: string;
 }) {
   const { t } = useTranslation('chat');
   const [edits, setEdits] = useState<Record<number, Record<string, unknown>>>({});
   const [confirmingAll, setConfirmingAll] = useState(false);
 
   if (m.role === 'tool') return null;
+  if (m.role === 'user' && (m.batch || m.final)) return null; // the steps of a PDF run: the notes they produce are shown, not the prompts
   if (m.role === 'user')
     return (
       <div className='msg-user'>
@@ -107,6 +113,7 @@ const MessageRow = memo(function MessageRow({
           </div>
         )}
         {m.content}
+        {m.document && <PdfCard doc={m.document} />}
         <Thumbs ids={m.attachment_ids} />
       </div>
     );
@@ -129,6 +136,7 @@ const MessageRow = memo(function MessageRow({
 
   return (
     <div className='msg-assistant'>
+      {partLabel && <div className='text-xs text-ink-2 mb-1'>{t('pdfNotes', { range: partLabel })}</div>}
       {m.content && <Markdown>{m.content}</Markdown>}
       {fileCalls.map((c) => (
         <FileCall key={c.id} c={c} result={fileResults?.[c.id]} reveal={reveal} />
@@ -180,11 +188,34 @@ function fileResultsByMessage(messages: ChatMessage[]): Map<number, Record<strin
   return out;
 }
 
+/** Labels the reply that follows each batch message of a PDF run, e.g. '11–20/40'. */
+function partLabelsByMessage(messages: ChatMessage[]): Map<number, string> {
+  const out = new Map<number, string>();
+  messages.forEach((m, i) => {
+    const prev = messages[i - 1];
+    if (m.role === 'assistant' && prev?.role === 'user' && prev.batch) out.set(m.id, `${prev.batch.from}–${prev.batch.to}/${prev.batch.total}`);
+  });
+  return out;
+}
+
+/** The run's progress from the saved messages, for a chat opened mid-run (no `progress` event has arrived for it). */
+function progressFromMessages(messages: ChatMessage[]): PdfProgress | null {
+  const u = messages.findLast((m) => m.role === 'user');
+  if (u?.role !== 'user') return null;
+  if (u.batch) return { phase: 'batch', part: u.batch.part, parts: u.batch.parts, from: u.batch.from, to: u.batch.to, total: u.batch.total };
+  const doc = u.final ? messages.findLast((m) => m.role === 'user' && m.document) : undefined;
+  const total = doc?.role === 'user' ? (doc.document?.pages.length ?? 0) : 0;
+  return u.final && total ? { phase: 'final', part: 0, parts: 0, from: 1, to: total, total } : null;
+}
+
 export function MessageList({ chat }: { chat: ChatState }) {
   const { t } = useTranslation('chat');
   const tools = t('tool', { returnObjects: true }) as Record<string, string>;
   const ref = useRef<HTMLDivElement>(null);
   const fileResults = useMemo(() => fileResultsByMessage(chat.messages), [chat.messages]);
+  const partLabels = useMemo(() => partLabelsByMessage(chat.messages), [chat.messages]);
+  const progress = chat.progress ?? (chat.running ? progressFromMessages(chat.messages) : null);
+  const waiting = chat.running && !chat.streaming;
   const [message, messageHolder] = Message.useMessage();
   const reveal = useCallback((path: string) => void api.files.reveal(path).catch((e: unknown) => message.error?.(errorText(e))), [message]);
   // Follow new content while the user is at the bottom. This watches the list's size, not its content (as useAutoScroll
@@ -233,16 +264,29 @@ export function MessageList({ chat }: { chat: ChatState }) {
         )}
         {messageHolder}
         {chat.messages.map((m) => (
-          <MessageRow key={m.id} m={m} actions={chat.actions} resolve={chat.resolve} answer={chat.answer} fileResults={fileResults.get(m.id)} reveal={reveal} />
+          <MessageRow key={m.id} m={m} actions={chat.actions} resolve={chat.resolve} answer={chat.answer} fileResults={fileResults.get(m.id)} reveal={reveal} partLabel={partLabels.get(m.id)} />
         ))}
+        {chat.running && progress && (
+          <div className='text-xs text-ink-2' role='status'>
+            {progress.phase === 'final' ? t('pdfFinal') : t('pdfBatch', { part: progress.part, parts: progress.parts, from: progress.from, to: progress.to })}
+            <Progress percent={progress.phase === 'final' ? 100 : Math.round(((progress.part - 1) / progress.parts) * 100)} size='small' showText={false} />
+          </div>
+        )}
+        {chat.reasoning && <ReasoningBlock text={chat.reasoning} />}
         {chat.streaming && (
           <div className='msg-assistant'>
             <Markdown>{chat.streaming}</Markdown>
             <span className='caret' aria-hidden='true' />
           </div>
         )}
-        {chat.running && !chat.streaming && (
-          <ThoughtDisplay running statusText={chat.tool ? (tools[chat.tool] ?? t('toolRunning', { name: chat.tool })) : t('thinking')} />
+        {waiting && (
+          // ThoughtDisplay counts the seconds itself, from when it mounts: the key remounts it with every new step (a tool
+          // call, the next batch), so the clock shows how long this step has taken.
+          <ThoughtDisplay
+            key={`${progress?.phase}-${progress?.part}-${chat.tool}`}
+            running
+            statusText={chat.tool ? (tools[chat.tool] ?? t('toolRunning', { name: chat.tool })) : t('thinking')}
+          />
         )}
         {chat.error && (
           <Alert

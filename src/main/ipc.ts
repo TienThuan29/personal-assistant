@@ -1,7 +1,9 @@
 import { app, ipcMain, nativeImage, net, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import type { ImageInput, SettingsInput, SettingsView } from '../shared/types';
-import { type AgentDeps, answerAction, cancelOpenActions, resolveAction, runTurn } from './agent';
+import { type AgentDeps, answerAction, cancelOpenActions, resolveAction } from './agent';
+import { runWithDocuments } from './docrun';
+import { addDocumentMessage, checkDocument } from './documents';
 import { newAttachmentId, saveAttachment } from './attachments';
 import { type Db, tx } from './db';
 import { i18n, setLanguage } from './i18n';
@@ -89,7 +91,7 @@ export function registerIpc(m: MainCtx): void {
   function startTurn(conversationId: number): void {
     running.get(conversationId)?.ctl.abort(); // only if two requests raced past stopTurn
     const ctl = new AbortController();
-    const done = runTurn(deps, conversationId, ctl.signal)
+    const done = runWithDocuments(deps, conversationId, ctl.signal)
       .catch((e) => deps.emit({ type: 'error', conversationId, message: describeLlmError(e) }))
       .finally(() => {
         if (running.get(conversationId)?.ctl === ctl) running.delete(conversationId);
@@ -111,11 +113,13 @@ export function registerIpc(m: MainCtx): void {
 
   ipcMain.handle('chat:messages', (_e, convId: unknown) => getMessages(m.db, id(convId)));
   ipcMain.handle('chat:actions', (_e, convId: unknown) => listActions(m.db, id(convId)));
-  ipcMain.handle('chat:send', async (_e, convId: unknown, text: unknown, images: ImageInput[], files?: unknown) => {
+  ipcMain.handle('chat:send', async (_e, convId: unknown, text: unknown, images: ImageInput[], files?: unknown, document?: unknown) => {
     const cid = id(convId);
     if (typeof text !== 'string' || text.length > MAX_TEXT) throw new UserError('invalidMessage');
     if (!Array.isArray(images) || images.length > MAX_IMAGES) throw new UserError('tooManyImages', { max: MAX_IMAGES });
-    if (!text.trim() && !images.length) throw new UserError('emptyMessage');
+    if (document != null && images.length) throw new UserError('pdfWithImages'); // docs/pdf-batch-reasoning-design.md P10
+    if (!text.trim() && !images.length && document == null) throw new UserError('emptyMessage');
+    const pdf = document == null ? null : checkDocument(document, toJpeg);
     const jpegs = images.map((img) => toJpeg(img?.bytes)); // validate everything before saving anything
     const attachmentIds = jpegs.map(() => newAttachmentId());
     await stopTurn(cid);
@@ -123,11 +127,14 @@ export function registerIpc(m: MainCtx): void {
     // (files already written become orphans, swept at startup).
     tx(m.db, () => {
       cancelOpenActions(deps, cid);
-      const messageId = addMessage(m.db, cid, { role: 'user', content: text, attachment_ids: attachmentIds, ...(files === true ? { files: true } : {}) });
-      jpegs.forEach((bytes, i) =>
-        saveAttachment(m.db, m.attachmentsDir, { id: attachmentIds[i], bytes, mime: 'image/jpeg', ownerType: 'message', ownerId: messageId })
-      );
-      setTitleIfNew(m.db, cid, text);
+      if (pdf) addDocumentMessage(m.db, m.attachmentsDir, cid, text.trim(), pdf);
+      else {
+        const messageId = addMessage(m.db, cid, { role: 'user', content: text, attachment_ids: attachmentIds, ...(files === true ? { files: true } : {}) });
+        jpegs.forEach((bytes, i) =>
+          saveAttachment(m.db, m.attachmentsDir, { id: attachmentIds[i], bytes, mime: 'image/jpeg', ownerType: 'message', ownerId: messageId })
+        );
+      }
+      setTitleIfNew(m.db, cid, text || pdf?.name || '');
     });
     startTurn(cid);
   });
