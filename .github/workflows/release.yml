@@ -123,6 +123,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: dist
+          pattern: dist-* # only the desktop builds; other jobs may upload artifacts too (e.g. Docker's build record)
           merge-multiple: true
       - run: ls -l dist
       - name: Every installer is present
@@ -158,6 +159,8 @@ jobs:
       - id: img
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT" # image names must be lowercase
       - uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false # no build-record artifact: it is not a release asset
         with:
           context: .
           platforms: linux/amd64
