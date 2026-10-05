@@ -1,0 +1,8 @@
+# Add-on for networks that inspect TLS (Zscaler): trusts the root CA in ./certs/ so the LLM calls verify.
+# Put the root CA at docker/certs/zscaler-root-ca.crt (it is gitignored). Never disable TLS verification instead.
+services:
+  assistant:
+    environment:
+      NODE_EXTRA_CA_CERTS: /certs/ca.crt
+    volumes:
+      - ./certs/zscaler-root-ca.crt:/certs/ca.crt:ro

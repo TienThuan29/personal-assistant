@@ -1,0 +1,20 @@
+# Personal Assistant in a container (docs/docker-design.md). From this directory:
+#   docker compose up -d        (behind Zscaler add:  -f docker-compose.yml -f docker-compose.certs.yml)
+#   docker compose logs assistant   -> prints the URL with the access token
+# Data and the API key live in the pa-data volume. Update with update.ps1.
+name: personal-assistant
+
+services:
+  assistant:
+    image: ${PA_IMAGE:-ghcr.io/tienthuan29/personal-assistant:latest}
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${PA_PORT:-3000}:3000' # loopback only
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh} # "today" and reminder times follow this
+      PA_PUBLIC_PORT: ${PA_PORT:-3000} # only so the URL in the log shows the published port
+    volumes:
+      - pa-data:/data # a named volume: SQLite's file locks are unreliable on a Windows bind mount
+
+volumes:
+  pa-data:

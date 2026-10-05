@@ -19,3 +19,18 @@ RUN bun install --frozen-lockfile
 FROM deps AS test
 COPY . .
 RUN bun run typecheck && node node_modules/vitest/vitest.mjs run --exclude tests/smoke.test.ts --testTimeout 30000
+
+FROM deps AS build
+COPY . .
+RUN bun run build:web
+
+FROM node:22-slim
+ENV NODE_ENV=production PA_DATA_DIR=/data PORT=3000
+WORKDIR /app
+COPY --from=build /src/out/server ./server
+COPY --from=build /src/out/renderer ./renderer
+RUN mkdir /data && chown node:node /data
+USER node
+VOLUME /data
+EXPOSE 3000
+CMD ["node", "server/index.js"]
