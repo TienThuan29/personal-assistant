@@ -1,15 +1,36 @@
 # Kế hoạch: Docker mode
 
-Thiết kế: `docs/docker-design.md` (D1–D16). Mỗi task: implementer → review spec → review chất lượng → commit. Task 1 là refactor thuần: bản Electron phải chạy y như cũ.
+Thiết kế: `docs/docker-design.md` (D1–D16). Mỗi task: implementer → review spec → review chất lượng → commit. Task 0 dựng stage test trong Docker, Task 1 là refactor thuần: bản Electron phải chạy y như cũ.
 
 ## Quy ước chung
 
-- Chạy lệnh ở `personal-assistant/`: `bun run typecheck`, `bun run test` (vitest trên Node của Electron; bỏ qua dòng "Timeout terminating forks worker"), `bun run build`.
+- **KHÔNG chạy Electron trên máy này** (người dùng cấm, 2026-10-05; máy công ty phạt tiến trình lạ): không `bun run dev`, không `bun run test` (nó chạy electron.exe), không screenshot/CDP, không mở exe. Subagent cũng vậy; phải ghi rõ trong prompt.
+- Kiểm tra mọi thứ trong Docker: `docker build --target test -t pa-test .` chạy `bun run typecheck` và vitest trên **Node 22 thuần** (cùng Node với Electron 37, Task 0). Test nào cần Electron thật (ví dụ `tests/icon.test.ts` import `electron`) sẽ lỗi trong container: báo lại, loại khỏi lần chạy container bằng `--exclude` và để CI (job `check`) chạy chúng. Trên host chỉ dùng `git`, `docker` và sửa file.
 - Code và comment tiếng Anh, giống văn phong hiện có. Chuỗi UI qua i18next: key mới thêm vào **cả** `src/shared/locales/vi.ts` và `en.ts` (`tests/i18n.test.ts` kiểm tra đủ key).
 - Không đổi tool, prompt, schema của bot. Không động vào dữ liệu thật ở `%APPDATA%/personal-assistant`. Không `taskkill /IM electron.exe`.
 - Commit `feat(docker): …` / `refactor(main): …`, kết thúc bằng dòng `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`.
 - Quy tắc import: mọi file trong `src/main/` trừ `index.ts`, `icon.ts`, `ipc-desktop.ts` **không được import `electron` hay `electron-updater`**. `src/server/` cũng vậy. Server bundle bằng esbuild, nên một import `electron` lọt vào sẽ được bundle im lặng (package `electron` chỉ export đường dẫn binary) và vỡ lúc chạy. Task 5 có test chặn điều này.
 - Địa chỉ ảnh: GitHub `TienThuan29/personal-assistant` (xem `src/main/update.ts`) → image `ghcr.io/tienthuan29/personal-assistant` (chữ thường).
+
+## Task 0: Stage `test` trong Docker (để kiểm tra không cần Electron)
+
+**File:** mới `Dockerfile` (mới có stage `deps`, `test`; Task 6 thêm `build` và runtime), `.dockerignore`.
+
+```dockerfile
+FROM node:22-slim AS deps
+COPY --from=oven/bun:1 /usr/local/bin/bun /usr/local/bin/bun
+WORKDIR /src
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
+COPY package.json bun.lock ./
+COPY vendor/ vendor/
+RUN bun install --frozen-lockfile
+
+FROM deps AS test
+COPY . .
+RUN bun run typecheck && node node_modules/vitest/vitest.mjs run
+```
+
+`.dockerignore`: `node_modules`, `out`, `release`, `.git`, `*.db`, `docker/certs/*.crt`. Kiểm tra: `docker build --target test -t pa-test .` chạy được trên mã hiện tại. Ghi lại test nào lỗi vì cần Electron (dự kiến chỉ `icon.test.ts`; loại chúng bằng tham số `--exclude` ở dòng cuối nếu cần, và nói rõ trong commit). Nếu `bun install` trong container lỗi vì `@aionui/ui` hay postinstall, sửa trong stage này. Commit `build(docker): test stage`.
 
 ## Task 1: Tách `ipc.ts` thành lõi không phụ thuộc Electron (Electron chạy y như cũ)
 
@@ -31,7 +52,7 @@ Thiết kế: `docs/docker-design.md` (D1–D16). Mỗi task: implementer → re
    Trong thân hàm: `ipcMain.handle('x', (_e, a) => …)` → `m.handle('x', (a) => …)` (bỏ tham số `_e`); `netFetch` → `m.fetch`; `app.getPath('home')` → `m.home`; `app.getVersion()` → `m.version`; `toJpeg(...)` → `m.toJpeg(...)`; `canInstall()` → `m.canInstall()`. Trong `chat:send`, nếu `files === true && !m.fileSearch` ném `new UserError('notAllowed', { name: 'files' })` trước khi lưu gì.
 3. `ipc-desktop.ts` (giữ import `electron`, `electron-updater`): `registerDesktopIpc(m, deps)` đăng ký `files:reveal` (đang dùng `shell.showItemInFolder`), `update:install` (đang dùng `installUpdate(autoUpdater…)`), `settings:setOpenAtLogin`; đồng thời export `toJpeg` (đoạn `nativeImage` hiện ở đầu `ipc.ts`, kèm `MAX_IMAGE_BYTES`/`MAX_SIDE`) và `desktopCanInstall`. Chuyển nguyên văn các handler đó, không đổi hành vi. `index.ts` gọi `registerIpc({...,handle: (c, f) => ipcMain.handle(c, (_e, ...a) => f(...a)), toJpeg, fetch: net.fetch as typeof fetch, home: app.getPath('home'), version: app.getVersion(), fileSearch: true, canInstall})` rồi `registerDesktopIpc`.
 4. Kiểm tra: `grep -rn "from 'electron" src/main src/shared` chỉ còn `index.ts`, `icon.ts`, `ipc-desktop.ts`.
-5. `bun run typecheck && bun run test && bun run build` xanh. Chạy `bun run dev`, gửi một tin nhắn và mở Settings để chắc app desktop không đổi.
+5. `docker build --target test -t pa-test .` xanh (typecheck + vitest). Không chạy app Electron; việc desktop không đổi được bảo đảm bằng review diff (handler chuyển nguyên văn) và typecheck.
 
 ## Task 2: Auth và HTTP server (có test)
 
@@ -90,7 +111,7 @@ Thiết kế: `docs/docker-design.md` (D1–D16). Mỗi task: implementer → re
 6. `SettingsPage.tsx`: khi `api.web` ẩn hàng `openAtLogin`, ẩn khối cập nhật tự động nếu có nút cài, và thêm một hàng "Thông báo trình duyệt" với nút `Notification.requestPermission()` hiển thị trạng thái hiện tại (`default`/`granted`/`denied`).
 7. `SendBox.tsx`: khi `api.web` không hiện nút bật "files" (`files` luôn `false`).
 8. `tests/web-api.test.ts` (fetch và EventSource giả): `invoke` trả `value`; `ok:false` → `Error` đúng message; `Uint8Array` được mã hóa `$b64`; sự kiện SSE đến đúng listener theo channel; kết nối lại gọi `reload` đúng một lần; hủy đăng ký thì hết nhận.
-9. `bun run typecheck && bun run test && bun run build`; `bun run dev` kiểm lại desktop (Window controls vẫn có, `attUrl` vẫn `att://`).
+9. `docker build --target test -t pa-test .` xanh. Không chạy Electron: kiểm desktop bằng review (`WindowControls` còn khi `api.web` là `false`, `attUrl` vẫn `att://`).
 
 ## Task 5: Build server và chặn lọt `electron`
 
@@ -116,22 +137,16 @@ Thiết kế: `docs/docker-design.md` (D1–D16). Mỗi task: implementer → re
 3. `package.json`: `"build:server": "node scripts/build-server.mjs"`, `"build:web": "electron-vite build && node scripts/build-server.mjs"`.
 4. `tests/server-bundle.test.ts`: `esbuild.build({ ..., write: false, metafile: true })` cùng cấu hình; khẳng định không input nào có đường dẫn chứa `node_modules/electron` hay `electron-updater`, và `src/main/index.ts`, `icon.ts`, `ipc-desktop.ts` không nằm trong đồ thị.
 5. **Kiểm tra giả định (D9):** `ELECTRON_SKIP_BINARY_DOWNLOAD=1` rồi `bun install` trong thư mục sạch và `bunx electron-vite build` có chạy được không. Nếu không, thêm `vite.web.config.ts` chỉ build renderer (root `src/renderer`, plugin UnoCSS như trong `electron.vite.config.ts`, `build.outDir: ../../out/renderer`) và đổi `build:web` thành `vite build -c vite.web.config.ts && node scripts/build-server.mjs`.
-6. Chạy thử không Docker: `bun run build:web && PA_DATA_DIR=<scratch> PA_TOKEN=dev node out/server/index.js`, mở `http://localhost:3000/?token=dev`, bấm thử các trang, tạo task, mở Settings. Kiểm tra CSP trong `index.html` không chặn SSE và `/att` (`connect-src 'self'` phủ `EventSource` cùng origin, `img-src 'self'` phủ `/att/…`); nếu trình duyệt báo vi phạm thì sửa meta CSP.
+6. Chạy thử trong Docker (Task 6 có image): `docker run` với `PA_TOKEN=dev`, mở `http://localhost:3000/?token=dev` bằng Chrome, bấm thử các trang, tạo task, mở Settings. Kiểm tra CSP trong `index.html` không chặn SSE và `/att` (`connect-src 'self'` phủ `EventSource` cùng origin, `img-src 'self'` phủ `/att/…`); nếu trình duyệt báo vi phạm thì sửa meta CSP.
 
 ## Task 6: Dockerfile và compose
 
-**File:** mới `Dockerfile`, `.dockerignore`, `docker/docker-compose.yml`, `docker/docker-compose.certs.yml`, `docker/update.ps1`, `docker/certs/.gitkeep`; sửa `.gitignore`.
+**File:** sửa `Dockerfile` (Task 0), mới `docker/docker-compose.yml`, `docker/docker-compose.certs.yml`, `docker/update.ps1`, `docker/certs/.gitkeep`; sửa `.gitignore`.
 
-1. `Dockerfile`:
+1. `Dockerfile` — giữ stage `deps`/`test` của Task 0, thêm `build` (từ `deps`) và runtime:
 
    ```dockerfile
-   FROM node:22-slim AS build
-   COPY --from=oven/bun:1 /usr/local/bin/bun /usr/local/bin/bun
-   WORKDIR /src
-   ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
-   COPY package.json bun.lock ./
-   COPY vendor/ vendor/
-   RUN bun install --frozen-lockfile
+   FROM deps AS build
    COPY . .
    RUN bun run build:web
 
@@ -148,7 +163,7 @@ Thiết kế: `docs/docker-design.md` (D1–D16). Mỗi task: implementer → re
    ```
 
    Server tìm renderer ở `new URL('../renderer', import.meta.url)` (khớp cả `out/server`→`out/renderer` và `/app/server`→`/app/renderer`).
-2. `.dockerignore`: `node_modules`, `out`, `release`, `.git`, `docs`, `tests`, `*.db`, `docker/certs/*.crt`.
+2. `.dockerignore`: thêm `docs` (không ignore `tests`: stage `test` cần chúng).
 3. `docker/docker-compose.yml`:
 
    ```yaml
