@@ -67,7 +67,7 @@ Keep each command on one line (that works in CMD, PowerShell and bash). `docker 
 - `-p 127.0.0.1:9999:9999` publishes the app on this machine only; `-v pa-data:/data` keeps your database and API key
   across updates. To use another host port change the first number (`-p 127.0.0.1:8080:9999`), then open that port.
 - Behind a TLS-inspecting proxy (Zscaler) add
-  `-v C:\path	o\zscaler-root-ca.crt:/certs/ca.crt:ro -e NODE_EXTRA_CA_CERTS=/certs/ca.crt`.
+  `-v C:\path\to\zscaler-root-ca.crt:/certs/ca.crt:ro -e NODE_EXTRA_CA_CERTS=/certs/ca.crt`.
 - Stop and start: `docker stop personal-assistant`, `docker start personal-assistant`.
 - Update: `docker rm -f personal-assistant`, `docker pull …:latest`, then the same `docker run` again. The `pa-data`
   volume survives `docker rm`.
