@@ -14,11 +14,16 @@ Thiết kế: `docs/docker-design.md` (D1–D16). Mỗi task: implementer → re
 
 ## Task 0: Stage `test` trong Docker (để kiểm tra không cần Electron)
 
-**File:** mới `Dockerfile` (mới có stage `deps`, `test`; Task 6 thêm `build` và runtime), `.dockerignore`.
+**File:** mới `Dockerfile` (mới có stage `deps`, `test`; Task 6 thêm `build` và runtime), `.dockerignore`, `docker/certs/.gitkeep`; sửa `.gitignore`. Copy `zscaler-root-ca.crt` từ `C:\Users\Thuan.Nguyen\Downloads\Projects-Onelab\AI-Platform\swovn-aic-backend\Modules\Backend\certs\` vào `docker/certs/` (file `.crt` bị gitignore, không commit; bỏ qua file lạ `zscaler-root-ca.crt;C`). Cert chỉ dùng ở stage build, runtime image không chứa nó.
 
 ```dockerfile
 FROM node:22-slim AS deps
 COPY --from=oven/bun:1 /usr/local/bin/bun /usr/local/bin/bun
+# Trusts a corporate root CA dropped in docker/certs/ (only .gitkeep is committed, *.crt is gitignored; in CI the dir is
+# empty and this is a no-op). Needed for `bun install` behind a TLS-inspecting proxy (Zscaler). Same pattern as swovn-aic-backend.
+COPY docker/certs/ /usr/local/share/ca-certificates/local/
+RUN update-ca-certificates
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 WORKDIR /src
 ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
 COPY package.json bun.lock ./
@@ -30,7 +35,7 @@ COPY . .
 RUN bun run typecheck && node node_modules/vitest/vitest.mjs run
 ```
 
-`.dockerignore`: `node_modules`, `out`, `release`, `.git`, `*.db`, `docker/certs/*.crt`. Kiểm tra: `docker build --target test -t pa-test .` chạy được trên mã hiện tại. Ghi lại test nào lỗi vì cần Electron (dự kiến chỉ `icon.test.ts`; loại chúng bằng tham số `--exclude` ở dòng cuối nếu cần, và nói rõ trong commit). Nếu `bun install` trong container lỗi vì `@aionui/ui` hay postinstall, sửa trong stage này. Commit `build(docker): test stage`.
+`.dockerignore`: `node_modules`, `out`, `release`, `.git`, `*.db` (không ignore `docker/certs`: stage `deps` cần cert lúc build). `.gitignore`: `docker/certs/*.crt`. Kiểm tra: `docker build --target test -t pa-test .` chạy được trên mã hiện tại. Ghi lại test nào lỗi vì cần Electron (dự kiến chỉ `icon.test.ts`; loại chúng bằng tham số `--exclude` ở dòng cuối nếu cần, và nói rõ trong commit). Nếu `bun install` trong container lỗi vì `@aionui/ui` hay postinstall, sửa trong stage này. Commit `build(docker): test stage`.
 
 ## Task 1: Tách `ipc.ts` thành lõi không phụ thuộc Electron (Electron chạy y như cũ)
 
@@ -141,7 +146,7 @@ RUN bun run typecheck && node node_modules/vitest/vitest.mjs run
 
 ## Task 6: Dockerfile và compose
 
-**File:** sửa `Dockerfile` (Task 0), mới `docker/docker-compose.yml`, `docker/docker-compose.certs.yml`, `docker/update.ps1`, `docker/certs/.gitkeep`; sửa `.gitignore`.
+**File:** sửa `Dockerfile` (Task 0), mới `docker/docker-compose.yml`, `docker/docker-compose.certs.yml`, `docker/update.ps1` (`docker/certs/.gitkeep` và `.gitignore` đã có từ Task 0).
 
 1. `Dockerfile` — giữ stage `deps`/`test` của Task 0, thêm `build` (từ `deps`) và runtime:
 
