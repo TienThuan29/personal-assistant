@@ -78,7 +78,8 @@ export async function startServer(o: ServerOpts): Promise<Running> {
     home: homedir(),
     version: o.version,
     fileSearch: false,
-    canInstall: () => false,
+    installMode: () => ({ canInstall: false, manualInstall: false }),
+    setTheme: () => {}, // the browser resolves the theme from the setting itself
   });
 
   const app = createApp({ token, rendererDir: o.rendererDir, handlers, attachment: (id) => attachmentFile(db, attachmentsDir, id) });

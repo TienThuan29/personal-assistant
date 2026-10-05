@@ -109,7 +109,7 @@ describe('server over HTTP', () => {
     const { call } = await boot();
     await call('settings:setUi', { checkUpdates: false }); // keep the test off the network
     const r = await call('update:check', false);
-    expect(r.value.canInstall).toBe(false);
+    expect(r.value).toMatchObject({ canInstall: false, manualInstall: false });
   });
 
   it('keeps the token across restarts of the same data dir', async () => {
