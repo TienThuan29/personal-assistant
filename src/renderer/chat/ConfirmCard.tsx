@@ -1,5 +1,5 @@
-import { Alert, Button, Input, InputNumber, Select, Space, Tag } from '@arco-design/web-react';
-import { CheckOne, Edit, Notes, Remind, Wallet } from '@icon-park/react';
+import { Alert, Button, Input, InputNumber, Select, Space } from '@arco-design/web-react';
+import { Bell, CircleCheck, NotebookPen, Pencil, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { parseLocalDate, RECURRENCE_RE, recurrenceText } from '../../shared/dates';
@@ -7,23 +7,24 @@ import { formatMoney } from '../../shared/money';
 import type { PendingAction } from '../../shared/types';
 import { useUiSettings } from '../api';
 import { Thumbs } from '../components/Thumbs';
+import { Chip, ICON } from '../components/ui';
 
 const SELECTS = new Set(['kind', 'priority']);
 /** Single-line string fields; the others get an auto-growing textarea. */
 const SHORT = new Set(['title', 'due_date', 'due_time', 'remind_at', 'spent_at', 'currency', 'category']);
 
-/** Pending takes the accent (styles.css). */
-const STATUS_COLORS = { pending: undefined, confirmed: 'green', cancelled: 'gray' } as const;
+/** The status chip's tone: pending takes the accent, a failure the danger colour. */
+const STATUS_TONES = { pending: 'accent', confirmed: 'ok', cancelled: 'neutral' } as const;
 
 type Row = Record<string, unknown> & { id: number };
 
 /** Header icon by the record type a tool writes. */
 function toolIcon(name: string) {
-  if (name.includes('_task')) return <CheckOne />;
-  if (name.includes('note')) return <Notes />;
-  if (name.includes('expense')) return <Wallet />;
-  if (name.includes('reminder')) return <Remind />;
-  return <Edit />;
+  if (name.includes('_task')) return <CircleCheck {...ICON} />;
+  if (name.includes('note')) return <NotebookPen {...ICON} />;
+  if (name.includes('expense')) return <Wallet {...ICON} />;
+  if (name.includes('reminder')) return <Bell {...ICON} />;
+  return <Pencil {...ICON} />;
 }
 
 const cut = (s: string, n = 60): string => (s.length > n ? `${s.slice(0, n)}…` : s);
@@ -65,7 +66,7 @@ export function ConfirmCard(props: {
   const before = (action.preview as { before?: Row[] } | null)?.before ?? [];
   const patch = (shown.patch ?? {}) as Record<string, unknown>;
   const error = (action.result as { error?: string } | null)?.error;
-  const status = error ? { color: 'red', text: t('state.failed') } : { color: STATUS_COLORS[action.status], text: t(`state.${action.status}`) };
+  const status = error ? { tone: 'danger' as const, text: t('state.failed') } : { tone: STATUS_TONES[action.status], text: t(`state.${action.status}`) };
   const currency = String(shown.currency ?? defaultCurrency); // create_expense applies the same default
 
   const resolve = async (d: 'confirm' | 'cancel') => {
@@ -114,13 +115,13 @@ export function ConfirmCard(props: {
   return (
     <div className='confirm-card' data-status={error ? 'failed' : action.status}>
       <div className='confirm-title'>
-        <span aria-hidden className='flex text-accent'>
+        <span aria-hidden className='confirm-icon'>
           {toolIcon(action.tool_name)}
         </span>
-        {(t('action', { returnObjects: true }) as Record<string, string>)[action.tool_name] ?? action.tool_name}
-        <Tag color={status.color}>{status.text}</Tag>
+        <span className='flex-1 min-w-0 truncate'>{(t('action', { returnObjects: true }) as Record<string, string>)[action.tool_name] ?? action.tool_name}</span>
+        <Chip tone={status.tone}>{status.text}</Chip>
       </div>
-
+      <div className='confirm-body'>
       {isCreate &&
         Object.entries(shown)
           .filter(([k]) => k !== 'attachment_ids')
@@ -157,21 +158,23 @@ export function ConfirmCard(props: {
 
       <Thumbs ids={shown.attachment_ids as string[] | undefined} />
       {error && <Alert type='error' content={error} />}
+      </div>
       {pending && (
-        <Space>
+        <div className='confirm-actions'>
+          <Button type='text' loading={busy === 'cancel'} disabled={busy === 'confirm'} onClick={() => void resolve('cancel')}>
+            {t('cancel')}
+          </Button>
           <Button
             type='primary'
             status={action.tool_name.startsWith('delete_') ? 'danger' : undefined}
+            icon={<CircleCheck {...ICON} />}
             loading={busy === 'confirm'}
             disabled={busy === 'cancel'}
             onClick={() => void resolve('confirm')}
           >
             {t('confirm')}
           </Button>
-          <Button type='text' loading={busy === 'cancel'} disabled={busy === 'confirm'} onClick={() => void resolve('cancel')}>
-            {t('cancel')}
-          </Button>
-        </Space>
+        </div>
       )}
     </div>
   );

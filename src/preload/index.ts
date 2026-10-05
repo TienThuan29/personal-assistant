@@ -44,6 +44,8 @@ const api: Api = {
     listModels: (provider) => invoke('settings:listModels', provider),
     setOpenAtLogin: (on) => invoke('settings:setOpenAtLogin', on),
     setUi: (patch) => invoke('settings:setUi', patch),
+    dataPath: () => invoke('settings:dataPath'),
+    revealData: () => invoke('settings:revealData'),
   },
   update: {
     check: (manual) => invoke('update:check', manual),

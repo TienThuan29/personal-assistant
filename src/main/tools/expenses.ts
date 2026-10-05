@@ -60,6 +60,27 @@ export const expenseTools = [
     },
   }),
 
+  readTool({
+    name: 'expense_months',
+    description:
+      'Total spent per month and currency for the `months` months up to and including `to` (YYYY-MM), oldest first; a month with no expense is left out. Amounts are in the smallest currency unit. Use it to compare months or show a trend.',
+    schema: z.object({
+      to: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'errors:monthFormat').describe('The last month, YYYY-MM'),
+      months: z.number().int().min(1).max(24).default(6),
+    }),
+    run: (a, { db }) => {
+      const [y, m] = a.to.split('-').map(Number);
+      const first = new Date(y, m - a.months, 1);
+      const from = `${first.getFullYear()}-${String(first.getMonth() + 1).padStart(2, '0')}-01`;
+      return db
+        .prepare(
+          `SELECT substr(spent_at, 1, 7) AS month, currency, SUM(amount) AS total FROM expenses
+           WHERE spent_at >= :from AND spent_at <= :to GROUP BY month, currency ORDER BY month, currency`
+        )
+        .all({ from, to: `${a.to}-31` });
+    },
+  }),
+
   writeTool({
     name: 'create_expense',
     description: 'Record an expense (can be read from a receipt photo).',

@@ -131,8 +131,8 @@ describe('settings', () => {
     const { db } = testDb();
     expect(getUi(db)).toEqual(DEFAULT_UI);
     expect(saveUi(db, { language: 'en' })).toEqual({ ...DEFAULT_UI, language: 'en' });
-    expect(saveUi(db, { defaultCurrency: ' usd ', extra: 1 })).toEqual({ language: 'en', moneyStyle: 'vi', defaultCurrency: 'USD', accent: '#ab502d', checkUpdates: true });
-    expect(getUi(db)).toEqual({ language: 'en', moneyStyle: 'vi', defaultCurrency: 'USD', accent: '#ab502d', checkUpdates: true });
+    expect(saveUi(db, { defaultCurrency: ' usd ', extra: 1 })).toEqual({ ...DEFAULT_UI, language: 'en', defaultCurrency: 'USD' });
+    expect(getUi(db)).toEqual({ ...DEFAULT_UI, language: 'en', defaultCurrency: 'USD' });
   });
 
   it('ignores a __proto__ key in the UI patch', () => {
@@ -179,6 +179,25 @@ describe('settings', () => {
   it('reads a stored row without accent with the default accent', () => {
     const { db } = testDb();
     setSetting(db, 'ui', { language: 'en', moneyStyle: 'intl', defaultCurrency: 'USD' });
-    expect(getUi(db)).toEqual({ language: 'en', moneyStyle: 'intl', defaultCurrency: 'USD', accent: '#ab502d', checkUpdates: true });
+    expect(getUi(db)).toEqual({ ...DEFAULT_UI, language: 'en', moneyStyle: 'intl', defaultCurrency: 'USD' });
+  });
+
+  it('follows the system theme by default and accepts light, dark or system only', () => {
+    const { db } = testDb();
+    expect(getUi(db).theme).toBe('system');
+    expect(saveUi(db, { theme: 'dark' }).theme).toBe('dark');
+    expect(getUi(db).theme).toBe('dark');
+    expect(() => saveUi(db, { theme: 'sepia' })).toThrow();
+    expect(getUi(db).theme).toBe('dark');
+  });
+
+  it('remembers that the setup guide was finished, and only as a boolean', () => {
+    const { db } = testDb();
+    expect(getUi(db).welcomed).toBe(false);
+    expect(saveUi(db, { welcomed: true }).welcomed).toBe(true);
+    expect(() => saveUi(db, { welcomed: 'yes' })).toThrow();
+    // A row saved before these settings existed keeps working and reads them as the defaults.
+    setSetting(db, 'ui', { language: 'en', moneyStyle: 'intl', defaultCurrency: 'USD', accent: '#ab502d', checkUpdates: false });
+    expect(getUi(db)).toEqual({ ...DEFAULT_UI, language: 'en', moneyStyle: 'intl', defaultCurrency: 'USD', accent: '#ab502d', checkUpdates: false });
   });
 });

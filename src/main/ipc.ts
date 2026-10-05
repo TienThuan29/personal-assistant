@@ -1,4 +1,4 @@
-import { app, ipcMain, nativeImage, net, shell } from 'electron';
+import { app, ipcMain, nativeImage, nativeTheme, net, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import type { ImageInput, SettingsInput, SettingsView } from '../shared/types';
 import { type AgentDeps, answerAction, cancelOpenActions, resolveAction } from './agent';
@@ -228,9 +228,15 @@ export function registerIpc(m: MainCtx): void {
     m.loginItem.set(on);
     return m.loginItem.get();
   });
+  ipcMain.handle('settings:dataPath', () => app.getPath('userData'));
+  ipcMain.handle('settings:revealData', async () => {
+    const error = await shell.openPath(app.getPath('userData'));
+    if (error) throw new Error(error);
+  });
   ipcMain.handle('settings:setUi', (_e, patch: unknown) => {
     const ui = saveUi(m.db, patch);
     setLanguage(ui.language);
+    nativeTheme.themeSource = ui.theme;
     m.send('ui:changed', ui);
     return ui;
   });

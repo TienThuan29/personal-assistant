@@ -100,6 +100,8 @@ export const uiSettingsSchema = z.object({
     .toLowerCase()
     .regex(/^#[0-9a-f]{6}$/, 'errors:invalidValue'),
   checkUpdates: z.boolean({ error: 'errors:invalidValue' }),
+  theme: z.enum(['system', 'light', 'dark'], { error: 'errors:invalidValue' }),
+  welcomed: z.boolean({ error: 'errors:invalidValue' }),
 });
 
 /** Stored values over the defaults; a row that fails validation (hand-edited, corrupt) reads as the defaults. */

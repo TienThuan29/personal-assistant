@@ -137,10 +137,28 @@ export const DEFAULT_LLM: LlmSettings = {
 
 /**
  * Display preferences, stored under the settings key 'ui'. `moneyStyle` 'vi' is "55.000 ₫", 'intl' is "₫55,000".
- * `accent` is the app colour as lowercase `#rrggbb` (docs/accent-color-design.md).
+ * `accent` is the app colour as lowercase `#rrggbb` (docs/accent-color-design.md, docs/ui-redesign-design.md).
+ * `theme` 'system' follows the OS until the user picks one. `welcomed`: the setup guide has been finished or skipped.
  */
-export type UiSettings = { language: Lang; moneyStyle: 'vi' | 'intl'; defaultCurrency: string; accent: string; checkUpdates: boolean };
-export const DEFAULT_UI: UiSettings = { language: 'vi', moneyStyle: 'vi', defaultCurrency: 'VND', accent: '#ab502d', checkUpdates: true };
+export type Theme = 'system' | 'light' | 'dark';
+export type UiSettings = {
+  language: Lang;
+  moneyStyle: 'vi' | 'intl';
+  defaultCurrency: string;
+  accent: string;
+  checkUpdates: boolean;
+  theme: Theme;
+  welcomed: boolean;
+};
+export const DEFAULT_UI: UiSettings = {
+  language: 'vi',
+  moneyStyle: 'vi',
+  defaultCurrency: 'VND',
+  accent: '#00709d', // the "ocean" preset (renderer/accent.ts PRESETS[0]; a test keeps them equal)
+  checkUpdates: true,
+  theme: 'system',
+  welcomed: false,
+};
 
 export type SettingsView = { llm: LlmSettings; hasKey: Record<Provider, boolean>; openAtLogin: boolean; ui: UiSettings; version: string };
 /**
@@ -199,6 +217,10 @@ export type Api = {
     setOpenAtLogin(on: boolean): Promise<boolean>;
     /** Validates, saves and broadcasts `ui:changed`; resolves to the settings now in effect. */
     setUi(patch: Partial<UiSettings>): Promise<UiSettings>;
+    /** Where the app keeps its data (the database, attachments, backups). */
+    dataPath(): Promise<string>;
+    /** Opens that folder in Finder / Explorer / the file manager. */
+    revealData(): Promise<void>;
   };
   update: {
     /** `manual` (the Settings button) always asks GitHub and throws on failure; automatic is silent and at most daily. */

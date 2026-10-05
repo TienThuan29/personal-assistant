@@ -1,10 +1,11 @@
 import { AionModal } from '@aionui/ui';
 import { Button, InputNumber } from '@arco-design/web-react';
-import { FileText, Left, Right } from '@icon-park/react';
+import { ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { PdfDoc } from '../../shared/types';
 import { attUrl } from '../api';
+import { ICON } from './ui';
 
 /** A PDF in the chat: its name and page count; clicking opens the page-by-page viewer. */
 export function PdfCard({ doc }: { doc: PdfDoc }) {
@@ -17,9 +18,9 @@ export function PdfCard({ doc }: { doc: PdfDoc }) {
         aria-label={t('pdfOpen', { name: doc.name })}
         onClick={() => setOpen(1)}
         className='flex items-center gap-2 mt-2 px-3 py-2 border-0 cursor-pointer'
-        style={{ borderRadius: 8, background: 'rgba(255,255,255,.18)', color: 'inherit', font: 'inherit', textAlign: 'left' }}
+        style={{ borderRadius: 8, background: 'var(--panel)', border: '1px solid var(--acc-line)', color: 'var(--ink)', font: 'inherit', textAlign: 'left' }}
       >
-        <FileText aria-hidden />
+        <FileText {...ICON} aria-hidden />
         <span style={{ wordBreak: 'break-all' }}>{doc.name}</span>
         <span style={{ opacity: 0.75, whiteSpace: 'nowrap' }}>{t('pdfPages', { count: doc.pages.length })}</span>
       </button>
@@ -84,10 +85,10 @@ function PdfViewer({ doc, start, onClose }: { doc: PdfDoc; start: number; onClos
             />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-            <Button icon={<Left />} aria-label={t('pdfPrev')} disabled={page <= 1} onClick={() => go(page - 1)} />
+            <Button icon={<ChevronLeft {...ICON} />} aria-label={t('pdfPrev')} disabled={page <= 1} onClick={() => go(page - 1)} />
             <InputNumber hideControl min={1} max={total} value={page} onChange={(v) => go(Number(v))} aria-label={t('pdfGoto')} style={{ width: 64 }} />
             <span>/ {total}</span>
-            <Button icon={<Right />} aria-label={t('pdfNext')} disabled={page >= total} onClick={() => go(page + 1)} />
+            <Button icon={<ChevronRight {...ICON} />} aria-label={t('pdfNext')} disabled={page >= total} onClick={() => go(page + 1)} />
           </div>
         </div>
       </div>

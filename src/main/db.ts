@@ -2,14 +2,14 @@ import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { toLocalDate } from '../shared/dates';
+import { fold } from '../shared/text';
 import { MIGRATIONS } from './migrations';
 import { UserError } from './errors';
 
 export type Db = DatabaseSync;
 export type Params = Record<string, SQLInputValue>;
 
-/** Lowercase without Vietnamese accents, for accent-insensitive search. */
-export const fold = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').replace(/[đĐ]/g, 'd').toLowerCase();
+export { fold };
 
 export function openDb(path: string): Db {
   const db = new DatabaseSync(path);

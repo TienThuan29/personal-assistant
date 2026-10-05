@@ -136,6 +136,7 @@ async function start(): Promise<void> {
 
   const db = openDb(dbPath);
   setLanguage(getUi(db).language);
+  nativeTheme.themeSource = getUi(db).theme; // the renderer's prefers-color-scheme follows it, so one setting drives both
   const ro = new DatabaseSync(dbPath, { readOnly: true });
   try {
     backupDb(db, join(dataDir, 'backups'), new Date());

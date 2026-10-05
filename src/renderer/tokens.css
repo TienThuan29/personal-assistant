@@ -1,0 +1,143 @@
+/* ---- Design tokens (docs/ui-redesign-design.md §Tokens) ----
+   On body, like Arco's own variables: loaded last, so these win over Arco and over @aionui/ui's html-level tokens.
+   The accent colour is not here: accent.ts writes --accent, --on-accent and Arco's --primary-* ramp (ocean until it runs). */
+body {
+  --chrome: #eaeae7; /* the window behind the sidebar and the header */
+  --panel: #ffffff; /* the main panel, cards, fields */
+  --sunken: #f4f4f2;
+  --line: #e2e2de;
+  --hover: #efefec;
+  --pill: #f0f0ed; /* count badges and neutral chips */
+  --seg-on: #ffffff;
+  --bar: #dcdcd7;
+  --switch-off: #d4d4cf;
+  --ink: #1a1b1d;
+  --ink-2: #5f6267;
+  --ink-3: #8b8e93;
+  --danger: #b93a2c;
+  --danger-soft: #fbeae7;
+  --ok: #2b7a4b;
+  --ok-soft: #e5f2ea;
+  --shadow-sm: 0 1px 2px rgba(20, 20, 20, 0.06), 0 1px 1px rgba(20, 20, 20, 0.03);
+  --shadow: 0 1px 2px rgba(20, 20, 20, 0.05), 0 12px 32px -12px rgba(20, 20, 20, 0.22);
+  --shadow-lg: 0 24px 64px -16px rgba(20, 20, 20, 0.35), 0 2px 6px rgba(20, 20, 20, 0.06);
+  --accent: #00709d;
+  --on-accent: #ffffff;
+  --accent-soft: color-mix(in oklab, var(--accent) 11%, transparent);
+  --acc-line: color-mix(in oklab, var(--accent) 38%, transparent);
+  --today-col: color-mix(in oklab, var(--accent) 4%, transparent);
+  /* Expense categories by rank. Gray (c7) is "other" on purpose. */
+  --c1: #b5552f;
+  --c2: #099fb1;
+  --c3: #a05377;
+  --c4: #c4a032;
+  --c5: #728ad1;
+  --c6: #33936a;
+  --c7: #8b8f96;
+
+  /* Names the app's older code and the libraries use */
+  --canvas: var(--chrome);
+  --surface: var(--panel);
+  --shadow-card: var(--shadow-sm);
+  --cat-1: var(--c1);
+  --cat-2: var(--c2);
+  --cat-3: var(--c3);
+  --cat-4: var(--c4);
+  --cat-5: var(--c5);
+  --cat-6: var(--c6);
+  --cat-other: var(--c7);
+
+  /* @aionui/ui */
+  --bg-base: var(--panel);
+  --bg-1: var(--chrome);
+  --bg-2: var(--sunken);
+  --bg-3: var(--line);
+  --bg-hover: var(--hover);
+  --bg-active: var(--line);
+  --text-primary: var(--ink);
+  --text-secondary: var(--ink-2);
+  --primary: var(--accent);
+  --border-base: var(--line);
+  --border-light: var(--hover);
+  --message-user-bg: var(--accent-soft);
+  --dialog-fill-0: var(--panel);
+  --fill-0: var(--panel);
+  --thought-gradient: linear-gradient(90deg, color-mix(in srgb, var(--accent) 8%, var(--chrome)) 0%, var(--sunken) 100%);
+  --aou-2: var(--accent-soft); /* slash menu highlight; also the disabled primary button fill */
+  --aou-7: var(--accent);
+  --bg-6: var(--ink-2);
+  --bg-4: rgb(var(--gray-4));
+
+  /* Arco: ocean primary until accent.ts runs, and the neutral gray ramp (r, g, b like Arco's own) */
+  --primary-1: 229, 244, 250;
+  --primary-2: 200, 231, 243;
+  --primary-3: 154, 211, 233;
+  --primary-4: 100, 188, 237;
+  --primary-5: 40, 150, 195;
+  --primary-6: 0, 112, 157;
+  --primary-7: 0, 92, 130;
+  --primary-8: 0, 72, 104;
+  --primary-9: 0, 52, 76;
+  --primary-10: 0, 34, 50;
+  --link-1: var(--primary-1);
+  --link-2: var(--primary-2);
+  --link-3: var(--primary-3);
+  --link-4: var(--primary-4);
+  --link-6: var(--primary-6);
+  --gray-1: 247, 247, 245;
+  --gray-2: 244, 244, 242;
+  --gray-3: 226, 226, 222;
+  --gray-4: 212, 212, 207;
+  --gray-5: 190, 190, 186;
+  --gray-6: 156, 158, 162;
+  --gray-7: 139, 142, 147;
+  --gray-8: 95, 98, 103;
+  --gray-9: 60, 62, 66;
+  --gray-10: 26, 27, 29;
+}
+body[arco-theme='dark'] {
+  --chrome: #0e0f11;
+  --panel: #17181b;
+  --sunken: #1c1d21;
+  --line: #2a2b30;
+  --hover: #222328;
+  --pill: #26272c;
+  --seg-on: #2e3035;
+  --bar: #34363c;
+  --switch-off: #3a3c42;
+  --ink: #ecedef;
+  --ink-2: #a3a6ac;
+  --ink-3: #74777d;
+  --danger: #f08070;
+  --danger-soft: rgba(240, 128, 112, 0.14);
+  --ok: #6cc08b;
+  --ok-soft: rgba(108, 192, 139, 0.14);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px -12px rgba(0, 0, 0, 0.7);
+  --shadow-lg: 0 24px 64px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --today-col: color-mix(in oklab, var(--accent) 6%, transparent);
+  --c1: #cf704c;
+  --c2: #099fb2;
+  --c3: #b2668a;
+  --c4: #ac8909;
+  --c5: #7f96db;
+  --c6: #29a674;
+  --c7: #7a7e85;
+  --color-text-1: var(--ink); /* Arco's dark block sets its own */
+  --color-bg-1: var(--chrome);
+  --color-bg-2: var(--panel);
+  --color-bg-3: var(--hover);
+  --color-bg-4: var(--pill);
+  --color-bg-5: var(--seg-on);
+  --color-border: var(--line);
+  --gray-1: 14, 15, 17;
+  --gray-2: 23, 24, 27;
+  --gray-3: 42, 43, 48;
+  --gray-4: 58, 60, 66;
+  --gray-5: 82, 84, 90;
+  --gray-6: 116, 119, 125;
+  --gray-7: 150, 153, 159;
+  --gray-8: 163, 166, 172;
+  --gray-9: 210, 212, 216;
+  --gray-10: 236, 237, 239;
+}

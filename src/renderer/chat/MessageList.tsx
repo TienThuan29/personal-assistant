@@ -1,20 +1,22 @@
 import { ThoughtDisplay } from '@aionui/ui';
 import { Markdown } from '@aionui/ui/markdown';
 import { Alert, Button, Message, Progress, Tooltip } from '@arco-design/web-react';
-import { CalendarThirtyTwo, FolderSearch, Sun, Wallet } from '@icon-park/react';
+import { CalendarDays, Check, FolderSearch, Sun, Wallet } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ASK_TOOL, type ChatMessage, FILE_TOOL_NAMES, type PdfProgress, type PendingAction, type ToolCall } from '../../shared/types';
 import { api, errorText } from '../api';
+import logo from '../assets/logo.png';
 import { PdfCard } from '../components/PdfViewer';
 import { Thumbs } from '../components/Thumbs';
+import { ICON } from '../components/ui';
 import { AskCard } from './AskCard';
 import { ConfirmCard } from './ConfirmCard';
 import { ReasoningBlock } from './ReasoningBlock';
 import { COMMANDS } from './SendBox';
 import type { ChatState } from './useChat';
 
-const SUGGESTION_ICONS = { homnay: <Sun />, tuannay: <CalendarThirtyTwo />, chitieu: <Wallet /> };
+const SUGGESTION_ICONS = { homnay: <Sun {...ICON} />, tuannay: <CalendarDays {...ICON} />, chitieu: <Wallet {...ICON} /> };
 
 /** What a file tool call searched or read, e.g. `~/Documents/a.txt` or `~/Work · "budget"`, so the user sees what left the machine. */
 function fileCallText(c: ToolCall): string {
@@ -45,7 +47,7 @@ function PathLink({ path, suffix = '', reveal }: { path: string; suffix?: string
 
 /** One file tool call: what it searched or read, then the files it found (open by default when there are few). */
 function FileCall({ c, result, reveal }: { c: ToolCall; result?: FileResult; reveal: Reveal }) {
-  const icon = <FolderSearch aria-hidden className='text-accent shrink-0' />;
+  const icon = <FolderSearch {...ICON} aria-hidden className='text-accent shrink-0' />;
   if (c.function.name === 'read_file')
     return (
       <div className='file-call'>
@@ -111,7 +113,7 @@ const MessageRow = memo(function MessageRow({
       <div className='msg-user'>
         {m.files && (
           <div className='flex items-center gap-1 text-xs opacity-75 mb-1'>
-            <FolderSearch aria-hidden /> {t('fileTag')}
+            <FolderSearch {...ICON} aria-hidden /> {t('fileTag')}
           </div>
         )}
         {m.content}
@@ -136,9 +138,28 @@ const MessageRow = memo(function MessageRow({
     }
   };
 
+  // Read tools that ran (no card, not a file search) show as small "Looked up tasks" chips, as in the design.
+  const carded = new Set(cards.map((a) => a.tool_call_id));
+  const lookups = (m.tool_calls ?? []).filter((c) => !carded.has(c.id) && !FILE_TOOL_NAMES.includes(c.function.name));
+  const done = t('toolDone', { returnObjects: true }) as Record<string, string>;
+
   return (
     <div className='msg-assistant'>
+      <img src={logo} alt='' className='msg-avatar' />
+      <div className='msg-col'>
       {partLabel && <div className='text-xs text-ink-2 mb-1'>{t('pdfNotes', { range: partLabel })}</div>}
+      {lookups.length > 0 && (
+        <div className='flex flex-wrap gap-1.5'>
+          {lookups.map((c) => (
+            <span key={c.id} className='flex items-center gap-[5px] px-2 py-0.5 rounded-full bg-pill text-ink-2 text-[11.5px]'>
+              <span aria-hidden className='flex text-ok'>
+                <Check {...ICON} strokeWidth={2.4} />
+              </span>
+              {done[c.function.name] ?? c.function.name}
+            </span>
+          ))}
+        </div>
+      )}
       {m.content && <Markdown>{m.content}</Markdown>}
       {fileCalls.map((c) => (
         <FileCall key={c.id} c={c} result={fileResults?.[c.id]} reveal={reveal} />
@@ -163,6 +184,7 @@ const MessageRow = memo(function MessageRow({
           {t('confirmAll', { count: open.length })}
         </Button>
       )}
+      </div>
     </div>
   );
 });
@@ -249,15 +271,18 @@ export function MessageList({ chat }: { chat: ChatState }) {
       <div className='msg-list' aria-live='polite'>
         {!chat.messages.length && !chat.running && (
           <div className='chat-empty'>
-            <h2>{t('emptyTitle')}</h2>
-            <p>{t('emptyHint')}</p>
+            <img src={logo} alt='' className='w-11 h-11 rounded-[11px] shadow-sm' />
+            <div>
+              <h2>{t('emptyTitle')}</h2>
+              <p>{t('emptyHint')}</p>
+            </div>
             <div className='grid grid-cols-1 sm:grid-cols-3 gap-2.5'>
               {COMMANDS.map((key) => (
                 <button key={key} type='button' className='suggestion' onClick={() => void chat.send(t(`cmd.${key}.prompt`), [])}>
-                  <span aria-hidden className='flex items-center justify-center w-8 h-8 mb-1.5 rounded-ctl bg-accent-soft text-accent text-base'>
+                  <span aria-hidden className='flex text-[17px] text-accent'>
                     {SUGGESTION_ICONS[key]}
                   </span>
-                  <span>{t(`cmd.${key}.description`)}</span>
+                  <span className='font-600 text-[13.5px]'>{t(`cmd.${key}.description`)}</span>
                   <code>/{key}</code>
                 </button>
               ))}
@@ -277,8 +302,11 @@ export function MessageList({ chat }: { chat: ChatState }) {
         {chat.reasoning && <ReasoningBlock text={chat.reasoning} />}
         {chat.streaming && (
           <div className='msg-assistant'>
-            <Markdown>{chat.streaming}</Markdown>
-            <span className='caret' aria-hidden='true' />
+            <img src={logo} alt='' className='msg-avatar' />
+            <div className='msg-col'>
+              <Markdown>{chat.streaming}</Markdown>
+              <span className='caret' aria-hidden='true' />
+            </div>
           </div>
         )}
         {waiting && (

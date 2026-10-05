@@ -1,10 +1,10 @@
-import { FilePreview, SlashCommandMenu } from '@aionui/ui';
+import { FilePreview } from '@aionui/ui';
 import { Input, Progress } from '@arco-design/web-react';
-import { FolderSearch, PauseOne, Pic, Send } from '@icon-park/react';
+import { ArrowUp, CalendarDays, FolderSearch, Image as ImageIcon, Square, Sun, Wallet } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ImageInput, PdfInput } from '../../shared/types';
-import { IconButton } from '../components/ui';
+import { ICON } from '../components/ui';
 import { ACCEPT, useImagePicker } from '../components/useImagePicker';
 import { isPdf, usePdfPicker } from '../components/usePdfPicker';
 
@@ -17,9 +17,13 @@ type Props = {
   onSend: (text: string, images: ImageInput[], files: boolean, document?: PdfInput) => Promise<boolean>;
   onStop: () => void;
   autoFocus?: boolean;
+  /** The model in use ('gpt-4o · LLM gateway'), shown at the right of the toolbar. */
+  modelLabel?: string;
 };
 
-export function SendBox({ running, onSend, onStop, autoFocus }: Props) {
+const CMD_ICONS = { homnay: <Sun {...ICON} />, tuannay: <CalendarDays {...ICON} />, chitieu: <Wallet {...ICON} /> };
+
+export function SendBox({ running, onSend, onStop, autoFocus, modelLabel }: Props) {
   const { t } = useTranslation('chat');
   const commands = COMMANDS.map((key) => ({ key, label: `/${key}`, description: t(`cmd.${key}.description`), prompt: t(`cmd.${key}.prompt`) }));
   const [text, setText] = useState('');
@@ -108,16 +112,23 @@ export function SendBox({ running, onSend, onStop, autoFocus }: Props) {
     >
       {messageHolder}
       {slash.length > 0 && (
-        <div className='slash-menu'>
-          <SlashCommandMenu
-            title={t('slashTitle')}
-            hint={t('slashHint')}
-            items={slash}
-            activeIndex={Math.min(active, slash.length - 1)}
-            onHoverItem={setActive}
-            onSelectItem={(item) => void submit(commands.find((c) => c.key === item.key)!.prompt)}
-            emptyText={t('slashEmpty')}
-          />
+        <div className='slash-menu' role='listbox' aria-label={t('slashTitle')}>
+          <div className='px-2 py-1.5 text-[11px] font-600 tracking-[0.04em] uppercase text-ink-3'>{t('slashTitle')}</div>
+          {slash.map((item, i) => (
+            <button
+              key={item.key}
+              type='button'
+              role='option'
+              aria-selected={i === Math.min(active, slash.length - 1)}
+              onMouseMove={() => setActive(i)}
+              onClick={() => void submit(item.prompt)}
+              className={`w-full flex items-center gap-2.5 p-2 border-0 rounded-lg text-left cursor-pointer ${i === Math.min(active, slash.length - 1) ? 'bg-accent-soft' : 'bg-transparent'}`}
+            >
+              <span aria-hidden className='flex text-accent'>{CMD_ICONS[item.key]}</span>
+              <code className='font-mono text-[12.5px] font-500'>{item.label}</code>
+              <span className='text-[13px] text-ink-2'>{item.description}</span>
+            </button>
+          ))}
         </div>
       )}
       <div className='sendbox-inner'>
@@ -157,15 +168,27 @@ export function SendBox({ running, onSend, onStop, autoFocus }: Props) {
           placeholder={t(files ? 'fileSearchOn' : 'placeholder')}
         />
         <div className='sendbox-actions'>
-          <IconButton type='text' icon={<Pic />} label={t('attachImage')} onClick={() => fileInput.current?.click()} />
-          <IconButton
-            type='text'
-            icon={<FolderSearch />}
-            label={t('fileSearch')}
+          <button
+            type='button'
+            aria-label={t('attachImage')}
+            title={t('attachImage')}
+            onClick={() => fileInput.current?.click()}
+            className='grid place-items-center w-[30px] h-[30px] border-0 rounded-lg bg-transparent text-ink-2 text-base cursor-pointer hover:bg-hover hover:text-ink'
+          >
+            <ImageIcon {...ICON} />
+          </button>
+          <button
+            type='button'
             aria-pressed={files}
-            className={`mr-auto ${files ? '!text-accent !bg-accent-soft' : ''}`} // mr-auto: next to the image button, send stays right
+            title={t('fileSearch')}
             onClick={() => setFiles((on) => !on)}
-          />
+            className={`flex items-center gap-1.5 h-[30px] px-[9px] border-0 rounded-lg text-[12.5px] font-500 cursor-pointer ${files ? 'bg-accent-soft text-accent' : 'bg-transparent text-ink-2 hover:bg-hover hover:text-ink'}`}
+          >
+            <FolderSearch {...ICON} />
+            {t('fileSearchShort')}
+          </button>
+          <span className='flex-1' />
+          {modelLabel && <span className='pr-1.5 text-[11.5px] text-ink-3 truncate'>{modelLabel}</span>}
           <input
             ref={fileInput}
             type='file'
@@ -178,9 +201,20 @@ export function SendBox({ running, onSend, onStop, autoFocus }: Props) {
             }}
           />
           {running ? (
-            <IconButton shape='circle' status='warning' icon={<PauseOne />} label={t('stop')} onClick={onStop} />
+            <button type='button' aria-label={t('stop')} title={t('stop')} onClick={onStop} className='grid place-items-center w-8 h-8 border-0 rounded-full bg-ink text-panel text-[11px] cursor-pointer'>
+              <Square {...ICON} fill='currentColor' />
+            </button>
           ) : (
-            <IconButton shape='circle' type='primary' icon={<Send />} label={t('send')} loading={sending} onClick={() => void submit()} />
+            <button
+              type='button'
+              aria-label={t('send')}
+              title={t('send')}
+              disabled={sending || (!text.trim() && !images.length && !pdf)}
+              onClick={() => void submit()}
+              className={`grid place-items-center w-8 h-8 border-0 rounded-full text-base transition-colors ${text.trim() || images.length || pdf ? 'bg-accent text-accent-on cursor-pointer' : 'bg-pill text-ink-3 cursor-default'}`}
+            >
+              <ArrowUp {...ICON} />
+            </button>
           )}
         </div>
       </div>

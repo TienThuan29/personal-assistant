@@ -1,11 +1,12 @@
 import { AionScrollArea } from '@aionui/ui';
 import { Dropdown, Input, Menu, Message } from '@arco-design/web-react';
-import { Delete, Edit, More } from '@icon-park/react';
+import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { type DayBucket, dayBucket, toLocalDate } from '../../shared/dates';
 import type { ConversationRow } from '../../shared/types';
 import { errorText } from '../api';
+import { ICON } from './ui';
 
 const BUCKETS: DayBucket[] = ['today', 'yesterday', 'week', 'older'];
 
@@ -65,7 +66,7 @@ export function ConversationList({ conversations, selectedId, titleOf, onOpen, o
       {messageHolder}
       {groups.map(({ b, items }) => (
         <section key={b}>
-          <h2 className='m-0 px-3 pt-3 pb-1 text-xs font-500 text-ink-2'>{t(`group.${b}`)}</h2>
+          <h2 className='m-0 px-2.5 pt-3.5 pb-1 text-[11px] font-600 tracking-[0.04em] uppercase text-ink-3'>{t(`group.${b}`)}</h2>
           {items.map((c) => {
             const title = titleOf(c);
             const on = c.id === selectedId;
@@ -95,7 +96,7 @@ export function ConversationList({ conversations, selectedId, titleOf, onOpen, o
                   setMenuFor(null);
                   e.currentTarget.querySelector<HTMLElement>('.conv-more')?.focus();
                 }}
-                className={`conv-row flex items-center rounded-ctl ${on ? 'bg-accent-soft text-ink' : 'text-ink hover:bg-[var(--hover)]'}`}>
+                className={`conv-row flex items-center rounded-lg border border-solid ${on ? 'bg-panel border-line shadow-sm text-ink' : 'border-transparent text-ink-2 hover:bg-hover hover:text-ink'}`}>
                 <button
                   type='button'
                   ref={(el) => {
@@ -108,7 +109,7 @@ export function ConversationList({ conversations, selectedId, titleOf, onOpen, o
                   aria-current={on ? 'page' : undefined}
                   onClick={() => onOpen(c.id)}
                   onDoubleClick={() => start(c)}
-                  className={`flex-1 min-w-0 h-8 pl-3 pr-1 border-0 bg-transparent text-left text-[13px] truncate cursor-pointer text-inherit ${on ? 'font-500' : ''}`}
+                  className={`flex-1 min-w-0 h-8 pl-2.5 pr-1 border-0 bg-transparent text-left text-[13px] truncate cursor-pointer text-inherit ${on ? 'font-500' : ''}`}
                 >
                   {title}
                 </button>
@@ -132,11 +133,11 @@ export function ConversationList({ conversations, selectedId, titleOf, onOpen, o
                       }}
                     >
                       <Menu.Item key='rename'>
-                        <Edit className='mr-2' />
+                        <Pencil {...ICON} className='mr-2' />
                         {t('rename')}
                       </Menu.Item>
                       <Menu.Item key='delete' className='!text-danger'>
-                        <Delete className='mr-2' />
+                        <Trash2 {...ICON} className='mr-2' />
                         {t('common:delete')}
                       </Menu.Item>
                     </Menu>
@@ -147,7 +148,7 @@ export function ConversationList({ conversations, selectedId, titleOf, onOpen, o
                     aria-label={t('conversationMenu', { title })}
                     className='conv-more flex shrink-0 items-center justify-center w-7 h-7 mr-0.5 rounded-lg border-0 bg-transparent text-ink-2 cursor-pointer hover:text-ink'
                   >
-                    <More />
+                    <MoreHorizontal {...ICON} />
                   </button>
                 </Dropdown>
               </div>

@@ -3,7 +3,7 @@ import type { MenuItemConstructorOptions } from 'electron';
 
 /** BrowserWindow options for the title bar. On macOS the native buttons sit inset at the top-left; elsewhere the window is frameless. */
 export function chromeOptions(platform: string): { frame?: false; titleBarStyle?: 'hiddenInset'; trafficLightPosition?: { x: number; y: number } } {
-  return platform === 'darwin' ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 10 } } : { frame: false };
+  return platform === 'darwin' ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 17 } } : { frame: false };
 }
 
 /**
