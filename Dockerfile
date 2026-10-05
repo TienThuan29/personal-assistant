@@ -25,12 +25,12 @@ COPY . .
 RUN bun run build:web
 
 FROM node:22-slim
-ENV NODE_ENV=production PA_DATA_DIR=/data PORT=3000
+ENV NODE_ENV=production PA_DATA_DIR=/data PORT=9999
 WORKDIR /app
 COPY --from=build /src/out/server ./server
 COPY --from=build /src/out/renderer ./renderer
 RUN mkdir /data && chown node:node /data
 USER node
 VOLUME /data
-EXPOSE 3000
+EXPOSE 9999
 CMD ["node", "server/index.js"]

@@ -83,7 +83,7 @@ The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-
 **Docker mode** (docs/docker-design.md; Docker only, never the Electron app)
 - [ ] `docker build -t pa-app .`, then `cd docker` and `PA_IMAGE=pa-app docker compose up -d`; `docker compose logs assistant` prints the URL with the token. Open it: the app loads with no window buttons in the title bar, and the chat composer has no file-search button.
 - [ ] DevTools console on first load: no CSP violations, no failed requests. Network tab: `/events` stays open (EventSource), calls go to `/rpc/…`.
-- [ ] Without the token (a private window at `http://localhost:3000/`) → "Unauthorized" text, nothing else. Visiting by `127.0.0.1` works, by another name does not.
+- [ ] Without the token (a private window at `http://localhost:9999/`) → "Unauthorized" text, nothing else. Visiting by `127.0.0.1` works, by another name does not.
 - [ ] Settings: type an LLM key → Save and test works against the real gateway/Azure (behind Zscaler: with the certs file, `docker compose exec assistant printenv NODE_EXTRA_CA_CERTS` shows `/certs/ca.crt`). The key is not shown again; `docker compose restart assistant` and it is still saved.
 - [ ] Attach a PNG and a large photo to a chat message and to a task: both arrive as JPEGs (thumbnails show, via `/att/…`); a text file renamed `.png` is rejected with the translated message.
 - [ ] Settings → System → "Thông báo trình duyệt" → Bật → allow. Create a reminder for 1–2 minutes ahead by chat, keep the tab open (background tab is fine): a browser notification "Nhắc nhở" appears; clicking it focuses the tab on Today. With the tab closed, the reminder is only marked fired.

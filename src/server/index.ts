@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { startServer } from './server';
 
 // Entry of the Docker image (bundled to out/server/index.js by scripts/build-server.mjs; the renderer sits beside it).
-const port = Number(process.env.PORT ?? 3000);
+const port = Number(process.env.PORT ?? 9999);
 const running = await startServer({
   dataDir: process.env.PA_DATA_DIR ?? './data',
   rendererDir: fileURLToPath(new URL('../renderer', import.meta.url)),

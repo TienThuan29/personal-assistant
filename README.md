@@ -51,12 +51,33 @@ the new .exe in its folder. Your data stays either way.
 ## Run in Docker (no desktop app)
 
 For a machine where a background `PersonalAssistant.exe` is not allowed: the same assistant in a container, used from a
-browser tab. Needs Docker with Compose; the image is `ghcr.io/tienthuan29/personal-assistant`.
+browser tab. Needs Docker; the image is `ghcr.io/tienthuan29/personal-assistant`.
+
+### Pull and run the image
+
+```bash
+docker pull ghcr.io/tienthuan29/personal-assistant:latest
+docker run -d --name personal-assistant --restart unless-stopped -p 127.0.0.1:9999:9999 -e TZ=Asia/Ho_Chi_Minh -v pa-data:/data ghcr.io/tienthuan29/personal-assistant:latest
+docker logs personal-assistant
+```
+
+Keep each command on one line (that works in CMD, PowerShell and bash). `docker logs` prints
+`http://localhost:9999/?token=…`: open it once in Chrome or Edge; the browser remembers the token.
+
+- `-p 127.0.0.1:9999:9999` publishes the app on this machine only; `-v pa-data:/data` keeps your database and API key
+  across updates. To use another host port change the first number (`-p 127.0.0.1:8080:9999`), then open that port.
+- Behind a TLS-inspecting proxy (Zscaler) add
+  `-v C:\path	o\zscaler-root-ca.crt:/certs/ca.crt:ro -e NODE_EXTRA_CA_CERTS=/certs/ca.crt`.
+- Stop and start: `docker stop personal-assistant`, `docker start personal-assistant`.
+- Update: `docker rm -f personal-assistant`, `docker pull …:latest`, then the same `docker run` again. The `pa-data`
+  volume survives `docker rm`.
+
+### Or with Compose
 
 ```bash
 cd docker
 docker compose up -d          # behind a TLS-inspecting proxy (Zscaler): see below
-docker compose logs assistant # prints http://localhost:3000/?token=… , open that once; the browser remembers it
+docker compose logs assistant # prints http://localhost:9999/?token=… , open that once; the browser remembers it
 ```
 
 - **Update:** `docker/update.ps1` (or `docker compose pull && docker compose up -d`). Your data stays in the `pa-data`
@@ -64,7 +85,7 @@ docker compose logs assistant # prints http://localhost:3000/?token=… , open t
 - **Corporate root CA:** copy the CA file to `docker/certs/zscaler-root-ca.crt` (it is gitignored), then add
   `-f docker-compose.yml -f docker-compose.certs.yml` to the compose commands (`update.ps1` does it when the file exists).
   Without it the LLM calls fail certificate checks on such a network. Never turn certificate checks off.
-- **Port, time zone:** `PA_PORT` (default 3000) and `TZ` (default `Asia/Ho_Chi_Minh`; "today" and reminder times follow it).
+- **Port, time zone:** `PA_PORT` (default 9999) and `TZ` (default `Asia/Ho_Chi_Minh`; "today" and reminder times follow it).
 - **Access:** the port is published on `127.0.0.1` only, and the token is required. `PA_TOKEN` sets your own; otherwise one
   is generated once and kept in the volume.
 - **Back up:** `docker cp personal-assistant-assistant-1:/data ./pa-backup`.

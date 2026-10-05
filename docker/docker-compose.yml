@@ -9,10 +9,10 @@ services:
     image: ${PA_IMAGE:-ghcr.io/tienthuan29/personal-assistant:latest}
     restart: unless-stopped
     ports:
-      - '127.0.0.1:${PA_PORT:-3000}:3000' # loopback only
+      - '127.0.0.1:${PA_PORT:-9999}:9999' # loopback only
     environment:
       TZ: ${TZ:-Asia/Ho_Chi_Minh} # "today" and reminder times follow this
-      PA_PUBLIC_PORT: ${PA_PORT:-3000} # only so the URL in the log shows the published port
+      PA_PUBLIC_PORT: ${PA_PORT:-9999} # only so the URL in the log shows the published port
     volumes:
       - pa-data:/data # a named volume: SQLite's file locks are unreliable on a Windows bind mount
 
