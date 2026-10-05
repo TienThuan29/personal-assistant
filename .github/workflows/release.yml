@@ -14,6 +14,13 @@ on:
 permissions:
   contents: read
 
+# One release at a time. Several merges to main in a row used to start parallel runs that picked the same version and
+# raced to push the bump commit ("rejected (fetch first)"). Queued runs wait instead of being cancelled; each one
+# checks out the latest main, so the newest run releases everything merged so far.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -25,6 +32,10 @@ jobs:
       publish: ${{ steps.ver.outputs.publish }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # On main, build the branch tip rather than the commit that triggered the run: by the time a queued run
+          # starts, main may have moved on, and the bump commit must go on top of it.
+          ref: ${{ github.ref_type == 'branch' && github.ref || github.sha }}
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - uses: oven-sh/setup-bun@v2
@@ -46,7 +57,13 @@ jobs:
               git config user.name "github-actions[bot]"
               git config user.email "github-actions[bot]@users.noreply.github.com"
               git commit -am "chore: release $ver"
-              git push origin HEAD:main
+              # Someone may have merged since checkout: rebase the one-line bump onto them and retry.
+              for attempt in 1 2 3 4 5; do
+                git push origin HEAD:main && break
+                [ "$attempt" = 5 ] && { echo "could not push the version bump"; exit 1; }
+                git pull --rebase origin main
+                sleep $((attempt * 3))
+              done
             fi
             echo "publish=true" >> "$GITHUB_OUTPUT"
           elif [[ "$GITHUB_EVENT_NAME" == push ]]; then
