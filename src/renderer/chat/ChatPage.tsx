@@ -1,6 +1,6 @@
 import { Message } from '@arco-design/web-react';
 import { useTranslation } from 'react-i18next';
-import type { ImageInput } from '../../shared/types';
+import type { ImageInput, PdfInput } from '../../shared/types';
 import { api } from '../api';
 import { MessageList } from './MessageList';
 import { SendBox } from './SendBox';
@@ -10,11 +10,11 @@ export function ChatPage({ conversationId, autoFocus }: { conversationId: number
   const { t } = useTranslation('chat');
   const chat = useChat(conversationId);
   const [message, messageHolder] = Message.useMessage();
-  /** The gateway can't see images (design G8): say so when some were sent through it. */
-  const send = async (text: string, images: ImageInput[], files: boolean) => {
-    const sent = await chat.send(text, images, files);
-    if (sent && images.length)
-      api.settings.get().then((s) => s.llm.active === 'gateway' && message.warning?.(t('gatewayNoImages')), () => {});
+  /** The gateway can't see images (design G8): say so when some, or a PDF (which is drawn to images), were sent through it. */
+  const send = async (text: string, images: ImageInput[], files: boolean, document?: PdfInput) => {
+    const sent = await chat.send(text, images, files, document);
+    if (sent && (images.length || document))
+      api.settings.get().then((s) => s.llm.active === 'gateway' && message.warning?.(t(document ? 'gatewayNoPdf' : 'gatewayNoImages')), () => {});
     return sent;
   };
   return (

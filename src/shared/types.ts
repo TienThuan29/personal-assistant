@@ -54,8 +54,24 @@ export type ConversationRow = { id: number; title: string; updated_at: string };
 export const DEFAULT_CONVERSATION_TITLE = 'Hội thoại mới';
 
 export type ToolCall = { id: string; type: 'function'; function: { name: string; arguments: string } };
-/** `files`: the user turned on file search for this message (docs/file-search-design.md). */
-export type UserMessage = { role: 'user'; content: string; attachment_ids?: string[]; files?: true };
+/** A PDF sent with a message: `pages` are attachment ids in page order (docs/pdf-batch-reasoning-design.md). */
+export type PdfDoc = { name: string; pages: string[] };
+/** An internal message carrying one batch of a PDF's pages (1-based, inclusive). Hidden in the chat, sent to the model. */
+export type BatchInfo = { name: string; part: number; parts: number; from: number; to: number; total: number };
+/**
+ * `files`: the user turned on file search for this message (docs/file-search-design.md).
+ * `document`: the message came with a PDF. `batch` / `final` mark the internal messages of its batch run: the pages of one
+ * batch (in `attachment_ids`), and the request to combine the notes.
+ */
+export type UserMessage = {
+  role: 'user';
+  content: string;
+  attachment_ids?: string[];
+  files?: true;
+  document?: PdfDoc;
+  batch?: BatchInfo;
+  final?: true;
+};
 export type AssistantMessage = { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] };
 export type ToolMessage = { role: 'tool'; tool_call_id: string; content: string };
 export type StoredMessage = UserMessage | AssistantMessage | ToolMessage;
@@ -85,9 +101,14 @@ export type AskAnswer = AskReply & { question: string };
 /** The read-only file tools (src/main/tools/files.ts); the chat lists what each call searched or read. */
 export const FILE_TOOL_NAMES = ['find_files', 'grep_files', 'read_file'];
 
+/** Where a PDF run is: batch `part` of `parts` (pages `from`–`to` of `total`), or the final step that combines the notes. */
+export type PdfProgress = { phase: 'batch' | 'final'; part: number; parts: number; from: number; to: number; total: number };
+
 export type AgentEvent = { conversationId: number } & (
   | { type: 'text'; delta: string }
   | { type: 'tool'; name: string }
+  | { type: 'reasoning'; delta: string }
+  | ({ type: 'progress' } & PdfProgress)
   | { type: 'saved' }
   | { type: 'pending' }
   | { type: 'done' }
@@ -132,6 +153,8 @@ export type UpdateStatus = { current: string; latest: string | null; url: string
 export type SettingsInput = { llm: LlmSettings; apiKey?: string };
 
 export type ImageInput = { name: string; bytes: Uint8Array };
+/** A PDF already rendered to one JPEG per page by the renderer. */
+export type PdfInput = { name: string; pages: ImageInput[] };
 export type Page = 'chat' | 'today' | 'tasks' | 'notes' | 'expenses' | 'reminders' | 'settings';
 
 export type Api = {
@@ -144,8 +167,8 @@ export type Api = {
   chat: {
     messages(id: number): Promise<ChatMessage[]>;
     actions(id: number): Promise<PendingAction[]>;
-    /** `files`: let the assistant search and read files under ~ for this message only. */
-    send(id: number, text: string, images: ImageInput[], files?: boolean): Promise<void>;
+    /** `files`: let the assistant search and read files under ~ for this message only. `document`: a PDF, instead of `images`. */
+    send(id: number, text: string, images: ImageInput[], files?: boolean, document?: PdfInput): Promise<void>;
     /** Whether a turn is running, for a chat opened mid-turn. */
     running(id: number): Promise<boolean>;
     stop(id: number): Promise<void>;
