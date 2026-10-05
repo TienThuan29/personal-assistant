@@ -4,3 +4,4 @@ release/
 *.db
 *.db-*
 /index.js
+.DS_Store
