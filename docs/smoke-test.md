@@ -10,7 +10,7 @@ The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-
 - [ ] Fresh start: window "Trợ lý cá nhân" opens, `backups/` has `assistant-<today>.db`.
 - [ ] No LLM configured → sending a message says to open Cài đặt.
 - [ ] Settings: `http://…` endpoint → "Endpoint phải dùng https"; a non-URL → "Endpoint chưa đúng dạng URL". Saving a valid config works.
-- [ ] Settings: the key is never shown back ("Đã lưu (mã hóa bằng Windows)…"); `secrets.bin` has no readable key.
+- [ ] Settings: the key is never shown back ("Đã lưu (mã hóa bằng hệ điều hành)…"); `secrets.bin` has no readable key.
 
 **Chat**
 - [ ] "Hôm nay tôi có việc gì?" (or the "Tóm tắt hôm nay" quick command, `/`) answers from data (empty DB: says there is nothing).
@@ -51,8 +51,9 @@ The packaged app shares its data folder with `bun run dev`: `%APPDATA%/personal-
 - [ ] Reminder 2 minutes ahead → Windows toast on time, **with the window hidden in the tray**. Click → opens the Hôm nay page.
 - [ ] Reminder while the app is quit → on next start one grouped "Bạn có N nhắc nhở" toast.
 - [ ] Sleep the PC past a reminder, wake → toast fires shortly after resume.
+- [ ] **macOS:** native red/yellow/green buttons at the top-left (no Windows-style buttons at the right); the sidebar header sits below them, also when collapsed. Red button hides the window, the app stays in the Dock and the menu bar shows its icon; clicking the Dock icon or the menu-bar icon brings the window back; a reminder still fires while hidden. Cmd+N / Cmd+B / Cmd+1…5 / Cmd+, work and the hints show ⌘; "Khởi động cùng máy" on → log out/in → the app starts hidden in the menu bar; Cmd+Q quits for real; Cmd+C / Cmd+V work in inputs; Cmd+W hides the window.
 - [ ] Tray: close hides the window, tray click shows it, right-click menu "Mở Trợ lý" / "Thoát" work; a second launch focuses the running instance.
-- [ ] "Khởi động cùng Windows" (Settings or tray menu) on → sign out/in → app runs hidden in the tray. The Settings switch applies at once (no "Lưu"), even with no LLM configured, and "Lưu" later does not undo a tray change.
+- [ ] "Khởi động cùng máy" (Settings or tray menu) on → sign out/in → app runs hidden in the tray. The Settings switch applies at once (no "Lưu"), even with no LLM configured, and "Lưu" later does not undo a tray change.
 - [ ] Dark mode follows Windows.
 
 **Language and display** (Settings → Hiển thị / Display)

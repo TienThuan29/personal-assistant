@@ -97,7 +97,8 @@ export function createWebApi(deps: Partial<Deps> = {}): Api {
     chat: {
       messages: (id) => invoke('chat:messages', id),
       actions: (id) => invoke('chat:actions', id),
-      send: async (id, text, images, files) => invoke('chat:send', id, text, await jpegs(images), files),
+      send: async (id, text, images, files, document) =>
+        invoke('chat:send', id, text, await jpegs(images), files, document && { ...document, pages: await jpegs(document.pages) }),
       running: (id) => invoke('chat:running', id),
       stop: (id) => invoke('chat:stop', id),
       retry: (id) => invoke('chat:retry', id),
@@ -119,6 +120,8 @@ export function createWebApi(deps: Partial<Deps> = {}): Api {
       listModels: (provider) => invoke('settings:listModels', provider),
       setOpenAtLogin: () => Promise.resolve(false),
       setUi: (patch) => invoke('settings:setUi', patch),
+      dataPath: () => Promise.resolve(''),
+      revealData: notInBrowser,
     },
     update: {
       check: (manual) => invoke('update:check', manual),
@@ -133,6 +136,7 @@ export function createWebApi(deps: Partial<Deps> = {}): Api {
       isMaximized: () => Promise.resolve(false),
       onMaximizedChange: listen<boolean>('win:maximized'),
     },
+    platform: 'web', // neither 'darwin' (traffic-light padding) nor a desktop with its own window buttons: those are hidden when `web`
     web: true,
     onReminder: listen('reminder'),
     onNavigate: listen('nav'),

@@ -1,6 +1,6 @@
 {
   "name": "personal-assistant",
-  "version": "0.1.5",
+  "version": "0.1.7",
   "private": true,
   "type": "module",
   "main": "./out/main/index.js",
@@ -36,8 +36,10 @@
     "i18next": "^26.4.2",
     "json5": "^2.2.3",
     "katex": "^0.16.22",
+    "lucide-react": "^1.52.0",
     "mermaid": "^11.13.0",
     "openai": "5.23.2",
+    "pdfjs-dist": "^6.4.299",
     "postcss": "^8.5.8",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

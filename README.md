@@ -30,8 +30,9 @@ The apps are not code-signed, so each OS warns you the first time:
 
 ## First run
 
-1. Open **Settings** (bottom of the sidebar) and add an LLM: either Azure AI Foundry or any OpenAI-compatible gateway
-   (endpoint, model, key).
+1. Open **Settings** (bottom of the sidebar) and add an LLM: Azure AI Foundry, any OpenAI-compatible gateway
+   (endpoint, model, key), or a model running locally in [LM Studio](https://lmstudio.ai) (turn on its Local Server, load a
+   model, pick **LM Studio**; no key needed, and your chats never leave the machine).
 2. Ask "What do I have today?" or say "remind me to call Minh tomorrow at 9". Review the confirmation card, then confirm.
 
 The interface is in Vietnamese or English (Settings → Display), and you can pick your own accent colour there too.
@@ -42,8 +43,10 @@ The app checks GitHub once a day when it opens and shows a banner when a newer v
 Release page. Check by hand or switch it off under Settings → Updates.
 
 The Windows installer and the Linux AppImage can update themselves: the banner's **Update and restart** downloads the new
-version, installs it and reopens the app. The Windows portable file and macOS only link to the Release page: download the
-new file and replace the old one. Your data stays either way.
+version, installs it and reopens the app. On macOS (the app is not signed, so it cannot replace itself) and the Windows
+portable file, the banner's **Download and open installer** saves the new file to your Downloads folder: on macOS it opens
+the .dmg and closes the app so you can drag **Personal Assistant** over the old one in Applications; on Windows it shows
+the new .exe in its folder. Your data stays either way.
 
 ## Run in Docker (no desktop app)
 
@@ -88,9 +91,9 @@ The app was designed for Windows. macOS and Linux builds are provided as they ar
   version still lists and tracks reminders; it just cannot show the pop-up.
 - **Linux:** saving an LLM key needs a system keyring (GNOME Keyring or KWallet); without one the app refuses to store it.
   Some desktops (e.g. stock GNOME) show no tray icon, so closing the window to the tray may leave no way to reopen it.
-- **macOS and Linux:** the window uses Windows-style minimise/maximise/close buttons, and the "start with Windows"
+- **Linux:** the window uses Windows-style minimise/maximise/close buttons, and the "start at login"
   option does not apply.
-- No automatic updates: download a new release to upgrade. Your data is kept.
+- macOS updates are semi-automatic (see Updating). Your data is kept.
 
 ## Build from source
 

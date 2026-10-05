@@ -1,139 +1,43 @@
-/* ---- Design tokens (docs/ui-refresh-design.md §1) ----
-   On body, like Arco's own variables: loaded last, so these win over Arco and over @aionui/ui's html-level tokens. */
-body {
-  --canvas: #faf8f5;
-  --surface: #ffffff;
-  --sunken: #f3efea;
-  --pill: var(--sunken); /* count badges and neutral chips on a surface */
-  --line: #e7e1d9;
-  --ink: #2b2622;
-  --ink-2: #746a62;
-  --accent: #ab502d; /* white text 5.4:1; on its 10% tint 4.7:1 (#b5552f was 4.3:1); design U6 */
-  --on-accent: #ffffff;
-  --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
-  --danger: rgb(var(--danger-7)); /* text on its tint: 4.76:1 light, 5.45:1 dark (danger-6 is 3.25 / 4.36) */
-  --danger-soft: color-mix(in srgb, rgb(var(--danger-6)) 10%, transparent);
-  --hover: #f1ede8;
-  --shadow-card: 0 1px 2px rgba(43, 38, 34, 0.04), 0 8px 24px -12px rgba(43, 38, 34, 0.14);
-  /* Expense categories by rank. dataviz validator on #fff: adjacent CVD ΔE 10.3, normal 18.4;
-     cat-4 is 2.5:1, so the legend's amounts are the readable copy. Other is gray on purpose. */
-  --cat-1: #b5552f;
-  --cat-2: #099fb1;
-  --cat-3: #a05377;
-  --cat-4: #c4a032;
-  --cat-5: #728ad1;
-  --cat-6: #33936a;
-  --cat-other: #b8afa6;
-
-  /* @aionui/ui */
-  --bg-base: var(--surface);
-  --bg-1: var(--canvas);
-  --bg-2: var(--sunken);
-  --bg-3: var(--line);
-  --bg-hover: var(--hover);
-  --bg-active: var(--line);
-  --text-primary: var(--ink);
-  --text-secondary: var(--ink-2);
-  --primary: var(--accent);
-  --border-base: var(--line);
-  --border-light: var(--hover);
-  --message-user-bg: var(--accent-soft);
-  --dialog-fill-0: var(--surface);
-  --fill-0: var(--surface);
-  --thought-gradient: linear-gradient(90deg, #f6ebe4 0%, var(--sunken) 100%);
-  --aou-2: var(--accent-soft); /* slash menu highlight; also the disabled primary button fill, see below */
-  --aou-7: var(--accent);
-  --bg-6: var(--ink-2); /* tertiary text */
-  --bg-4: rgb(var(--gray-4)); /* hovered field edge in modals (library default #c9cdd4 is cool gray) */
-
-  /* Arco: terracotta primary and warm gray ramps (r,g,b like Arco's own) */
-  --primary-1: 250, 238, 231;
-  --primary-2: 244, 217, 202;
-  --primary-3: 234, 184, 160;
-  --primary-4: 221, 148, 116;
-  --primary-5: 197, 108, 74;
-  --primary-6: 171, 80, 45;
-  --primary-7: 145, 64, 34;
-  --primary-8: 124, 53, 27;
-  --primary-9: 94, 39, 19;
-  --primary-10: 64, 26, 12;
-  /* Arco links (e.g. the date picker's "today") default to arcoblue; these are the only steps it uses. */
-  --link-1: var(--primary-1);
-  --link-2: var(--primary-2);
-  --link-3: var(--primary-3);
-  --link-4: var(--primary-4);
-  --link-6: var(--primary-6);
-  --gray-1: 247, 245, 242;
-  --gray-2: 241, 237, 232;
-  --gray-3: 231, 225, 217;
-  --gray-4: 214, 206, 197;
-  --gray-5: 190, 181, 171;
-  --gray-6: 158, 149, 139;
-  --gray-7: 128, 119, 110;
-  --gray-8: 99, 91, 83;
-  --gray-9: 69, 62, 56;
-  --gray-10: 43, 38, 34;
+/* Layout and component rules of the redesigned UI (docs/ui-redesign-design.md). Colours are tokens.css's; most spacing and
+   type is UnoCSS utilities in the components, so this file holds what a utility class cannot: Arco's own markup, the chat,
+   rows and motion. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
-body[arco-theme='dark'] {
-  --canvas: #1a1714;
-  --surface: #23201c;
-  --sunken: #1f1c19;
-  --pill: var(--line); /* sunken is invisible on the dark surface */
-  --line: #34302b;
-  --ink: #ede7e1;
-  --ink-2: #a39a91;
-  --accent: #e08a63;
-  --on-accent: #1a1714; /* white on #e08a63 is ~2.5:1; this is ~6.8:1 */
-  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
-  --danger-soft: color-mix(in srgb, rgb(var(--danger-6)) 16%, transparent);
-  --hover: #2a2622;
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.55);
-  /* Validator on #23201c: adjacent CVD ΔE 10.4, normal 19.5, all >= 3:1 */
-  --cat-1: #cf704c;
-  --cat-2: #099fb2;
-  --cat-3: #a05377;
-  --cat-4: #ac8909;
-  --cat-5: #728ad1;
-  --cat-6: #29a674;
-  --cat-other: #7a7068;
-  --thought-gradient: linear-gradient(135deg, #3a2a22 0%, var(--surface) 100%);
-  --color-text-1: var(--ink); /* Arco's dark block sets its own */
-  --color-bg-1: var(--canvas);
-  --color-bg-2: var(--surface);
-  --color-bg-3: #2a2622;
-  --color-bg-4: #302b27;
-  --color-bg-5: #36312c;
-  --color-border: var(--line);
-  --primary-1: 58, 36, 27;
-  --primary-2: 88, 50, 35;
-  --primary-3: 125, 69, 45;
-  --primary-4: 163, 93, 61;
-  --primary-5: 196, 115, 80;
-  --primary-6: 224, 138, 99;
-  --primary-7: 232, 160, 127;
-  --primary-8: 239, 184, 158;
-  --primary-9: 245, 210, 193;
-  --primary-10: 251, 236, 228;
-  --link-1: var(--primary-1); /* Arco redeclares these for dark too */
-  --link-2: var(--primary-2);
-  --link-3: var(--primary-3);
-  --link-4: var(--primary-4);
-  --link-6: var(--primary-6);
-  --gray-1: 26, 23, 20;
-  --gray-2: 35, 32, 28;
-  --gray-3: 52, 48, 43;
-  --gray-4: 68, 63, 57;
-  --gray-5: 90, 84, 77;
-  --gray-6: 118, 110, 102;
-  --gray-7: 150, 141, 132;
-  --gray-8: 180, 171, 162;
-  --gray-9: 210, 203, 196;
-  --gray-10: 237, 231, 225;
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
 }
 html,
 body {
   font-family: 'Be Vietnam Pro', system-ui, sans-serif;
 }
+body {
+  background: var(--chrome);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+::placeholder { color: var(--ink-3); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 10px; border: 3px solid transparent; background-clip: padding-box; }
+/* The app's own buttons (Arco's have their own states). :where() keeps utilities able to override. */
+:where(button:not(.arco-btn), input, textarea, select) { font-family: inherit; font-size: inherit; color: inherit; }
+:where(button:not(.arco-btn)) { cursor: pointer; }
+:where(button, input, textarea, select):where(:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; } /* zero specificity: a field that shows focus on its frame says outline-none */
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+/* Window drag regions (frameless window); controls inside stay clickable. */
+.drag { -webkit-app-region: drag; }
+.drag :is(button, input) { -webkit-app-region: no-drag; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+/* ---- Arco under the new tokens ---- */
 /* Arco paints these white-on-primary-6; the dark accent is too light for that. */
 .arco-btn-primary:not(.arco-btn-disabled),
 .arco-btn-primary:not(.arco-btn-disabled):not(.arco-btn-loading):is(:hover, :active),
@@ -143,72 +47,58 @@ body {
   color: var(--on-accent);
 }
 /* Arco keeps white text on disabled primary buttons, invisible on the pale --aou-2 fill @aionui/ui gives them. */
-.arco-btn-primary.arco-btn-disabled {
-  color: var(--ink-2);
-}
-/* Arco fields rely on a fill alone (~1.2:1 on white). Give them an edge at rest and on hover; focus, error, warning
-   and disabled keep Arco's colors. Same selectors @aionui/ui uses for fields inside .arco-modal. */
+.arco-btn-primary.arco-btn-disabled { color: var(--ink-2); }
+.arco-btn { border-radius: 8px; font-weight: 500; }
+.arco-btn-primary { font-weight: 600; }
+/* Fields: a visible edge at rest and on hover, the design's radius; focus, error, warning and disabled keep Arco's colors. */
+.arco-input,
+.arco-input-inner-wrapper,
+.arco-textarea,
+.arco-select-view,
+.arco-picker,
+.arco-input-number { border-radius: 8px; }
 .arco-input:not(.arco-input-disabled):not(.arco-input-error):not(.arco-input-warning):not(.arco-input-focus):not(:focus),
 .arco-input-inner-wrapper:not(.arco-input-inner-wrapper-disabled):not(.arco-input-inner-wrapper-error):not(.arco-input-inner-wrapper-warning):not(.arco-input-inner-wrapper-focus),
 .arco-textarea:not(.arco-textarea-disabled):not(.arco-textarea-error):not(.arco-textarea-warning):not(.arco-textarea-focus):not(:focus),
 .arco-select:not(.arco-select-disabled):not(.arco-select-error):not(.arco-select-warning):not(.arco-select-focused) .arco-select-view,
 .arco-picker:not(.arco-picker-disabled):not(.arco-picker-error):not(.arco-picker-warning):not(.arco-picker-focused) {
   border-color: var(--line);
+  background: var(--panel);
 }
+/* Dialogs: the design's 16px corners and deep shadow. */
+.arco-modal { border-radius: 16px; box-shadow: var(--shadow-lg); }
+.arco-modal-header { border-bottom: 0; }
+mark { background: color-mix(in oklab, var(--c4) 35%, transparent); color: inherit; border-radius: 2px; }
+.link { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; text-align: start; }
+.link:hover { color: var(--accent); }
+.muted { color: var(--ink-2); font-size: 12px; }
+/* Arco spaces only an <svg> icon from the label. */
+.arco-btn > svg + span, .arco-btn > span + svg { margin-left: 8px; }
 
-html,
-body,
-#root {
-  height: 100%;
-  margin: 0;
+/* ---- Rows (inside a Card or a bordered group) ---- */
+.row-main { flex: 1; min-width: 0; }
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  border-top: 1px solid var(--line);
+  transition: background-color 0.2s, opacity 0.4s var(--ease-out);
 }
-body {
-  background: var(--bg-1);
-  color: var(--text-primary);
-  font-size: 14px;
-}
-/* Window drag regions (frameless window); controls inside stay clickable. */
-.drag { -webkit-app-region: drag; }
-.drag :is(button, input) { -webkit-app-region: no-drag; }
-.sider { transition: width 0.25s var(--ease-out); }
-/* The app's own buttons (Arco's have their own states). :where() keeps utilities able to override. */
-:where(button:not(.arco-btn)) { font-family: inherit; }
-:where(button:not(.arco-btn)):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-/* A conversation's "⋯" shows on hover, on keyboard focus (U17) and while its menu is open; not after a mouse click. */
+.list-row:first-child { border-top: 0; }
+.list-row:hover { background: var(--hover); }
+/* Completed style; data:changed reloads right away, so a just-ticked task barely shows it. */
+.list-row.is-done { opacity: 0.45; }
+.list-row.is-done .row-main { text-decoration: line-through; }
+.list-row.is-closed { opacity: 0.55; }
+.row-actions { opacity: 0; transition: opacity 0.15s; }
+.list-row:is(:hover, :focus-within) .row-actions { opacity: 1; }
+/* A conversation's "⋯" shows on hover, on keyboard focus and while its menu is open; not after a mouse click. */
 .conv-more { opacity: 0; transition: opacity 0.15s; }
 .conv-row:is(:hover, :has(:focus-visible)) .conv-more,
 .conv-more.arco-dropdown-popup-visible { opacity: 1; }
-.content { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.page { flex: 1; overflow: auto; scrollbar-gutter: stable; padding: 16px 24px; } /* gutter: same right edge whether a page scrolls or not */
-.muted { color: var(--text-secondary); font-size: 12px; }
-/* Arco spaces only an <svg> icon from the label; icon-park icons are <span class='i-icon'>. */
-.arco-btn > .i-icon + span { margin-left: 8px; }
 
-.chat { display: flex; flex-direction: column; height: 100%; }
-.messages { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 24px; }
-/* min-height lets .chat-empty center vertically (margin: auto 0). */
-.msg-list { display: flex; flex-direction: column; gap: 12px; max-width: 760px; min-height: 100%; margin: 0 auto; }
-.msg-user {
-  align-self: flex-end;
-  max-width: 75%;
-  padding: 8px 14px;
-  border-radius: 18px 18px 6px 18px;
-  background: var(--message-user-bg);
-  color: var(--ink);
-  white-space: pre-wrap;
-}
-.msg-assistant { display: flex; flex-direction: column; gap: 8px; }
-/* File tool calls under a reply: what was searched/read, then clickable ~/… paths (docs/file-search-design.md). */
-.file-call { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--ink-2); }
-summary.file-call { cursor: pointer; }
-.file-call-group ul { margin: 4px 0 0 20px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
-.file-ref {
-  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;
-  padding: 0; border: 0; background: none; cursor: pointer;
-  font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; color: var(--accent);
-}
-.file-ref:hover, .file-ref:focus-visible { text-decoration: underline; }
-
+.content { min-width: 0; min-height: 0; }
 .thumbs { display: flex; gap: 8px; flex-wrap: wrap; }
 .thumb { padding: 0; border: 0; background: none; border-radius: 8px; cursor: zoom-in; }
 .thumb img { display: block; width: 72px; height: 72px; object-fit: cover; border-radius: 8px; }
@@ -230,100 +120,95 @@ summary.file-call { cursor: pointer; }
   cursor: pointer;
 }
 .field-thumb button:disabled { opacity: 0.5; cursor: not-allowed; }
+.skeleton { height: 38px; margin: 6px 0; border-radius: 8px; background: linear-gradient(90deg, var(--sunken) 25%, var(--line) 50%, var(--sunken) 75%) 0 0 / 200% 100%; animation: shimmer 1.4s linear infinite; }
+.skeleton:nth-child(2) { width: 82%; }
+.skeleton:nth-child(3) { width: 64%; }
+.skeleton-cards .skeleton { width: auto; height: 96px; margin: 0; border-radius: 12px; }
+.skeleton-grid .skeleton { width: auto; height: 140px; margin: 0; border-radius: 12px; }
 
+/* ---- Chat ---- */
+.chat { flex: 1; min-width: 0; min-height: 0; display: flex; }
+.messages { flex: 1; min-height: 0; overflow-y: auto; padding: 28px 32px 12px; }
+/* min-height lets .chat-empty center vertically (margin: auto 0). */
+.msg-list { display: flex; flex-direction: column; gap: 16px; max-width: 720px; min-height: 100%; margin: 0 auto; }
+.msg-user {
+  align-self: flex-end;
+  max-width: 78%;
+  padding: 9px 14px;
+  border-radius: 16px 16px 4px 16px;
+  background: var(--accent-soft);
+  border: 1px solid var(--acc-line);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+.msg-assistant { display: flex; gap: 12px; align-items: flex-start; }
+.msg-avatar { width: 26px; height: 26px; border-radius: 7px; flex-shrink: 0; margin-top: 1px; }
+.msg-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; font-size: 14.5px; line-height: 1.65; }
+/* File tool calls under a reply: what was searched/read, then clickable ~/… paths (docs/file-search-design.md). */
+.file-call { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--ink-2); }
+summary.file-call { cursor: pointer; }
+.file-call-group ul { margin: 4px 0 0 20px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.file-ref {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;
+  padding: 0; border: 0; background: none; cursor: pointer;
+  font: 12px 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace; color: var(--accent);
+}
+.file-ref:hover, .file-ref:focus-visible { text-decoration: underline; }
+
+/* The card for a proposed change or a question (docs/ui-redesign-design.md: header, rows, footer). */
 .confirm-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px;
-  border: 1px solid var(--border-base);
-  border-left: 3px solid var(--card-accent, var(--primary));
+  border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--surface);
-  box-shadow: var(--shadow-card); /* rgba(var(--gray-10)) turned into a light glow in dark mode */
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
   transition: opacity 0.3s, border-color 0.3s;
 }
-.confirm-card[data-status='confirmed'] { --card-accent: rgb(var(--green-6)); }
-.confirm-card[data-status='cancelled'] { --card-accent: var(--border-base); opacity: 0.7; }
-.confirm-card[data-status='failed'] { --card-accent: rgb(var(--danger-6)); }
-.confirm-title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-.confirm-card[data-status='pending'] .confirm-title .arco-tag { border-color: transparent; background: var(--accent-soft); color: var(--accent); }
-.confirm-row { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; }
-.confirm-value { white-space: pre-wrap; }
+.confirm-card[data-status='pending'] { border-color: var(--acc-line); }
+.confirm-card[data-status='cancelled'] { opacity: 0.7; }
+.confirm-card[data-status='failed'] { border-color: var(--danger); }
+.confirm-title { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); font-weight: 600; font-size: 13.5px; }
+.confirm-icon { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: var(--accent-soft); color: var(--accent); font-size: 14px; }
+.confirm-body { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; font-size: 13.5px; }
+.confirm-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px 12px; align-items: center; }
+.confirm-row > .muted { font-size: 13.5px; }
+.confirm-value { white-space: pre-wrap; font-weight: 500; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--sunken); }
 .ask-question { margin-bottom: 8px; font-weight: 500; }
 
-.sendbox { position: relative; padding: 8px 24px 16px; }
+.sendbox { position: relative; padding: 8px 32px 16px; }
 .sendbox-inner {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  box-sizing: border-box; /* outer edge = the 760px message column */
-  max-width: 760px;
+  gap: 6px;
+  box-sizing: border-box; /* outer edge = the 720px message column */
+  max-width: 720px;
   margin: 0 auto;
-  padding: 10px 10px 8px;
-  border: 1px solid var(--border-base);
-  border-radius: 18px;
-  background: var(--surface);
-  box-shadow: var(--shadow-card);
+  padding: 10px 10px 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
   transition: border-color 0.2s, box-shadow 0.3s var(--ease-out);
 }
-.sendbox-inner:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(var(--primary-6), 0.12), var(--shadow-card); }
+.sendbox-inner:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow); }
 /* The composer frame is the field; the textarea inside stays borderless. */
-.sendbox-inner .arco-textarea { border: 0; background: transparent; box-shadow: none; resize: none; padding: 2px 4px; }
-.sendbox-actions { display: flex; justify-content: space-between; align-items: center; }
-/* Starts at the composer frame's left edge (760px wide, centered in .sendbox's 24px padding). */
-.slash-menu { position: absolute; bottom: 100%; left: max(24px, calc((100% - 760px) / 2)); width: min(480px, calc(100% - 48px)); }
-
-.row-main { flex: 1; min-width: 0; }
-/* Rows inside a Card (components/ui.tsx). Edit/delete in .row-actions show on hover or keyboard focus (U17). */
-.list-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  border-top: 1px solid var(--line);
-  transition: background-color 0.2s, opacity 0.4s var(--ease-out);
+.sendbox-inner .arco-textarea { border: 0 !important; background: transparent !important; box-shadow: none; resize: none; padding: 2px 4px; font-size: 14px; }
+.sendbox-actions { display: flex; align-items: center; gap: 4px; }
+/* Starts at the composer frame's left edge (720px wide, centered in .sendbox's 32px padding). */
+.slash-menu {
+  position: absolute;
+  bottom: calc(100% + 0px);
+  left: max(32px, calc((100% - 720px) / 2));
+  width: min(440px, calc(100% - 64px));
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
 }
-.list-row:first-child { border-top: 0; }
-.list-row:hover { background: var(--hover); }
-/* Completed style; data:changed reloads right away, so a just-ticked task barely shows it (design As built). */
-.list-row.is-done { opacity: 0.45; }
-.list-row.is-done .row-main { text-decoration: line-through; }
-.list-row.is-closed { opacity: 0.55; }
-.row-actions { opacity: 0; transition: opacity 0.15s; }
-.list-row:is(:hover, :focus-within) .row-actions { opacity: 1; }
-/* Note cards (U16): the title button's ::after covers the card, so a click anywhere opens the note;
-   actions and thumbnail buttons sit above it. The outline shows for keyboard focus on the title only. */
-.note-open::after { content: ''; position: absolute; inset: 0; border-radius: 14px; } /* rounded-card */
-.note-card .thumb { position: relative; z-index: 1; } /* .row-actions: absolute z-1 in NotesPage */
-.note-card:has(.note-open:focus-visible) { outline: 2px solid var(--accent); }
-.note-card .note-open:focus-visible { outline: 0; }
-.note-card:is(:hover, :focus-within) .row-actions { opacity: 1; }
-
-/* Arco's button Radio.Group as a segmented control: sunken track, the choice a raised surface pill. */
-/* body-prefixed to outrank Arco's own body[arco-theme='dark'] radio rules. */
-body .arco-radio-group-type-button { padding: 3px; border-radius: 10px; background: var(--sunken); }
-body .arco-radio-group-type-button .arco-radio-button { margin: 0; border-radius: 8px; background: transparent; }
-body .arco-radio-group-type-button .arco-radio-button:not(.arco-radio-disabled):not(.arco-radio-checked):hover { background: transparent; color: var(--ink); }
-body .arco-radio-group-type-button .arco-radio-button.arco-radio-checked:not(.arco-radio-disabled) { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-card); }
-/* Dark surface is barely lighter than sunken, so the checked pill takes the line color there. */
-body[arco-theme='dark'] .arco-radio-group-type-button .arco-radio-button.arco-radio-checked:not(.arco-radio-disabled) { background: var(--line); }
-body .arco-radio-group-type-button .arco-radio-button::before,
-body .arco-radio-group-type-button .arco-radio-button::after { display: none; }
-/* Round checkboxes in list rows (forms keep square ones); Arco fills the checked mask with primary-6 (the accent). */
-.list-row .arco-checkbox-mask { border-radius: 50%; }
-.form-row { display: flex; gap: 12px; }
-.form-row > * { flex: 1; min-width: 0; }
-
-.settings { display: flex; flex-direction: column; gap: 16px; }
-/* SectionCard paints bg-2 (sunken), barely off the canvas; match the app's Card (components/ui.tsx). */
-.settings > section { border-color: var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-card); }
-/* PreferenceRow's control is a fixed 380px and never shrinks; on a narrow window it drops below its label instead of overflowing. */
-.settings .justify-between.gap-24px { flex-wrap: wrap; row-gap: 8px; }
-.settings .justify-between.gap-24px > .flex-1 { min-width: 240px; }
-.link { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; text-align: start; }
-.link:hover { color: rgb(var(--primary-6)); }
-mark { background: rgb(var(--warning-2)); color: inherit; border-radius: 2px; }
 
 /* ---- Motion ----
    CSS only: enter animations run once when an element mounts, so React's keyed reloads don't replay them. */
@@ -333,36 +218,31 @@ mark { background: rgb(var(--warning-2)); color: inherit; border-radius: 2px; }
 @keyframes from-right { from { opacity: 0; transform: translateX(16px) scale(0.98); } }
 @keyframes shimmer { to { background-position: -200% 0; } }
 @keyframes blink { 50% { opacity: 0.2; } }
+@keyframes pa-pop { from { opacity: 0; transform: translateY(6px) scale(0.98); } }
+@keyframes pa-blink { 50% { opacity: 0.25; } }
 
-.page, .chat { animation: rise 0.45s var(--ease-out) both; }
+.chat { animation: rise 0.45s var(--ease-out) both; }
 /* sibling-index() staggers a list without per-row indices; unsupported engines just skip the delay. */
-.list-row, .note-card, .msg-list > * { animation: rise 0.4s var(--ease-out) both; animation-delay: calc(min(sibling-index(), 12) * 25ms); }
+.list-row, .msg-list > * { animation: rise 0.4s var(--ease-out) both; animation-delay: calc(min(sibling-index(), 12) * 25ms); }
 .msg-list > .msg-user { animation: from-right 0.45s var(--ease-spring) both; }
 .confirm-card { animation: pop 0.45s var(--ease-spring) both; }
 /* No fill mode: a filling animation keeps it a backdrop root, which disables the menu's backdrop blur. */
 .slash-menu { animation: pop 0.25s var(--ease-out); transform-origin: bottom left; }
 .arco-btn:not(:disabled):active, .suggestion:active { transform: scale(0.97); }
-.arco-btn { transition-property: all; }
 
-.caret { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); animation: blink 1s ease-in-out infinite; }
+.caret { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: blink 1s ease-in-out infinite; }
 
-.skeleton { height: 38px; margin: 6px 0; border-radius: 8px; background: linear-gradient(90deg, var(--bg-2) 25%, var(--bg-3) 50%, var(--bg-2) 75%) 0 0 / 200% 100%; animation: shimmer 1.4s linear infinite; }
-.skeleton:nth-child(2) { width: 82%; }
-.skeleton:nth-child(3) { width: 64%; }
-.skeleton-cards .skeleton { width: auto; height: 88px; margin: 0; border-radius: 14px; }
-.skeleton-grid .skeleton { width: auto; height: 140px; margin: 0; border-radius: 14px; }
-
-.chat-empty { margin: auto 0; animation: rise 0.6s var(--ease-out) both; }
-.chat-empty h2 { margin: 0 0 6px; font-size: 26px; font-weight: 600; letter-spacing: -0.02em; }
-.chat-empty p { margin: 0 0 16px; color: var(--text-secondary); line-height: 1.6; }
+.chat-empty { margin: auto 0; display: flex; flex-direction: column; gap: 18px; padding: 20px 0; animation: rise 0.6s var(--ease-out) both; }
+.chat-empty h2 { margin: 0 0 6px; font-size: 28px; font-weight: 600; letter-spacing: -0.025em; }
+.chat-empty p { margin: 0; color: var(--ink-2); line-height: 1.6; }
 .suggestion {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 12px 14px;
+  gap: 8px;
+  padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--surface);
+  border-radius: 12px;
+  background: var(--panel);
   color: inherit;
   font: inherit;
   text-align: start;
@@ -371,8 +251,8 @@ mark { background: rgb(var(--warning-2)); color: inherit; border-radius: 2px; }
   animation-delay: calc(sibling-index() * 70ms + 150ms);
   transition: border-color 0.2s, transform 0.2s var(--ease-out), box-shadow 0.2s;
 }
-.suggestion:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: 0 8px 20px -14px rgba(var(--primary-6), 0.6); }
-.suggestion code { font-size: 12px; color: var(--primary); }
+.suggestion:hover { border-color: var(--acc-line); transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+.suggestion code { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; font-weight: 500; color: var(--ink-3); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }

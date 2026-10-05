@@ -3,19 +3,29 @@ import type { ChatCompletionChunk, ChatCompletionFunctionTool, ChatCompletionMes
 import type { AssistantMessage, LlmConfig, ToolCall } from '../shared/types';
 import { errMsg, te, UserError } from './errors';
 import { fromGateway, gatewayBaseURL, toGatewayMessages } from './gateway';
+import { createThinkSplitter } from './think';
 
 export type StreamParams = { messages: ChatCompletionMessageParam[]; tools?: ChatCompletionFunctionTool[]; signal?: AbortSignal };
-/** `textOnly`: the provider takes no images (the gateway, design G8). */
-export type Llm = { stream: (p: StreamParams) => AsyncIterable<ChatCompletionChunk>; textOnly?: boolean };
+/** LM Studio's server ignores the key but the SDK insists on one. */
+export const LOCAL_KEY = 'lm-studio';
+/**
+ * `textOnly`: the provider takes no images (the gateway, design G8). `reasoning`: the provider streams its reasoning, so the
+ * agent shows it (LM Studio; docs/pdf-batch-reasoning-design.md P12).
+ */
+export type Llm = { stream: (p: StreamParams) => AsyncIterable<ChatCompletionChunk>; textOnly?: boolean; reasoning?: boolean };
 
 /**
- * One client for both providers; both speak OpenAI chat completions (design D2). The gateway ignores `tools`, so its
- * requests and replies go through the prompt-based adapter in gateway.ts (G4). `opts.fetch` is Electron's net.fetch or a test stub.
+ * One client for every provider; all speak OpenAI chat completions (design D2). The gateway ignores `tools`, so its
+ * requests and replies go through the prompt-based adapter in gateway.ts (G4). LM Studio takes `tools` and images like Azure,
+ * and shares the gateway's `<host>/v1` base URL. `opts.fetch` is Electron's net.fetch or a test stub.
  */
 export function createLlm(cfg: LlmConfig, apiKey: string, opts: { fetch?: typeof fetch } = {}): Llm {
-  if (!cfg.endpoint || !apiKey || (cfg.provider === 'azure' && (!cfg.model || !cfg.apiVersion)))
+  const local = cfg.provider === 'lmstudio';
+  const key = apiKey || (local ? LOCAL_KEY : '');
+  if (!cfg.endpoint || !key || (cfg.provider === 'azure' && (!cfg.model || !cfg.apiVersion)))
     throw new UserError('llmNotConfigured');
-  const common = { apiKey, maxRetries: 2, timeout: 60_000, fetch: opts.fetch };
+  // A local model may need a minute to load before the first token, and a retry would just load it again.
+  const common = { apiKey: key, maxRetries: local ? 0 : 2, timeout: local ? 300_000 : 60_000, fetch: opts.fetch };
   // A pasted Azure/Foundry "v1" URL (…/openai/v1[/responses]) has no deployment path or api-version: use the plain client
   // on …/openai/v1 with the deployment as `model`; Azure takes the key as api-key (Bearer is also sent by the SDK).
   const v1 = cfg.provider === 'azure' ? /^(.*?\/openai\/v1)(?:\/|$)/i.exec(cfg.endpoint.trim())?.[1] : undefined;
@@ -27,6 +37,7 @@ export function createLlm(cfg: LlmConfig, apiKey: string, opts: { fetch?: typeof
   const gateway = cfg.provider === 'gateway';
   return {
     textOnly: gateway,
+    reasoning: local,
     async *stream({ messages, tools, signal }) {
       const params = gateway
         ? { model: cfg.model, messages: toGatewayMessages(messages, tools), stream: true as const }
@@ -39,7 +50,7 @@ export function createLlm(cfg: LlmConfig, apiKey: string, opts: { fetch?: typeof
   };
 }
 
-/** A gateway's model ids: GET <host>/v1/models with the key as a bearer token (design G2). */
+/** A gateway's or LM Studio's model ids: GET <host>/v1/models with the key as a bearer token (design G2). */
 export async function listModels(endpoint: string, apiKey: string, opts: { fetch?: typeof fetch } = {}): Promise<string[]> {
   if (!endpoint || !apiKey) throw new UserError('modelsNeedConfig');
   const client = new OpenAI({ apiKey, baseURL: gatewayBaseURL(endpoint), maxRetries: 1, timeout: 20_000, fetch: opts.fetch });
@@ -48,23 +59,42 @@ export async function listModels(endpoint: string, apiKey: string, opts: { fetch
   return ids.sort();
 }
 
-/** Accumulates a streamed reply. `partial` keeps the text so far if the stream breaks or is cut off. */
+/**
+ * Accumulates a streamed reply. `partial` keeps the text so far if the stream breaks or is cut off.
+ * `onReasoning` turns reasoning on: it gets `delta.reasoning_content` / `delta.reasoning` and the `<think>` blocks written
+ * inline in the content. None of it enters the reply, so it is never saved or sent back to the model.
+ */
 export async function collect(
   stream: AsyncIterable<ChatCompletionChunk>,
   onText: (delta: string) => void,
-  partial: { content: string } = { content: '' }
+  partial: { content: string } = { content: '' },
+  onReasoning?: (delta: string) => void
 ): Promise<AssistantMessage> {
   const calls: ToolCall[] = [];
   let finish: string | null = null;
+  const split = onReasoning ? createThinkSplitter() : null;
+  const text = (s: string) => {
+    if (!s) return;
+    partial.content += s;
+    onText(s);
+  };
   for await (const c of stream) {
     const choice = c.choices[0]; // Azure sends content-filter chunks with empty `choices`
     if (!choice) continue;
     if (choice.finish_reason) finish = choice.finish_reason.toLowerCase(); // the gateway sends "Stop"
     const delta = choice.delta;
     if (!delta) continue;
+    if (onReasoning) {
+      // LM Studio and DeepSeek-style servers use reasoning_content; some use reasoning.
+      const r = (delta as { reasoning_content?: unknown }).reasoning_content ?? (delta as { reasoning?: unknown }).reasoning;
+      if (typeof r === 'string' && r) onReasoning(r);
+    }
     if (delta.content) {
-      partial.content += delta.content;
-      onText(delta.content);
+      if (split) {
+        const out = split.push(delta.content);
+        if (out.reasoning) onReasoning!(out.reasoning);
+        text(out.text);
+      } else text(delta.content);
     }
     for (const tc of delta.tool_calls ?? []) {
       const i = tc.index ?? Math.max(0, calls.length - 1); // some providers omit index
@@ -73,6 +103,11 @@ export async function collect(
       if (tc.function?.name) acc.function.name = tc.function.name; // assign like the SDK does: some providers repeat it
       if (tc.function?.arguments) acc.function.arguments += tc.function.arguments;
     }
+  }
+  if (split) {
+    const rest = split.flush();
+    if (rest.reasoning) onReasoning!(rest.reasoning);
+    text(rest.text);
   }
   if (finish === 'length' || finish === 'content_filter')
     throw new UserError('llmTruncated');

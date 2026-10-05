@@ -3,7 +3,8 @@ out/
 release/
 *.db
 *.db-*
-docker/certs/*.crt
 
 # corporate root CA for docker builds (machine-specific, see Dockerfile)
 docker/certs/*.crt
+/index.js
+.DS_Store

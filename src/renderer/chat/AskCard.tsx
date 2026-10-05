@@ -1,8 +1,9 @@
-import { Button, Checkbox, Input, Radio, Space, Tag } from '@arco-design/web-react';
-import { Help } from '@icon-park/react';
+import { Button, Checkbox, Input, Radio, Space } from '@arco-design/web-react';
+import { CircleHelp } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AskAnswer, AskQuestion, AskReply, PendingAction } from '../../shared/types';
+import { Chip, ICON } from '../components/ui';
 
 /** One question's draft: ticked options plus the Other row. A question with no options is just its text box. */
 type Draft = { picked: string[]; otherOn: boolean; other: string };
@@ -40,34 +41,37 @@ export function AskCard({ action, onAnswer }: { action: PendingAction; onAnswer:
   const result = action.result as { answers?: AskAnswer[] } | null;
   const tag =
     action.status === 'confirmed'
-      ? { color: 'green', text: t('ask.answered') }
+      ? { tone: 'ok' as const, text: t('ask.answered') }
       : action.status === 'cancelled'
-        ? { color: 'gray', text: t('ask.inChat') }
-        : { color: undefined, text: t('ask.pending') };
+        ? { tone: 'neutral' as const, text: t('ask.inChat') }
+        : { tone: 'accent' as const, text: t('ask.pending') };
 
   return (
     <div className='confirm-card' data-status={action.status}>
       <div className='confirm-title'>
-        <span aria-hidden className='flex text-accent'>
-          <Help />
+        <span aria-hidden className='confirm-icon'>
+          <CircleHelp {...ICON} />
         </span>
-        {t('ask.title')}
-        <Tag color={tag.color}>{tag.text}</Tag>
+        <span className='flex-1 min-w-0 truncate'>{t('ask.title')}</span>
+        <Chip tone={tag.tone}>{tag.text}</Chip>
       </div>
-
-      {!pending &&
-        questions.map((x, i) => {
-          const a = result?.answers?.[i];
-          return (
-            <div key={i}>
-              <div className='muted'>{x.question}</div>
-              {a && <div className='confirm-value'>{[...a.picked, ...(a.other ? [a.other] : [])].join(', ')}</div>}
-            </div>
-          );
-        })}
+      {!pending && (
+        <div className='confirm-body'>
+          {questions.map((x, i) => {
+            const a = result?.answers?.[i];
+            return (
+              <div key={i}>
+                <div className='muted'>{x.question}</div>
+                {a && <div className='confirm-value'>{[...a.picked, ...(a.other ? [a.other] : [])].join(', ')}</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {pending && (
         <>
+          <div className='confirm-body'>
           <div role='group' aria-label={q.question}>
             {questions.length > 1 && <div className='muted'>{t('ask.step', { current: step + 1, total: questions.length })}</div>}
             <div className='ask-question'>{q.question}</div>
@@ -105,7 +109,8 @@ export function AskCard({ action, onAnswer }: { action: PendingAction; onAnswer:
               )}
             </Space>
           </div>
-          <Space>
+          </div>
+          <div className='confirm-actions'>
             {questions.length > 1 && (
               <Button disabled={step === 0 || busy} onClick={() => setStep(step - 1)}>
                 {t('ask.prev')}
@@ -120,8 +125,8 @@ export function AskCard({ action, onAnswer }: { action: PendingAction; onAnswer:
                 {t('ask.next')}
               </Button>
             )}
-          </Space>
-          <div className='muted'>{t('ask.hint')}</div>
+          </div>
+          <div className='muted px-3.5 pb-2.5'>{t('ask.hint')}</div>
         </>
       )}
     </div>

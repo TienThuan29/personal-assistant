@@ -36,7 +36,7 @@ export const reminderTools = [
 
   writeTool({
     name: 'create_reminder',
-    description: 'Create a reminder; the app shows a Windows notification on time. Can be linked to a task.',
+    description: 'Create a reminder; the app shows a system notification on time. Can be linked to a task.',
     schema: z.object({
       message: z.string().min(1),
       remind_at: remindAt,

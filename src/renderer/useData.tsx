@@ -2,6 +2,7 @@ import { Message, Modal } from '@arco-design/web-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api, errorText } from './api';
+import { confirmDanger } from './components/ui';
 
 /**
  * Data page plumbing: runs `read` (after `delay` ms) and again on every data:changed and window focus, keeps only the latest
@@ -60,13 +61,7 @@ export function useData<T>(read: () => Promise<T>, initial: T, delay = 0) {
 
   /** Asks before deleting row `id` with `tool`; `what` names it in the dialog. */
   const remove = (id: number, tool: string, what: string) =>
-    modal.confirm?.({
-      title: t('deleteConfirm'),
-      content: what,
-      okText: t('delete'),
-      okButtonProps: { status: 'danger' },
-      onOk: () => write(id, tool, { ids: [id] }),
-    });
+    confirmDanger(modal, { title: t('deleteConfirm'), content: what, okText: t('delete'), onOk: () => write(id, tool, { ids: [id] }) });
 
   const holders = (
     <>

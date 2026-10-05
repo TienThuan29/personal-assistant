@@ -1,9 +1,11 @@
-import type { ImageInput, SettingsInput, SettingsView } from '../shared/types';
-import { type AgentDeps, answerAction, cancelOpenActions, resolveAction, runTurn } from './agent';
+import type { ImageInput, SettingsInput, SettingsView, UiSettings } from '../shared/types';
+import { type AgentDeps, answerAction, cancelOpenActions, resolveAction } from './agent';
+import { runWithDocuments } from './docrun';
+import { addDocumentMessage, checkDocument } from './documents';
 import { newAttachmentId, saveAttachment } from './attachments';
 import { type Db, tx } from './db';
 import { i18n, setLanguage } from './i18n';
-import { collect, createLlm, describeLlmError, listModels } from './llm';
+import { collect, createLlm, describeLlmError, listModels, LOCAL_KEY } from './llm';
 import { MAX_IMAGES, SAVE_TOOLS, saveRecord } from './save';
 import { activeLlm, type Cipher, getLlm, getUi, parseLlmSettings, readSecrets, saveUi, setSetting, writeSecret } from './settings';
 import {
@@ -33,7 +35,7 @@ export type MainCtx = {
   loginItem: { get: () => boolean; set: (on: boolean) => void };
   /** Registers a handler; args arrive without the Electron event. */
   handle: (channel: string, fn: (...args: any[]) => unknown) => void;
-  /** Electron: nativeImage; server: validate-only. */
+  /** Electron: nativeImage; server: validate-only (the browser already resized). */
   toJpeg: (bytes: unknown) => Buffer;
   /** Electron: net.fetch (Windows cert store, system proxy); server: global fetch. */
   fetch: typeof fetch;
@@ -41,7 +43,10 @@ export type MainCtx = {
   version: string;
   /** False on the server: chat:send rejects `files: true`. */
   fileSearch: boolean;
-  canInstall: () => boolean;
+  /** How the running app can install an update: by itself, by downloading the installer, or not at all (server). */
+  installMode: () => { canInstall: boolean; manualInstall: boolean };
+  /** Electron: nativeTheme.themeSource, so prefers-color-scheme follows the setting; the server has nothing to set. */
+  setTheme: (theme: UiSettings['theme']) => void;
 };
 
 /** Writes the renderer may run directly: a click is the user's own intent (design D7). */
@@ -80,7 +85,7 @@ export function registerIpc(m: MainCtx): void {
   function startTurn(conversationId: number): void {
     running.get(conversationId)?.ctl.abort(); // only if two requests raced past stopTurn
     const ctl = new AbortController();
-    const done = runTurn(deps, conversationId, ctl.signal)
+    const done = runWithDocuments(deps, conversationId, ctl.signal)
       .catch((e) => deps.emit({ type: 'error', conversationId, message: describeLlmError(e) }))
       .finally(() => {
         if (running.get(conversationId)?.ctl === ctl) running.delete(conversationId);
@@ -102,12 +107,14 @@ export function registerIpc(m: MainCtx): void {
 
   m.handle('chat:messages', (convId: unknown) => getMessages(m.db, id(convId)));
   m.handle('chat:actions', (convId: unknown) => listActions(m.db, id(convId)));
-  m.handle('chat:send', async (convId: unknown, text: unknown, images: ImageInput[], files?: unknown) => {
+  m.handle('chat:send', async (convId: unknown, text: unknown, images: ImageInput[], files?: unknown, document?: unknown) => {
     const cid = id(convId);
     if (typeof text !== 'string' || text.length > MAX_TEXT) throw new UserError('invalidMessage');
     if (!Array.isArray(images) || images.length > MAX_IMAGES) throw new UserError('tooManyImages', { max: MAX_IMAGES });
-    if (!text.trim() && !images.length) throw new UserError('emptyMessage');
+    if (document != null && images.length) throw new UserError('pdfWithImages'); // docs/pdf-batch-reasoning-design.md P10
+    if (!text.trim() && !images.length && document == null) throw new UserError('emptyMessage');
     if (files === true && !m.fileSearch) throw new UserError('notAllowed', { name: 'files' });
+    const pdf = document == null ? null : checkDocument(document, m.toJpeg);
     const jpegs = images.map((img) => m.toJpeg(img?.bytes)); // validate everything before saving anything
     const attachmentIds = jpegs.map(() => newAttachmentId());
     await stopTurn(cid);
@@ -115,11 +122,14 @@ export function registerIpc(m: MainCtx): void {
     // (files already written become orphans, swept at startup).
     tx(m.db, () => {
       cancelOpenActions(deps, cid);
-      const messageId = addMessage(m.db, cid, { role: 'user', content: text, attachment_ids: attachmentIds, ...(files === true ? { files: true } : {}) });
-      jpegs.forEach((bytes, i) =>
-        saveAttachment(m.db, m.attachmentsDir, { id: attachmentIds[i], bytes, mime: 'image/jpeg', ownerType: 'message', ownerId: messageId })
-      );
-      setTitleIfNew(m.db, cid, text);
+      if (pdf) addDocumentMessage(m.db, m.attachmentsDir, cid, text.trim(), pdf);
+      else {
+        const messageId = addMessage(m.db, cid, { role: 'user', content: text, attachment_ids: attachmentIds, ...(files === true ? { files: true } : {}) });
+        jpegs.forEach((bytes, i) =>
+          saveAttachment(m.db, m.attachmentsDir, { id: attachmentIds[i], bytes, mime: 'image/jpeg', ownerType: 'message', ownerId: messageId })
+        );
+      }
+      setTitleIfNew(m.db, cid, text || pdf?.name || '');
     });
     startTurn(cid);
   });
@@ -181,7 +191,7 @@ export function registerIpc(m: MainCtx): void {
     }
     return {
       llm: getLlm(m.db),
-      hasKey: { azure: !!secrets.azure, gateway: !!secrets.gateway },
+      hasKey: { azure: !!secrets.azure, gateway: !!secrets.gateway, lmstudio: !!secrets.lmstudio },
       openAtLogin: m.loginItem.get(),
       ui,
       version: m.version,
@@ -195,21 +205,22 @@ export function registerIpc(m: MainCtx): void {
     if (key) writeSecret(m.secretsFile, m.cipher, llm.active, key);
   });
   m.handle('settings:listModels', async (provider: unknown) => {
-    if (provider !== 'gateway') throw new UserError('invalidValue'); // only a gateway lists its models (design G2)
-    const key = readSecrets(m.secretsFile, m.cipher).gateway ?? '';
-    return listModels(getLlm(m.db).gateway.endpoint, key, { fetch: m.fetch }).catch((e: unknown) => {
+    if (provider !== 'gateway' && provider !== 'lmstudio') throw new UserError('invalidValue'); // Azure has deployments, not a list (design G2)
+    const key = readSecrets(m.secretsFile, m.cipher)[provider] || (provider === 'lmstudio' ? LOCAL_KEY : '');
+    return listModels(getLlm(m.db)[provider].endpoint, key, { fetch: m.fetch }).catch((e: unknown) => {
       throw e instanceof UserError ? e : new Error(te('modelsFailed', { error: describeLlmError(e) }));
     });
   });
   m.handle('settings:setUi', (patch: unknown) => {
     const ui = saveUi(m.db, patch);
     setLanguage(ui.language);
+    m.setTheme(ui.theme);
     m.send('ui:changed', ui);
     return ui;
   });
   m.handle('update:check', async (manual: unknown) => ({
     ...(await checkForUpdate(m.db, { fetch: m.fetch, version: m.version, now: Date.now(), manual: manual === true })),
-    canInstall: m.canInstall(),
+    ...m.installMode(),
   }));
   m.handle('update:skip', (version: unknown) => skipVersion(m.db, version));
   m.handle('settings:test', async () => {

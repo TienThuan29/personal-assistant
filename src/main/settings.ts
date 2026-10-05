@@ -27,13 +27,15 @@ const model = z
 
 /**
  * Not an LLM tool schema, so it never goes through toJSONSchema. Both providers are validated (a key-looking model is refused
- * anywhere), but only the active one must be complete: Azure needs a deployment and api-version; a gateway may pick the model itself.
+ * anywhere), but only the active one must be complete: Azure needs a deployment and api-version; a gateway or LM Studio may pick the model itself.
  */
 export const llmSettingsSchema = z
   .object({
-    active: z.enum(['azure', 'gateway'], { error: 'errors:invalidValue' }),
+    active: z.enum(['azure', 'gateway', 'lmstudio'], { error: 'errors:invalidValue' }),
     azure: z.object({ endpoint, model, apiVersion: z.string().trim() }),
     gateway: z.object({ endpoint, model }),
+    // Absent from an older renderer's payload: fall back to the default local address.
+    lmstudio: z.object({ endpoint, model }).default(DEFAULT_LLM.lmstudio),
   })
   // `when`: also check when another field is invalid, so every error shows at once.
   .refine((s) => typeof s?.[s?.active]?.endpoint !== 'string' || !!s[s.active].endpoint.trim(), {
@@ -57,7 +59,7 @@ export function parseLlmSettings(v: unknown): LlmSettings {
   if (r.success) return r.data;
   const active = (v as { active?: unknown } | null)?.active;
   const text = ({ path: [p], message }: (typeof r.error.issues)[number]) =>
-    (p === 'azure' || p === 'gateway') && p !== active ? `${PROVIDER_NAMES[p]}: ${tr(message)}` : tr(message);
+    typeof p === 'string' && p in PROVIDER_NAMES && p !== active ? `${PROVIDER_NAMES[p as Provider]}: ${tr(message)}` : tr(message);
   throw new Error([...new Set(r.error.issues.map(text))].join('; '));
 }
 
@@ -74,9 +76,10 @@ export function getLlm(db: Db): LlmSettings {
     return { ...DEFAULT_LLM, active, [active]: active === 'azure' ? { endpoint, model, apiVersion } : { endpoint, model } };
   }
   return {
-    active: s.active === 'azure' ? 'azure' : 'gateway',
+    active: s.active === 'azure' || s.active === 'lmstudio' ? s.active : 'gateway',
     azure: { ...DEFAULT_LLM.azure, ...s.azure },
     gateway: { ...DEFAULT_LLM.gateway, ...s.gateway },
+    lmstudio: { ...DEFAULT_LLM.lmstudio, ...s.lmstudio },
   };
 }
 
@@ -97,6 +100,8 @@ export const uiSettingsSchema = z.object({
     .toLowerCase()
     .regex(/^#[0-9a-f]{6}$/, 'errors:invalidValue'),
   checkUpdates: z.boolean({ error: 'errors:invalidValue' }),
+  theme: z.enum(['system', 'light', 'dark'], { error: 'errors:invalidValue' }),
+  welcomed: z.boolean({ error: 'errors:invalidValue' }),
 });
 
 /** Stored values over the defaults; a row that fails validation (hand-edited, corrupt) reads as the defaults. */

@@ -54,8 +54,24 @@ export type ConversationRow = { id: number; title: string; updated_at: string };
 export const DEFAULT_CONVERSATION_TITLE = 'Hội thoại mới';
 
 export type ToolCall = { id: string; type: 'function'; function: { name: string; arguments: string } };
-/** `files`: the user turned on file search for this message (docs/file-search-design.md). */
-export type UserMessage = { role: 'user'; content: string; attachment_ids?: string[]; files?: true };
+/** A PDF sent with a message: `pages` are attachment ids in page order (docs/pdf-batch-reasoning-design.md). */
+export type PdfDoc = { name: string; pages: string[] };
+/** An internal message carrying one batch of a PDF's pages (1-based, inclusive). Hidden in the chat, sent to the model. */
+export type BatchInfo = { name: string; part: number; parts: number; from: number; to: number; total: number };
+/**
+ * `files`: the user turned on file search for this message (docs/file-search-design.md).
+ * `document`: the message came with a PDF. `batch` / `final` mark the internal messages of its batch run: the pages of one
+ * batch (in `attachment_ids`), and the request to combine the notes.
+ */
+export type UserMessage = {
+  role: 'user';
+  content: string;
+  attachment_ids?: string[];
+  files?: true;
+  document?: PdfDoc;
+  batch?: BatchInfo;
+  final?: true;
+};
 export type AssistantMessage = { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] };
 export type ToolMessage = { role: 'tool'; tool_call_id: string; content: string };
 export type StoredMessage = UserMessage | AssistantMessage | ToolMessage;
@@ -85,16 +101,21 @@ export type AskAnswer = AskReply & { question: string };
 /** The read-only file tools (src/main/tools/files.ts); the chat lists what each call searched or read. */
 export const FILE_TOOL_NAMES = ['find_files', 'grep_files', 'read_file'];
 
+/** Where a PDF run is: batch `part` of `parts` (pages `from`–`to` of `total`), or the final step that combines the notes. */
+export type PdfProgress = { phase: 'batch' | 'final'; part: number; parts: number; from: number; to: number; total: number };
+
 export type AgentEvent = { conversationId: number } & (
   | { type: 'text'; delta: string }
   | { type: 'tool'; name: string }
+  | { type: 'reasoning'; delta: string }
+  | ({ type: 'progress' } & PdfProgress)
   | { type: 'saved' }
   | { type: 'pending' }
   | { type: 'done' }
   | { type: 'error'; message: string }
 );
 
-export type Provider = 'azure' | 'gateway';
+export type Provider = 'azure' | 'gateway' | 'lmstudio';
 /** One provider's connection, resolved from LlmSettings for createLlm. A gateway's apiVersion is ''. */
 export type LlmConfig = { provider: Provider; endpoint: string; model: string; apiVersion: string };
 /** Stored under the settings key 'llm': one config per provider, so switching never overwrites the other (design G1). */
@@ -102,32 +123,56 @@ export type LlmSettings = {
   active: Provider;
   azure: { endpoint: string; model: string; apiVersion: string };
   gateway: { endpoint: string; model: string };
+  /** LM Studio's local server: needs no key, and the model may be left empty to use the one loaded. */
+  lmstudio: { endpoint: string; model: string };
 };
 /** Product names, the same in every language. */
-export const PROVIDER_NAMES: Record<Provider, string> = { azure: 'Azure AI Foundry', gateway: 'LLM gateway' };
+export const PROVIDER_NAMES: Record<Provider, string> = { azure: 'Azure AI Foundry', gateway: 'LLM gateway', lmstudio: 'LM Studio' };
 export const DEFAULT_LLM: LlmSettings = {
   active: 'gateway',
   azure: { endpoint: '', model: '', apiVersion: '2024-10-21' },
   gateway: { endpoint: '', model: '' },
+  lmstudio: { endpoint: 'http://localhost:1234', model: '' },
 };
 
 /**
  * Display preferences, stored under the settings key 'ui'. `moneyStyle` 'vi' is "55.000 ₫", 'intl' is "₫55,000".
- * `accent` is the app colour as lowercase `#rrggbb` (docs/accent-color-design.md).
+ * `accent` is the app colour as lowercase `#rrggbb` (docs/accent-color-design.md, docs/ui-redesign-design.md).
+ * `theme` 'system' follows the OS until the user picks one. `welcomed`: the setup guide has been finished or skipped.
  */
-export type UiSettings = { language: Lang; moneyStyle: 'vi' | 'intl'; defaultCurrency: string; accent: string; checkUpdates: boolean };
-export const DEFAULT_UI: UiSettings = { language: 'vi', moneyStyle: 'vi', defaultCurrency: 'VND', accent: '#ab502d', checkUpdates: true };
+export type Theme = 'system' | 'light' | 'dark';
+export type UiSettings = {
+  language: Lang;
+  moneyStyle: 'vi' | 'intl';
+  defaultCurrency: string;
+  accent: string;
+  checkUpdates: boolean;
+  theme: Theme;
+  welcomed: boolean;
+};
+export const DEFAULT_UI: UiSettings = {
+  language: 'vi',
+  moneyStyle: 'vi',
+  defaultCurrency: 'VND',
+  accent: '#00709d', // the "ocean" preset (renderer/accent.ts PRESETS[0]; a test keeps them equal)
+  checkUpdates: true,
+  theme: 'system',
+  welcomed: false,
+};
 
 export type SettingsView = { llm: LlmSettings; hasKey: Record<Provider, boolean>; openAtLogin: boolean; ui: UiSettings; version: string };
 /**
  * `latest` is the newer version to announce (null: none); `url` is the page to open for it; `canInstall` says whether this
  * build can download and install it itself (Windows installer, Linux AppImage) or only send the user to `url`.
+ * `manualInstall` is the macOS / Windows portable case: the app downloads the file and opens it, the user finishes the install.
  */
-export type UpdateStatus = { current: string; latest: string | null; url: string | null; canInstall: boolean };
+export type UpdateStatus = { current: string; latest: string | null; url: string | null; canInstall: boolean; manualInstall: boolean };
 /** `apiKey` is for the active provider. */
 export type SettingsInput = { llm: LlmSettings; apiKey?: string };
 
 export type ImageInput = { name: string; bytes: Uint8Array };
+/** A PDF already rendered to one JPEG per page by the renderer. */
+export type PdfInput = { name: string; pages: ImageInput[] };
 export type Page = 'chat' | 'today' | 'tasks' | 'notes' | 'expenses' | 'reminders' | 'settings';
 
 export type Api = {
@@ -140,8 +185,8 @@ export type Api = {
   chat: {
     messages(id: number): Promise<ChatMessage[]>;
     actions(id: number): Promise<PendingAction[]>;
-    /** `files`: let the assistant search and read files under ~ for this message only. */
-    send(id: number, text: string, images: ImageInput[], files?: boolean): Promise<void>;
+    /** `files`: let the assistant search and read files under ~ for this message only. `document`: a PDF, instead of `images`. */
+    send(id: number, text: string, images: ImageInput[], files?: boolean, document?: PdfInput): Promise<void>;
     /** Whether a turn is running, for a chat opened mid-turn. */
     running(id: number): Promise<boolean>;
     stop(id: number): Promise<void>;
@@ -172,6 +217,10 @@ export type Api = {
     setOpenAtLogin(on: boolean): Promise<boolean>;
     /** Validates, saves and broadcasts `ui:changed`; resolves to the settings now in effect. */
     setUi(patch: Partial<UiSettings>): Promise<UiSettings>;
+    /** Where the app keeps its data (the database, attachments, backups). */
+    dataPath(): Promise<string>;
+    /** Opens that folder in Finder / Explorer / the file manager. */
+    revealData(): Promise<void>;
   };
   update: {
     /** `manual` (the Settings button) always asks GitHub and throws on failure; automatic is silent and at most daily. */
@@ -183,6 +232,8 @@ export type Api = {
     /** Download progress 0–100 while `install` runs. */
     onProgress(cb: (percent: number) => void): () => void;
   };
+  /** `process.platform` of the main process: 'darwin' draws the native traffic lights, so the app's own buttons are hidden. */
+  platform: string;
   win: {
     minimize(): Promise<void>;
     toggleMaximize(): Promise<void>;

@@ -6,17 +6,20 @@ import { pathToFileURL } from 'node:url';
 import type { ReminderRow } from '../shared/types';
 import { attachmentFile } from './attachments';
 import { openData } from './bootstrap';
-import { appIcon } from './icon';
+import { appMenuTemplate, chromeOptions } from './chrome';
+import { appIcon, trayIcon } from './icon';
 import { i18n } from './i18n';
 import { type MainCtx, registerIpc } from './ipc';
-import { desktopCanInstall, registerDesktopIpc, toJpeg } from './ipc-desktop';
+import { desktopInstallMode, registerDesktopIpc, setTheme, toJpeg } from './ipc-desktop';
 import { createScheduler } from './reminders';
 import { createCipher } from './cipher';
+import { getUi } from './settings';
 import { errMsg, te } from './errors';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'att', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
-const startHidden = process.argv.includes('--hidden');
+/** Started by the login item: Windows/Linux pass --hidden; macOS ignores login-item args but reports it. */
+const startedHidden = (): boolean => process.argv.includes('--hidden') || (process.platform === 'darwin' && app.getLoginItemSettings().wasOpenedAtLogin);
 let win: BrowserWindow | undefined;
 let tray: Tray | undefined; // module scope keeps the tray from being garbage-collected
 let quitting = false;
@@ -49,8 +52,8 @@ function createWindow(): BrowserWindow {
     height: 800,
     minWidth: 800,
     minHeight: 560,
-    frame: false,
-    show: !startHidden,
+    ...chromeOptions(process.platform),
+    show: !startedHidden(),
     icon: appIcon,
     webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: true },
   });
@@ -102,7 +105,7 @@ function notify(rows: ReminderRow[]): void {
 }
 
 async function createTray(): Promise<Tray> {
-  const t = new Tray(appIcon);
+  const t = new Tray(trayIcon);
   const menu = () =>
     Menu.buildFromTemplate([
       { label: i18n.t('system:open'), click: showWindow },
@@ -121,9 +124,13 @@ async function createTray(): Promise<Tray> {
 
 async function start(): Promise<void> {
   app.setAppUserModelId(app.isPackaged ? 'com.personal-assistant.app' : process.execPath);
-  if (app.isPackaged) Menu.setApplicationMenu(null); // no DevTools/reload shortcuts
+  if (app.isPackaged) {
+    const template = appMenuTemplate(process.platform);
+    Menu.setApplicationMenu(template && Menu.buildFromTemplate(template)); // null: no DevTools/reload shortcuts
+  }
   const dataDir = app.getPath('userData');
   const { db, ro, attachmentsDir } = openData(dataDir, new Date());
+  nativeTheme.themeSource = getUi(db).theme; // the renderer's prefers-color-scheme follows it, so one setting drives both
 
   protocol.handle('att', (req) => {
     const f = attachmentFile(db, attachmentsDir, new URL(req.url).hostname);
@@ -156,7 +163,8 @@ async function start(): Promise<void> {
     home: app.getPath('home'),
     version: app.getVersion(),
     fileSearch: true,
-    canInstall: desktopCanInstall,
+    installMode: desktopInstallMode,
+    setTheme,
   };
   registerIpc(ctx);
   registerDesktopIpc(ctx);
@@ -219,6 +227,7 @@ void acquireLock().then((locked) => {
     quitting = true; // dev: step aside for the newer launch
     app.quit();
   });
+  app.on('activate', showWindow); // macOS: Dock icon click brings back the window the close button hid
   app.on('before-quit', () => {
     quitting = true;
   });

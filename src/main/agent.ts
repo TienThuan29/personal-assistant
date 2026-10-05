@@ -9,6 +9,7 @@ import { findTool, parseArgs, TOOLS, toOpenAITools, type ToolCtx } from './tools
 import { ASK_LIMITS } from './tools/ask';
 import { FILE_TOOLS, fileError, findFileTool } from './tools/files';
 import { errMsg, te, UserError } from './errors';
+import { documentLabel, runStart } from './documents';
 import { BAD_BLOCK } from './gateway';
 
 export const MAX_ROUNDS = 8;
@@ -36,6 +37,9 @@ export function buildLlmMessages(deps: AgentDeps, conversationId: number, textOn
   const all = getMessages(deps.db, conversationId);
   let start = Math.max(0, all.length - HISTORY);
   while (start > 0 && all[start].role !== 'user') start--;
+  // The notes of every batch of a PDF run must stay in view, so the window reaches back to the PDF message.
+  const run = runStart(all);
+  if (run >= 0) start = Math.min(start, run);
   const recent = all.slice(start);
   const lastUser = recent.map((m) => m.role).lastIndexOf('user');
   return [
@@ -91,8 +95,9 @@ function toLlm(deps: AgentDeps, m: ChatMessage, withImages: boolean, textOnly: b
   if (m.role === 'assistant') return { role: 'assistant', content: m.content, ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}) };
   if (m.role === 'tool') return { role: 'tool', tool_call_id: m.tool_call_id, content: m.content };
   const ids = m.attachment_ids ?? [];
-  const labels = ids.map((id) => `[ảnh #${id}]`).join(' ') + (textOnly && ids.length ? ' (this model cannot see images, only the labels)' : '');
-  const text = [m.content, labels].filter(Boolean).join('\n');
+  // A PDF's pages are described by its message and the batch messages, never labelled one by one.
+  const labels = m.batch ? '' : ids.map((id) => `[ảnh #${id}]`).join(' ') + (textOnly && ids.length ? ' (this model cannot see images, only the labels)' : '');
+  const text = m.document ? documentLabel({ content: m.content, document: m.document }, textOnly) : [m.content, labels].filter(Boolean).join('\n');
   const images: ChatCompletionContentPartImage[] = withImages
     ? ids.flatMap((id) => {
         const url = dataUrl(deps.db, deps.attachmentsDir, id);
@@ -102,21 +107,31 @@ function toLlm(deps: AgentDeps, m: ChatMessage, withImages: boolean, textOnly: b
   return images.length ? { role: 'user', content: [{ type: 'text', text }, ...images] } : { role: 'user', content: text };
 }
 
+/** `tools: false` runs a turn that may only answer in text: the batch steps of a PDF run, where a tool proposal would stop the run. */
+export type TurnOptions = { tools?: boolean };
+
 /** One user turn: stream, run read tools, loop. Returns early when write tools are parked for confirmation. */
-export async function runTurn(deps: AgentDeps, conversationId: number, signal?: AbortSignal): Promise<void> {
+export async function runTurn(deps: AgentDeps, conversationId: number, signal?: AbortSignal, opts: TurnOptions = {}): Promise<void> {
   if (listActions(deps.db, conversationId, 'pending').length) {
     deps.emit({ type: 'pending', conversationId }); // unanswered tool calls would make the API reject the request
     return;
   }
-  const files = filesOn(deps, conversationId);
-  const tools = toOpenAITools(files ? [...TOOLS, ...FILE_TOOLS] : TOOLS);
+  const noTools = opts.tools === false;
+  const files = !noTools && filesOn(deps, conversationId);
+  const tools = noTools ? [] : toOpenAITools(files ? [...TOOLS, ...FILE_TOOLS] : TOOLS);
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const partial = { content: '' };
     let reply: AssistantMessage;
     try {
       const llm = deps.llm();
       const stream = llm.stream({ messages: buildLlmMessages(deps, conversationId, llm.textOnly, files), tools, signal });
-      reply = await collect(stream, (delta) => deps.emit({ type: 'text', conversationId, delta }), partial);
+      reply = await collect(
+        stream,
+        (delta) => deps.emit({ type: 'text', conversationId, delta }),
+        partial,
+        llm.reasoning ? (delta) => deps.emit({ type: 'reasoning', conversationId, delta }) : undefined
+      );
+      if (noTools && reply.tool_calls) reply = { role: 'assistant', content: reply.content }; // tools were not offered: ignore a made-up call
     } catch (e) {
       if (partial.content) addMessage(deps.db, conversationId, { role: 'assistant', content: `${partial.content}\n\n_${te('interrupted')}_` });
       deps.emit(signal?.aborted ? { type: 'done', conversationId } : { type: 'error', conversationId, message: describeLlmError(e) });

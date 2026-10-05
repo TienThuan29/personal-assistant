@@ -63,6 +63,40 @@ describe('collect', () => {
     expect(await collect(empty(), () => {})).toEqual({ role: 'assistant', content: null });
   });
 
+  async function* stream(...deltas: object[]) {
+    for (const d of deltas) yield chunk(d);
+  }
+
+  it('streams reasoning_content or reasoning apart from the answer, and never puts it in the reply', async () => {
+    for (const field of ['reasoning_content', 'reasoning']) {
+      const texts: string[] = [];
+      const thoughts: string[] = [];
+      const partial = { content: '' };
+      const msg = await collect(
+        stream({ [field]: 'Để mình ' }, { [field]: 'nghĩ…' }, { content: 'Xin ' }, { content: 'chào' }),
+        (d) => texts.push(d),
+        partial,
+        (d) => thoughts.push(d)
+      );
+      expect(thoughts.join('')).toBe('Để mình nghĩ…');
+      expect(texts.join('')).toBe('Xin chào');
+      expect(msg.content).toBe('Xin chào');
+      expect(partial.content).toBe('Xin chào');
+    }
+  });
+
+  it('splits <think> blocks written inline in the content, even when a tag is cut between chunks', async () => {
+    const thoughts: string[] = [];
+    const msg = await collect(stream({ content: '<thi' }, { content: 'nk>so sánh</th' }, { content: 'ink>\n\nĐáp án là 4' }), () => {}, undefined, (d) => thoughts.push(d));
+    expect(thoughts.join('')).toBe('so sánh');
+    expect(msg.content).toBe('Đáp án là 4');
+  });
+
+  it('leaves reasoning fields and think tags alone when reasoning is not turned on', async () => {
+    const msg = await collect(stream({ reasoning_content: 'x' }, { content: '<think>y</think>z' }), () => {});
+    expect(msg.content).toBe('<think>y</think>z');
+  });
+
   it('keeps partial text when the stream breaks', async () => {
     const partial = { content: '' };
     async function* broken() {
@@ -151,6 +185,33 @@ describe('createLlm', () => {
     const { f, seen } = stubFetch([sse('ok'), DONE]);
     const msg = await collect(createLlm({ ...gateway, model: '' }, 'tok', { fetch: f }).stream({ messages: [] }), () => {});
     expect(msg.content).toBe('ok');
+    expect(JSON.parse(seen[0].body)).not.toHaveProperty('model');
+  });
+
+  it('LM Studio needs no key, sends tools like Azure does, and does not retry', async () => {
+    const lm: LlmConfig = { provider: 'lmstudio', endpoint: 'http://localhost:1234', model: 'qwen2.5-7b-instruct', apiVersion: '' };
+    const { f, seen } = stubFetch([sse('xin chào'), DONE]);
+    const tools = [{ type: 'function' as const, function: { name: 'list_tasks', parameters: { type: 'object', properties: {} } } }];
+    const llm = createLlm(lm, '', { fetch: f });
+    expect(llm.textOnly).toBe(false);
+    expect(llm.reasoning).toBe(true); // LM Studio streams its reasoning
+    expect(createLlm(gateway, 'tok').reasoning).toBeFalsy();
+    expect(createLlm({ provider: 'azure', endpoint: 'https://r.openai.azure.com', model: 'm', apiVersion: 'v' }, 'k').reasoning).toBeFalsy();
+    const msg = await collect(llm.stream({ messages: [{ role: 'user', content: 'hi' }], tools }), () => {});
+    expect(msg.content).toBe('xin chào');
+    expect(seen[0].url).toBe('http://localhost:1234/v1/chat/completions');
+    expect(seen[0].headers.get('authorization')).toBe('Bearer lm-studio');
+    const body = JSON.parse(seen[0].body);
+    expect(body.model).toBe('qwen2.5-7b-instruct');
+    expect(body.tools).toHaveLength(1); // native tool calling: no prompt adapter
+    expect(() => createLlm({ ...lm, endpoint: '' }, '')).toThrow(/Cài đặt/);
+  });
+
+  it('LM Studio without a model omits the field so the loaded model answers', async () => {
+    const { f, seen } = stubFetch([sse('ok'), DONE]);
+    const lm: LlmConfig = { provider: 'lmstudio', endpoint: 'http://localhost:1234/v1', model: '', apiVersion: '' };
+    await collect(createLlm(lm, '', { fetch: f }).stream({ messages: [] }), () => {});
+    expect(seen[0].url).toBe('http://localhost:1234/v1/chat/completions');
     expect(JSON.parse(seen[0].body)).not.toHaveProperty('model');
   });
 

@@ -1,9 +1,12 @@
-import { app, nativeImage, shell } from 'electron';
+import { app, nativeImage, nativeTheme, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { UserError } from './errors';
+import { downloadInstaller, installerName } from './installer';
 import type { MainCtx } from './ipc';
 import { canSelfUpdate, installUpdate, type Updater } from './selfupdate';
 import { revealTarget } from './tools/files';
+import { checkForUpdate } from './update';
+import type { UiSettings } from '../shared/types';
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_SIDE = 1568;
@@ -19,9 +22,20 @@ export function toJpeg(bytes: unknown): Buffer {
   return img.toJPEG(85);
 }
 
-export const desktopCanInstall = (): boolean => canSelfUpdate({ packaged: app.isPackaged, platform: process.platform, env: process.env });
+const autoInstall = () => canSelfUpdate({ packaged: app.isPackaged, platform: process.platform, env: process.env });
+// macOS and the Windows portable exe cannot replace themselves: download the file and open it instead (installer.ts)
+const manualFile = () => (app.isPackaged ? installerName({ platform: process.platform, arch: process.arch, env: process.env }) : undefined);
 
-/** Handlers that need Electron (Explorer, login item, self-update); the server never registers these. */
+export const desktopInstallMode = (): { canInstall: boolean; manualInstall: boolean } => ({
+  canInstall: autoInstall() || !!manualFile(),
+  manualInstall: !autoInstall() && !!manualFile(),
+});
+
+export const setTheme = (theme: UiSettings['theme']): void => {
+  nativeTheme.themeSource = theme;
+};
+
+/** Handlers that need Electron (Explorer, login item, self-update, data folder); the server never registers these. */
 export function registerDesktopIpc(m: MainCtx): void {
   // Shows a file the assistant found in Explorer/Finder/the file manager, selected. Never opens or runs it.
   m.handle('files:reveal', async (path: unknown) => {
@@ -33,8 +47,27 @@ export function registerDesktopIpc(m: MainCtx): void {
     m.loginItem.set(on);
     return m.loginItem.get();
   });
-  m.handle('update:install', () => {
-    if (!m.canInstall()) throw new UserError('installFailed');
-    return installUpdate(autoUpdater as unknown as Updater, (percent) => m.send('update:progress', percent));
+  m.handle('settings:dataPath', () => app.getPath('userData'));
+  m.handle('settings:revealData', async () => {
+    const error = await shell.openPath(app.getPath('userData'));
+    if (error) throw new Error(error);
+  });
+  m.handle('update:install', async () => {
+    if (autoInstall()) return installUpdate(autoUpdater as unknown as Updater, (percent) => m.send('update:progress', percent));
+    const name = manualFile();
+    if (!name) throw new UserError('installFailed');
+    const { latest } = await checkForUpdate(m.db, { fetch: m.fetch, version: m.version, now: Date.now(), manual: true }).catch(() => ({ latest: null }));
+    if (!latest) throw new UserError('installFailed');
+    await downloadInstaller(latest, name, {
+      fetch: m.fetch,
+      dir: app.getPath('downloads'),
+      progress: (percent) => m.send('update:progress', percent),
+      open: async (file) => {
+        if (process.platform === 'darwin') {
+          await shell.openPath(file); // mounts the .dmg; the running app cannot be replaced, so quit and let the user drag it over
+          app.quit();
+        } else shell.showItemInFolder(file);
+      },
+    });
   });
 }
