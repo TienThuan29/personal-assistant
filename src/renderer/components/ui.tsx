@@ -1,5 +1,8 @@
+import { Button, type ButtonProps, Modal, Tooltip, type TooltipProps } from '@arco-design/web-react';
+import { Delete, Edit } from '@icon-park/react';
 import type { Namespace, TFunction } from 'i18next';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { parseLocalDate, relativeDay, toLocalDate } from '../../shared/dates';
 
 /** Day group title: today / tomorrow / yesterday, else "weekday, d/m" ("/yyyy" outside the current year). */
@@ -95,4 +98,49 @@ export function StatCard({ icon, value, label, tone }: { icon: ReactNode; value:
       </div>
     </Card>
   );
+}
+
+/**
+ * Icon-only button: always an `aria-label` and the same Tooltip with it (`tip` when the tooltip should be shorter than
+ * the label, e.g. "Edit" for "Edit task: Buy milk"). Use instead of a bare icon Button or a native `title`.
+ */
+export function IconButton({ label, tip, position, ...props }: ButtonProps & { label: string; tip?: string; position?: TooltipProps['position'] }) {
+  return (
+    <Tooltip content={tip ?? label} position={position}>
+      <Button aria-label={label} {...props} />
+    </Tooltip>
+  );
+}
+
+/** Edit and delete icon buttons at the end of a list row; `onEdit` is left out where a row can only be deleted. */
+export function RowActions({
+  editLabel,
+  deleteLabel,
+  onEdit,
+  onDelete,
+  disabled,
+  className = '',
+}: {
+  editLabel?: string;
+  deleteLabel: string;
+  onEdit?: () => void;
+  onDelete: () => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className={`row-actions flex ${className}`}>
+      {onEdit && <IconButton size='mini' type='text' icon={<Edit />} label={editLabel ?? t('edit')} tip={t('edit')} disabled={disabled} onClick={onEdit} />}
+      <IconButton size='mini' type='text' status='danger' icon={<Delete />} label={deleteLabel} tip={t('delete')} disabled={disabled} onClick={onDelete} />
+    </div>
+  );
+}
+
+type ModalApi = ReturnType<typeof Modal.useModal>[0];
+type ConfirmConfig = Parameters<NonNullable<ModalApi['confirm']>>[0];
+
+/** Every destructive confirmation goes through here: a specific OK label and the danger style, so none says a bare "OK". */
+export function confirmDanger(modal: ModalApi, o: Pick<ConfirmConfig, 'title' | 'content' | 'onOk'> & { okText: string }) {
+  return modal.confirm?.({ ...o, okButtonProps: { status: 'danger' } });
 }

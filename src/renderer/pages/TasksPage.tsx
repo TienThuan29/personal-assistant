@@ -1,12 +1,12 @@
 import { Button, Checkbox, Radio } from '@arco-design/web-react';
-import { CheckOne, Delete, Edit, Plus, Refresh } from '@icon-park/react';
+import { CheckOne, Plus, Refresh } from '@icon-park/react';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { parseLocalDate, recurrenceText, toLocalDate } from '../../shared/dates';
 import type { TaskRow } from '../../shared/types';
 import { api } from '../api';
 import { Thumbs } from '../components/Thumbs';
-import { Card, Chip, EmptyState, PageToolbar } from '../components/ui';
+import { Card, Chip, EmptyState, PageToolbar, RowActions } from '../components/ui';
 import { Skeleton, useData } from '../useData';
 import { TaskForm } from './TaskForm';
 
@@ -100,25 +100,7 @@ export function TasksPage() {
                       {task.notes && <div className='text-ink-2 text-[13px] line-clamp-2'>{task.notes}</div>}
                       <Thumbs ids={task.attachment_ids} />
                     </div>
-                    <div className='row-actions flex'>
-                      <Button
-                        size='mini'
-                        type='text'
-                        icon={<Edit />}
-                        aria-label={t('editTaskLabel', { what: task.title })}
-                        disabled={isBusy}
-                        onClick={() => setEditing(task)}
-                      />
-                      <Button
-                        size='mini'
-                        type='text'
-                        status='danger'
-                        icon={<Delete />}
-                        aria-label={t('deleteTask', { what: task.title })}
-                        disabled={isBusy}
-                        onClick={() => remove(task.id, 'delete_tasks', task.title)}
-                      />
-                    </div>
+                    <RowActions editLabel={t('editTaskLabel', { what: task.title })} deleteLabel={t('deleteTask', { what: task.title })} disabled={isBusy} onEdit={() => setEditing(task)} onDelete={() => remove(task.id, 'delete_tasks', task.title)} />
                   </div>
                 );
               })}

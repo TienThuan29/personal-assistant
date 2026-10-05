@@ -1,11 +1,11 @@
 import { Button, Radio } from '@arco-design/web-react';
-import { Delete, Edit, Plus, Remind } from '@icon-park/react';
+import { Plus, Remind } from '@icon-park/react';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { addDays, toLocalDate, toLocalTime } from '../../shared/dates';
 import type { ReminderRow } from '../../shared/types';
 import { api } from '../api';
-import { Card, Chip, dayTitle, EmptyState, PageToolbar } from '../components/ui';
+import { Card, Chip, dayTitle, EmptyState, PageToolbar, RowActions } from '../components/ui';
 import { Skeleton, useData } from '../useData';
 import { ReminderForm } from './ReminderForm';
 
@@ -78,25 +78,7 @@ export function RemindersPage() {
                       {t('dismiss')}
                     </Button>
                   )}
-                  <div className='row-actions flex'>
-                    <Button
-                      size='mini'
-                      type='text'
-                      icon={<Edit />}
-                      aria-label={t('editReminderLabel', { what: r.message })}
-                      disabled={isBusy}
-                      onClick={() => setEditing(r)}
-                    />
-                    <Button
-                      size='mini'
-                      type='text'
-                      status='danger'
-                      icon={<Delete />}
-                      aria-label={t('deleteReminder', { what: r.message })}
-                      disabled={isBusy}
-                      onClick={() => remove(r.id, 'delete_reminders', r.message)}
-                    />
-                  </div>
+                  <RowActions editLabel={t('editReminderLabel', { what: r.message })} deleteLabel={t('deleteReminder', { what: r.message })} disabled={isBusy} onEdit={() => setEditing(r)} onDelete={() => remove(r.id, 'delete_reminders', r.message)} />
                 </div>
               );
             })}
