@@ -281,7 +281,7 @@ export function App() {
                             });
                           }}
                         >
-                          {percent === null ? t('update.install') : t('update.downloading', { percent })}
+                          {percent === null ? t(update.manualInstall ? 'update.installManual' : 'update.install') : t('update.downloading', { percent })}
                         </Button>
                       ) : (
                         <Button size='mini' type='primary' onClick={() => window.open(update.url ?? undefined)}>
