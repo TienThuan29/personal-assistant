@@ -1,6 +1,16 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { z } from 'zod/v4';
-import { DEFAULT_LLM, DEFAULT_UI, type LlmConfig, type LlmSettings, type Provider, PROVIDER_NAMES, type UiSettings } from '../shared/types';
+import {
+  DEFAULT_LLM,
+  DEFAULT_UI,
+  type LlmConfig,
+  type LlmSettings,
+  type Provider,
+  PROVIDER_NAMES,
+  type SavedConnection,
+  type UiSettings,
+} from '../shared/types';
 import type { Db } from './db';
 import { tr, UserError } from './errors';
 
@@ -134,7 +144,8 @@ export function setSetting(db: Db, key: string, value: unknown): void {
 
 /** Electron safeStorage in the app; a fake in tests. */
 export type Cipher = { encrypt: (plain: string) => Buffer; decrypt: (data: Buffer) => string };
-type Secrets = Partial<Record<Provider, string>>;
+/** Keyed by provider (the key in use) or `conn:<id>` (a saved connection's key). */
+type Secrets = Partial<Record<string, string>>;
 
 /**
  * Secrets live in their own file, never in the DB, so query_readonly_sql can't leak them (design D14).
@@ -152,8 +163,84 @@ export function readSecrets(file: string, cipher: Cipher): Secrets {
 }
 
 /** Writes a .tmp then renames it, so a crash mid-write never leaves a half-written file. */
-export function writeSecret(file: string, cipher: Cipher, provider: Provider, value: string): void {
+export function writeSecret(file: string, cipher: Cipher, name: string, value: string | undefined): void {
+  const secrets = { ...readSecrets(file, cipher) };
+  if (value === undefined) delete secrets[name];
+  else secrets[name] = value;
   const tmp = `${file}.tmp`;
-  writeFileSync(tmp, cipher.encrypt(JSON.stringify({ ...readSecrets(file, cipher), [provider]: value })));
+  writeFileSync(tmp, cipher.encrypt(JSON.stringify(secrets)));
   renameSync(tmp, file);
+}
+
+// Saved connections (docs/connections-design.md): the list is a settings row, each key a `conn:<id>` secret.
+export const MAX_CONNECTIONS = 20;
+const connSecret = (id: string) => `conn:${id}`;
+const sameConfig = (a: LlmConfig, b: LlmConfig) =>
+  a.provider === b.provider && a.endpoint === b.endpoint && a.model === b.model && a.apiVersion === b.apiVersion;
+const connName = (c: LlmConfig) => `${c.model || new URL(c.endpoint).host} · ${PROVIDER_NAMES[c.provider]}`;
+
+/** The saved connections, most recently used first. A row that is not a list (hand-edited) reads as empty. */
+export function getConnections(db: Db): SavedConnection[] {
+  const raw = getSetting<unknown>(db, 'connections', []);
+  const ok = (c: Partial<SavedConnection>): c is SavedConnection =>
+    typeof c?.id === 'string' && typeof c.name === 'string' && typeof c.endpoint === 'string' && typeof c.model === 'string' && c.provider! in PROVIDER_NAMES;
+  return (Array.isArray(raw) ? raw.filter(ok) : []).map((c) => ({ ...c, apiVersion: c.apiVersion ?? '', usedAt: Number(c.usedAt) || 0 })).sort((a, b) => b.usedAt - a.usedAt);
+}
+
+/**
+ * Remembers `cfg` with its key (the provider's key in use), or refreshes the same connection: new key, new `usedAt`.
+ * Nothing to remember without a key, except for LM Studio, which has none.
+ */
+export function rememberConnection(db: Db, file: string, cipher: Cipher, cfg: LlmConfig, now = Date.now()): void {
+  const key = readSecrets(file, cipher)[cfg.provider];
+  if (!cfg.endpoint || (cfg.provider !== 'lmstudio' && !key)) return;
+  const list = getConnections(db);
+  const known = list.find((c) => sameConfig(c, cfg));
+  const id = known?.id ?? randomUUID();
+  const rest = list.filter((c) => c !== known);
+  const next = [{ ...cfg, id, name: known?.name ?? connName(cfg), usedAt: now }, ...rest];
+  const dropped = next.splice(MAX_CONNECTIONS);
+  setSetting(db, 'connections', next);
+  if (key) writeSecret(file, cipher, connSecret(id), key);
+  for (const c of dropped) writeSecret(file, cipher, connSecret(c.id), undefined);
+}
+
+/** First read after an upgrade: the provider settings already there become connections (the one in use, and any with a key). */
+export function seedConnections(db: Db, file: string, cipher: Cipher): void {
+  if (getSetting<unknown>(db, 'connections', null) !== null) return;
+  setSetting(db, 'connections', []);
+  const llm = getLlm(db);
+  const secrets = readSecrets(file, cipher);
+  const others = (Object.keys(PROVIDER_NAMES) as Provider[]).filter((p) => p !== llm.active && secrets[p]);
+  const now = Date.now();
+  [...others, llm.active].forEach((p, i) => rememberConnection(db, file, cipher, activeLlm({ ...llm, active: p }), now + i)); // the one in use last = newest
+}
+
+/** Makes connection `id` the one in use: its config and key replace its provider's slot, which becomes active. */
+export function useConnection(db: Db, file: string, cipher: Cipher, id: unknown, now = Date.now()): void {
+  const list = getConnections(db);
+  const c = list.find((x) => x.id === id);
+  if (!c) throw new UserError('connectionNotFound');
+  const key = readSecrets(file, cipher)[connSecret(c.id)];
+  if (c.provider !== 'lmstudio' && !key) throw new UserError('connectionKeyLost');
+  const slot = c.provider === 'azure' ? { endpoint: c.endpoint, model: c.model, apiVersion: c.apiVersion } : { endpoint: c.endpoint, model: c.model };
+  setSetting(db, 'llm', { ...getLlm(db), active: c.provider, [c.provider]: slot });
+  if (key) writeSecret(file, cipher, c.provider, key);
+  setSetting(db, 'connections', list.map((x) => (x === c ? { ...x, usedAt: now } : x)));
+}
+
+export function renameConnection(db: Db, id: unknown, name: unknown): void {
+  const trimmed = typeof name === 'string' ? name.trim() : '';
+  if (!trimmed || trimmed.length > 60) throw new UserError('invalidValue');
+  const list = getConnections(db);
+  if (!list.some((c) => c.id === id)) throw new UserError('connectionNotFound');
+  setSetting(db, 'connections', list.map((c) => (c.id === id ? { ...c, name: trimmed } : c)));
+}
+
+/** Forgets the connection and its key; the connection in use stays configured. */
+export function removeConnection(db: Db, file: string, cipher: Cipher, id: unknown): void {
+  const list = getConnections(db);
+  if (!list.some((c) => c.id === id)) return;
+  setSetting(db, 'connections', list.filter((c) => c.id !== id));
+  writeSecret(file, cipher, connSecret(id as string), undefined);
 }

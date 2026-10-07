@@ -105,6 +105,30 @@ describe('server over HTTP', () => {
     expect(readFileSync(join(dataDir, 'secrets.bin')).includes('sk-very-secret-value')).toBe(false);
   });
 
+  it('remembers saved connections and switches back to an old one without retyping its key', async () => {
+    const { dataDir, call } = await boot();
+    const save = (model: string, apiKey: string) =>
+      call('settings:save', { llm: { ...DEFAULT_LLM, active: 'gateway', gateway: { endpoint: 'https://gw.example.com', model } }, apiKey });
+    expect((await save('model-a', 'sk-key-aaaa')).ok).toBe(true);
+    expect((await save('model-b', 'sk-key-bbbb')).ok).toBe(true);
+    const view = (await call('settings:get')).value;
+    expect(view.connections.map((c: { model: string }) => c.model)).toEqual(['model-b', 'model-a']);
+    expect(JSON.stringify(view)).not.toMatch(/sk-key-/);
+    expect(readFileSync(join(dataDir, 'secrets.bin')).includes('sk-key-aaaa')).toBe(false);
+
+    const a = view.connections[1];
+    expect((await call('connections:use', a.id)).ok).toBe(true);
+    const after = (await call('settings:get')).value;
+    expect(after.llm.gateway.model).toBe('model-a');
+    expect(after.connections[0].id).toBe(a.id);
+    expect((await call('connections:rename', a.id, 'Work')).ok).toBe(true);
+    expect((await call('connections:remove', a.id)).ok).toBe(true);
+    const last = (await call('settings:get')).value;
+    expect(last.connections.map((c: { model: string }) => c.model)).toEqual(['model-b']);
+    expect(last.llm.gateway.model).toBe('model-a'); // the one in use keeps working
+    expect((await call('connections:use', a.id)).ok).toBe(false);
+  });
+
   it('update:check cannot self-install in a container', async () => {
     const { call } = await boot();
     await call('settings:setUi', { checkUpdates: false }); // keep the test off the network

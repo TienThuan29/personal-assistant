@@ -1,6 +1,25 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { activeLlm, type Cipher, getLlm, getSetting, getUi, llmSettingsSchema, parseLlmSettings, readSecrets, saveUi, setSetting, writeSecret } from '../src/main/settings';
+import {
+  activeLlm,
+  type Cipher,
+  getConnections,
+  getLlm,
+  getSetting,
+  getUi,
+  llmSettingsSchema,
+  MAX_CONNECTIONS,
+  parseLlmSettings,
+  readSecrets,
+  rememberConnection,
+  removeConnection,
+  renameConnection,
+  saveUi,
+  seedConnections,
+  setSetting,
+  useConnection,
+  writeSecret,
+} from '../src/main/settings';
 import { DEFAULT_LLM, DEFAULT_UI } from '../src/shared/types';
 import { tr } from '../src/main/tools/common';
 import { tempDir, testDb } from './helpers';
@@ -125,6 +144,101 @@ describe('settings', () => {
     expect(getLlm(db)).toEqual({ ...DEFAULT_LLM, gateway: { endpoint: 'https://g', model: '' } });
     setSetting(db, 'llm', 'junk');
     expect(getLlm(db)).toEqual(DEFAULT_LLM);
+  });
+
+  describe('saved connections', () => {
+    const setup = () => {
+      const { db } = testDb();
+      return { db, file: join(tempDir(), 'secrets.bin') };
+    };
+    const gw = (model: string, endpoint = 'https://gw.example') => ({ provider: 'gateway' as const, endpoint, model, apiVersion: '' });
+
+    it('remembers a connection with its key, once, and refreshes it on a new key', () => {
+      const { db, file } = setup();
+      writeSecret(file, cipher, 'gateway', 'tok-1');
+      rememberConnection(db, file, cipher, gw('gpt-5'), 100);
+      rememberConnection(db, file, cipher, gw('gpt-5'), 200);
+      const [c, ...rest] = getConnections(db);
+      expect(rest).toEqual([]);
+      expect(c).toMatchObject({ ...gw('gpt-5'), name: 'gpt-5 · LLM gateway', usedAt: 200 });
+      expect(readSecrets(file, cipher)[`conn:${c.id}`]).toBe('tok-1');
+      writeSecret(file, cipher, 'gateway', 'tok-2');
+      rememberConnection(db, file, cipher, gw('gpt-5'), 300);
+      expect(getConnections(db)).toHaveLength(1);
+      expect(readSecrets(file, cipher)[`conn:${c.id}`]).toBe('tok-2');
+      expect(JSON.stringify(getSetting(db, 'connections', null))).not.toContain('tok-');
+    });
+
+    it('skips a provider with no key, except LM Studio', () => {
+      const { db, file } = setup();
+      rememberConnection(db, file, cipher, gw('m'));
+      expect(getConnections(db)).toEqual([]);
+      rememberConnection(db, file, cipher, { provider: 'lmstudio', endpoint: 'http://localhost:1234', model: '', apiVersion: '' });
+      expect(getConnections(db)[0].name).toBe('localhost:1234 · LM Studio');
+    });
+
+    it('uses a saved connection: its config and key replace its provider slot and it becomes active', () => {
+      const { db, file } = setup();
+      writeSecret(file, cipher, 'gateway', 'tok-a');
+      rememberConnection(db, file, cipher, gw('a'), 100);
+      writeSecret(file, cipher, 'gateway', 'tok-b');
+      rememberConnection(db, file, cipher, gw('b', 'https://other.example'), 200);
+      setSetting(db, 'llm', { ...DEFAULT_LLM, active: 'azure', gateway: { endpoint: 'https://other.example', model: 'b' } });
+      const a = getConnections(db).find((c) => c.model === 'a')!;
+      useConnection(db, file, cipher, a.id, 300);
+      expect(getLlm(db)).toMatchObject({ active: 'gateway', gateway: { endpoint: 'https://gw.example', model: 'a' } });
+      expect(readSecrets(file, cipher).gateway).toBe('tok-a');
+      expect(getConnections(db)[0].id).toBe(a.id);
+      expect(() => useConnection(db, file, cipher, 'nope')).toThrow('Không tìm thấy connect');
+      writeSecret(file, cipher, `conn:${a.id}`, undefined);
+      expect(() => useConnection(db, file, cipher, a.id)).toThrow('Không đọc được key');
+    });
+
+    it('keeps Azure api version when using a connection', () => {
+      const { db, file } = setup();
+      writeSecret(file, cipher, 'azure', 'k');
+      rememberConnection(db, file, cipher, { provider: 'azure', endpoint: 'https://r.openai.azure.com', model: 'gpt-4o', apiVersion: '2025-01-01' });
+      useConnection(db, file, cipher, getConnections(db)[0].id);
+      expect(getLlm(db).azure).toEqual({ endpoint: 'https://r.openai.azure.com', model: 'gpt-4o', apiVersion: '2025-01-01' });
+    });
+
+    it('renames, removes (with its key), and caps the list at the most recent', () => {
+      const { db, file } = setup();
+      writeSecret(file, cipher, 'gateway', 'tok');
+      for (let i = 0; i < MAX_CONNECTIONS + 2; i++) rememberConnection(db, file, cipher, gw(`m${i}`), i);
+      const list = getConnections(db);
+      expect(list).toHaveLength(MAX_CONNECTIONS);
+      expect(list[0].model).toBe(`m${MAX_CONNECTIONS + 1}`);
+      expect(Object.keys(readSecrets(file, cipher))).toHaveLength(MAX_CONNECTIONS + 1); // + the provider's own
+      renameConnection(db, list[0].id, '  Work  ');
+      expect(getConnections(db)[0].name).toBe('Work');
+      for (const bad of ['', '   ', 'x'.repeat(61), 5]) expect(() => renameConnection(db, list[0].id, bad)).toThrow();
+      removeConnection(db, file, cipher, list[0].id);
+      expect(getConnections(db)).toHaveLength(MAX_CONNECTIONS - 1);
+      expect(readSecrets(file, cipher)[`conn:${list[0].id}`]).toBeUndefined();
+    });
+
+    it('seeds from the existing provider slots once: the one in use and any with a key', () => {
+      const { db, file } = setup();
+      setSetting(db, 'llm', { ...DEFAULT_LLM, active: 'gateway', gateway: { endpoint: 'https://gw.example', model: 'g' }, azure: { endpoint: 'https://r', model: 'd', apiVersion: 'v' } });
+      writeSecret(file, cipher, 'gateway', 'tok-g');
+      writeSecret(file, cipher, 'azure', 'tok-a');
+      seedConnections(db, file, cipher);
+      const list = getConnections(db);
+      expect(list.map((c) => c.provider)).toEqual(['gateway', 'azure']); // in use first
+      seedConnections(db, file, cipher);
+      removeConnection(db, file, cipher, list[0].id);
+      seedConnections(db, file, cipher); // an emptied list is not seeded again
+      expect(getConnections(db)).toHaveLength(1);
+    });
+
+    it('reads a hand-edited row as an empty list', () => {
+      const { db } = setup();
+      setSetting(db, 'connections', 'junk');
+      expect(getConnections(db)).toEqual([]);
+      setSetting(db, 'connections', [null, { id: 1 }]);
+      expect(getConnections(db)).toEqual([]);
+    });
   });
 
   it('merges UI settings over the defaults, normalizing the currency', () => {

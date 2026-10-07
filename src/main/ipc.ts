@@ -7,7 +7,23 @@ import { type Db, tx } from './db';
 import { i18n, setLanguage } from './i18n';
 import { collect, createLlm, describeLlmError, listModels, LOCAL_KEY } from './llm';
 import { MAX_IMAGES, SAVE_TOOLS, saveRecord } from './save';
-import { activeLlm, type Cipher, getLlm, getUi, parseLlmSettings, readSecrets, saveUi, setSetting, writeSecret } from './settings';
+import {
+  activeLlm,
+  type Cipher,
+  getConnections,
+  getLlm,
+  getUi,
+  parseLlmSettings,
+  readSecrets,
+  rememberConnection,
+  removeConnection,
+  renameConnection,
+  saveUi,
+  seedConnections,
+  setSetting,
+  useConnection,
+  writeSecret,
+} from './settings';
 import {
   addMessage,
   createConversation,
@@ -189,9 +205,15 @@ export function registerIpc(m: MainCtx): void {
     } catch (e) {
       console.error('Reading secrets failed', e); // show "no key" rather than failing the whole settings view
     }
+    try {
+      seedConnections(m.db, m.secretsFile, m.cipher);
+    } catch (e) {
+      console.error('Seeding saved connections failed', e); // the list is a convenience; settings still load
+    }
     return {
       llm: getLlm(m.db),
       hasKey: { azure: !!secrets.azure, gateway: !!secrets.gateway, lmstudio: !!secrets.lmstudio },
+      connections: getConnections(m.db),
       openAtLogin: m.loginItem.get(),
       ui,
       version: m.version,
@@ -203,7 +225,11 @@ export function registerIpc(m: MainCtx): void {
     setSetting(m.db, 'llm', llm);
     const key = s.apiKey?.trim();
     if (key) writeSecret(m.secretsFile, m.cipher, llm.active, key);
+    rememberConnection(m.db, m.secretsFile, m.cipher, activeLlm(llm));
   });
+  m.handle('connections:use', (id: unknown) => useConnection(m.db, m.secretsFile, m.cipher, id));
+  m.handle('connections:rename', (id: unknown, name: unknown) => renameConnection(m.db, id, name));
+  m.handle('connections:remove', (id: unknown) => removeConnection(m.db, m.secretsFile, m.cipher, id));
   m.handle('settings:listModels', async (provider: unknown) => {
     if (provider !== 'gateway' && provider !== 'lmstudio') throw new UserError('invalidValue'); // Azure has deployments, not a list (design G2)
     const key = readSecrets(m.secretsFile, m.cipher)[provider] || (provider === 'lmstudio' ? LOCAL_KEY : '');

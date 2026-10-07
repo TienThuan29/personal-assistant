@@ -1,8 +1,8 @@
 import { Message, Select } from '@arco-design/web-react';
-import { CircleCheck, Lock, RefreshCw } from 'lucide-react';
+import { CircleCheck, Lock, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { DEFAULT_LLM, type LlmSettings, type Provider, PROVIDER_NAMES, type SettingsView } from '../../shared/types';
+import { DEFAULT_LLM, type LlmSettings, type Provider, PROVIDER_NAMES, type SavedConnection, type SettingsView } from '../../shared/types';
 import { api, errorText } from '../api';
 import { Btn, ICON, IconBtn, Segmented, SettingRow } from './ui';
 
@@ -65,8 +65,7 @@ export function useModelForm() {
     await api.settings.save({ llm, apiKey: apiKey || undefined });
     setApiKey('');
     setView(await api.settings.get());
-  };
-  const run = (kind: 'save' | 'test', fn: () => Promise<string>) => async () => {
+  };  const run = (kind: 'save' | 'test', fn: () => Promise<string>) => async () => {
     setBusy(kind);
     setStatus(null);
     try {
@@ -77,12 +76,97 @@ export function useModelForm() {
       setBusy(null);
     }
   };
+  /** Switches to a saved connection: the form shows it, with no draft left over. */
+  const pickConnection = (c: SavedConnection) =>
+    run('save', async () => {
+      await api.settings.useConnection(c.id);
+      const v = await api.settings.get();
+      setView(v);
+      setLlm(v.llm);
+      setApiKey('');
+      setModels([]);
+      return t('connectionSwitched', { name: c.name });
+    })();
+  /** Rename or delete: only the list changes, the form's draft stays. */
+  const editConnection = async (change: () => Promise<void>) => {
+    try {
+      await change();
+      const v = await api.settings.get();
+      setView((old) => old && { ...old, connections: v.connections });
+    } catch (e) {
+      report('error', errorText(e));
+    }
+  };
   const onSave = run('save', async () => (await save(), t('saved')));
   const onTest = run('test', async () => (await save(), t('testOk', { reply: await api.settings.test() })));
-  return { view, llm, set, setProvider, apiKey, setApiKey, models, loadingModels, loadModels, busy, status, onSave, onTest, messageHolder, save, report };
+  return { view, llm, set, setProvider, apiKey, setApiKey, models, loadingModels, loadModels, busy, status, onSave, onTest, messageHolder, save, report, pickConnection, editConnection };
 }
 
 export type ModelFormState = ReturnType<typeof useModelForm>;
+
+/** The connection in use is the saved one with the active provider's config. */
+const isInUse = (c: SavedConnection, llm: LlmSettings) => {
+  const cfg = { apiVersion: '', ...llm[c.provider] };
+  return c.provider === llm.active && c.endpoint === cfg.endpoint && c.model === cfg.model && c.apiVersion === cfg.apiVersion;
+};
+
+/** Saved connections: press Use to switch, rename inline, delete. */
+function ConnectionList({ m }: { m: ModelFormState }) {
+  const { t } = useTranslation('settings');
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+  const { view } = m;
+  if (!view?.connections.length) return null;
+  const rename = () => {
+    if (renaming?.name.trim()) void m.editConnection(() => api.settings.renameConnection(renaming.id, renaming.name));
+    setRenaming(null);
+  };
+  return (
+    <SettingRow stacked label={t('connections')} desc={t('connectionsDesc')}>
+      <ul className='m-0 mt-1 p-0 list-none flex flex-col gap-2'>
+        {view.connections.map((c) => {
+          const inUse = isInUse(c, view.llm);
+          const editing = renaming?.id === c.id;
+          return (
+            <li key={c.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border border-solid ${inUse ? 'border-accent bg-accent-soft' : 'border-line bg-panel'}`}>
+              <div className='flex-1 min-w-0'>
+                {editing ? (
+                  <input
+                    autoFocus
+                    aria-label={t('connectionRename')}
+                    maxLength={60}
+                    value={renaming.name}
+                    onChange={(e) => setRenaming({ id: c.id, name: e.target.value })}
+                    onKeyDown={(e) => (e.key === 'Enter' ? rename() : e.key === 'Escape' && setRenaming(null))}
+                    className={`${FIELD} !h-8`}
+                  />
+                ) : (
+                  <div className='text-[13px] font-500 truncate'>{c.name}</div>
+                )}
+                <div className='text-xs text-ink-2 truncate font-mono'>{c.endpoint}</div>
+              </div>
+              {editing ? (
+                <Btn size='sm' onClick={rename}>{t('connectionRenameSave')}</Btn>
+              ) : (
+                <>
+                  {inUse ? (
+                    <span className='flex items-center gap-1 text-xs text-ok'>
+                      <CircleCheck {...ICON} />
+                      {t('connectionActive')}
+                    </span>
+                  ) : (
+                    <Btn size='sm' disabled={m.busy !== null} onClick={() => void m.pickConnection(c)}>{t('connectionUse')}</Btn>
+                  )}
+                  <IconBtn label={t('connectionRename')} icon={<Pencil {...ICON} />} onClick={() => setRenaming({ id: c.id, name: c.name })} />
+                  <IconBtn label={t('connectionDelete')} icon={<Trash2 {...ICON} />} onClick={() => void m.editConnection(() => api.settings.removeConnection(c.id))} />
+                </>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </SettingRow>
+  );
+}
 
 /** The fields; `compact` is the setup guide's version, with no Save button and a test that saves first. */
 export function ModelForm({ m, compact }: { m: ModelFormState; compact?: boolean }) {
@@ -107,6 +191,7 @@ export function ModelForm({ m, compact }: { m: ModelFormState; compact?: boolean
   return (
     <div className={compact ? 'flex flex-col gap-3.5' : 'flex flex-col'}>
       {m.messageHolder}
+      {!compact && <ConnectionList m={m} />}
       {compact ? (
         <Segmented
           label={t('provider')}

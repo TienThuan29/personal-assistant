@@ -160,7 +160,18 @@ export const DEFAULT_UI: UiSettings = {
   welcomed: false,
 };
 
-export type SettingsView = { llm: LlmSettings; hasKey: Record<Provider, boolean>; openAtLogin: boolean; ui: UiSettings; version: string };
+/** A remembered connection (docs/connections-design.md). Its key stays in secrets.bin and never reaches the renderer. `usedAt`: ms epoch. */
+export type SavedConnection = LlmConfig & { id: string; name: string; usedAt: number };
+
+export type SettingsView = {
+  llm: LlmSettings;
+  hasKey: Record<Provider, boolean>;
+  /** Most recently used first. */
+  connections: SavedConnection[];
+  openAtLogin: boolean;
+  ui: UiSettings;
+  version: string;
+};
 /**
  * `latest` is the newer version to announce (null: none); `url` is the page to open for it; `canInstall` says whether this
  * build can download and install it itself (Windows installer, Linux AppImage) or only send the user to `url`.
@@ -211,6 +222,11 @@ export type Api = {
     get(): Promise<SettingsView>;
     save(s: SettingsInput): Promise<void>;
     test(): Promise<string>;
+    /** Makes a saved connection the one in use (its config and key replace its provider's); reload `get()` after. */
+    useConnection(id: string): Promise<void>;
+    renameConnection(id: string, name: string): Promise<void>;
+    /** Forgets it and its key; the connection in use keeps working. */
+    removeConnection(id: string): Promise<void>;
     /** The model ids the saved gateway endpoint lists (GET <endpoint>/models with the saved key). */
     listModels(provider: Provider): Promise<string[]>;
     /** Applies at once (independent of the LLM config); resolves to the state now in effect. */
