@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { z } from 'zod/v4';
 import {
+  ANTHROPIC_LINES,
   DEFAULT_LLM,
   DEFAULT_UI,
   type LlmConfig,
@@ -41,11 +42,17 @@ const model = z
  */
 export const llmSettingsSchema = z
   .object({
-    active: z.enum(['azure', 'gateway', 'lmstudio'], { error: 'errors:invalidValue' }),
+    active: z.enum(['azure', 'gateway', 'lmstudio', 'anthropic'], { error: 'errors:invalidValue' }),
     azure: z.object({ endpoint, model, apiVersion: z.string().trim() }),
     gateway: z.object({ endpoint, model }),
     // Absent from an older renderer's payload: fall back to the default local address.
     lmstudio: z.object({ endpoint, model }).default(DEFAULT_LLM.lmstudio),
+    anthropic: z.object({ endpoint, model }).default(DEFAULT_LLM.anthropic),
+  })
+  .refine((s) => (ANTHROPIC_LINES as readonly string[]).includes(s?.anthropic?.model), {
+    path: ['anthropic', 'model'],
+    message: 'errors:invalidValue',
+    when: () => true,
   })
   // `when`: also check when another field is invalid, so every error shows at once.
   .refine((s) => typeof s?.[s?.active]?.endpoint !== 'string' || !!s[s.active].endpoint.trim(), {
@@ -86,10 +93,11 @@ export function getLlm(db: Db): LlmSettings {
     return { ...DEFAULT_LLM, active, [active]: active === 'azure' ? { endpoint, model, apiVersion } : { endpoint, model } };
   }
   return {
-    active: s.active === 'azure' || s.active === 'lmstudio' ? s.active : 'gateway',
+    active: s.active === 'azure' || s.active === 'lmstudio' || s.active === 'anthropic' ? s.active : 'gateway',
     azure: { ...DEFAULT_LLM.azure, ...s.azure },
     gateway: { ...DEFAULT_LLM.gateway, ...s.gateway },
     lmstudio: { ...DEFAULT_LLM.lmstudio, ...s.lmstudio },
+    anthropic: { ...DEFAULT_LLM.anthropic, ...s.anthropic },
   };
 }
 

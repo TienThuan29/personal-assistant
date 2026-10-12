@@ -353,6 +353,8 @@ export const vi = {
     modelPlaceholder: 'vd gpt-4o',
     modelDescGateway: 'Chọn từ danh sách gateway trả về (lưu endpoint và token rồi bấm tải lại), hoặc gõ tên model. Chỉ để trống nếu gateway tự chọn model',
     modelDescLmstudio: 'Chọn từ các model LM Studio liệt kê (tải lại sau khi nạp model), hoặc để trống để dùng model đang nạp. Cần model hỗ trợ tool calling; đọc ảnh cần model có vision',
+    anthropicLine: 'Dòng model',
+    anthropicLineDesc: 'Chỉ cần dán API key của Anthropic. App luôn dùng bản mới nhất của dòng này: Haiku nhanh và rẻ, Sonnet cân bằng, Opus mạnh nhất.',
     modelOptional: 'Chọn hoặc gõ tên model',
     reloadModels: 'Tải lại danh sách model',
     keySaved: 'Đã lưu (mã hóa bằng hệ điều hành). Để trống nếu không đổi.',
@@ -405,6 +407,7 @@ export const vi = {
     modelsFailed: 'Không tải được danh sách model: {{error}}',
     connectionNotFound: 'Không tìm thấy connect này (có thể đã bị xóa)',
     connectionKeyLost: 'Không đọc được key của connect này. Hãy nhập lại key rồi lưu.',
+    anthropicNoModel: 'Tài khoản Anthropic không có model nào thuộc dòng {{line}}. Hãy chọn dòng khác trong Cài đặt.',
     // tools
     notFound: 'Không tìm thấy {{table}} #{{ids}}',
     reminderPast: 'Thời điểm nhắc đã qua',

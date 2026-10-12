@@ -58,11 +58,12 @@ describe('settings', () => {
     expect(readSecrets(file, cipher)).toEqual({ azure: 'sk-new' });
   });
 
-  const settings = (active: 'azure' | 'gateway' | 'lmstudio', azure = {}, gateway = {}, lmstudio = {}) => ({
+  const settings = (active: 'azure' | 'gateway' | 'lmstudio' | 'anthropic', azure = {}, gateway = {}, lmstudio = {}, anthropic = {}) => ({
     active,
     azure: { endpoint: '', model: '', apiVersion: '2024-10-21', ...azure },
     gateway: { endpoint: '', model: '', ...gateway },
     lmstudio: { endpoint: 'http://localhost:1234', model: '', ...lmstudio },
+    anthropic: { endpoint: 'https://api.anthropic.com', model: 'haiku', ...anthropic },
   });
   const errors = (v: unknown) => llmSettingsSchema.safeParse(v).error?.issues.map((i) => tr(i.message));
 
@@ -126,6 +127,25 @@ describe('settings', () => {
     setSetting(db, 'llm', { active: 'lmstudio', lmstudio: { model: 'qwen2.5-7b-instruct' } });
     expect(getLlm(db).active).toBe('lmstudio');
     expect(activeLlm(getLlm(db))).toEqual({ provider: 'lmstudio', endpoint: 'http://localhost:1234', model: 'qwen2.5-7b-instruct', apiVersion: '' });
+  });
+
+  it('accepts Anthropic with a model line, defaults its block, and refuses anything else as the model', () => {
+    const claude = (model: string, active: 'anthropic' | 'gateway' = 'anthropic') =>
+      settings(active, {}, active === 'gateway' ? { endpoint: 'https://gw.example/v1' } : {}, {}, { model });
+    for (const line of ['haiku', 'sonnet', 'opus']) expect(llmSettingsSchema.safeParse(claude(line)).data?.anthropic.model).toBe(line);
+    expect(errors(claude('claude-haiku-5-5'))).toEqual(['Giá trị không hợp lệ']); // a line, not a model id
+    expect(errors(claude(''))).toEqual(['Giá trị không hợp lệ']);
+    expect(() => parseLlmSettings(claude('gpt-4o', 'gateway'))).toThrow(/^Anthropic: Giá trị không hợp lệ$/);
+    // A payload without the anthropic block (an older renderer) still validates and gets the defaults.
+    const { anthropic: _drop, ...old } = settings('gateway', {}, { endpoint: 'https://gw.example/v1' });
+    expect(llmSettingsSchema.safeParse(old).data?.anthropic).toEqual(DEFAULT_LLM.anthropic);
+  });
+
+  it('reads and activates the anthropic provider, defaulting to Haiku', () => {
+    const { db } = testDb();
+    expect(getLlm(db).anthropic).toEqual({ endpoint: 'https://api.anthropic.com', model: 'haiku' });
+    setSetting(db, 'llm', { active: 'anthropic', anthropic: { model: 'opus' } });
+    expect(activeLlm(getLlm(db))).toEqual({ provider: 'anthropic', endpoint: 'https://api.anthropic.com', model: 'opus', apiVersion: '' });
   });
 
   it('migrates the old flat llm row to per-provider settings on read (G3)', () => {
@@ -192,6 +212,19 @@ describe('settings', () => {
       expect(() => useConnection(db, file, cipher, 'nope')).toThrow('Không tìm thấy connect');
       writeSecret(file, cipher, `conn:${a.id}`, undefined);
       expect(() => useConnection(db, file, cipher, a.id)).toThrow('Không đọc được key');
+    });
+
+    it('remembers, seeds and uses an Anthropic connection by its line', () => {
+      const { db, file } = setup();
+      const claude = (model: string) => ({ provider: 'anthropic' as const, endpoint: 'https://api.anthropic.com', model, apiVersion: '' });
+      writeSecret(file, cipher, 'anthropic', 'sk-ant-1');
+      seedConnections(db, file, cipher); // a key already saved before the connection list existed
+      expect(getConnections(db).map((c) => c.name)).toEqual(['haiku · Anthropic']);
+      rememberConnection(db, file, cipher, claude('sonnet'), Date.now() + 1000);
+      expect(getConnections(db).map((c) => c.name)).toEqual(['sonnet · Anthropic', 'haiku · Anthropic']);
+      useConnection(db, file, cipher, getConnections(db)[1].id, Date.now() + 2000);
+      expect(getLlm(db)).toMatchObject({ active: 'anthropic', anthropic: { model: 'haiku' } });
+      expect(readSecrets(file, cipher).anthropic).toBe('sk-ant-1');
     });
 
     it('keeps Azure api version when using a connection', () => {

@@ -1,6 +1,6 @@
 import { APIConnectionError, APIError } from 'openai';
 import type { ChatCompletionChunk } from 'openai/resources/chat/completions';
-import { collect, createLlm, describeLlmError, listModels } from '../src/main/llm';
+import { collect, createLlm, describeLlmError, listModels, resolveAnthropicModel } from '../src/main/llm';
 import type { LlmConfig } from '../src/shared/types';
 import { call, chunk, fakeLlm } from './helpers';
 
@@ -234,5 +234,106 @@ describe('createLlm', () => {
     const run = collect(createLlm(gateway, 'tok', { fetch: f }).stream({ messages: [], signal: ac.signal }), () => ac.abort(), partial);
     await expect(run).rejects.toThrow();
     expect(partial.content).toBe('Đang');
+  });
+
+  describe('Anthropic', () => {
+    // The model cache is per process: every test uses its own key so none sees another's resolved model.
+    const claude = (model = 'haiku', endpoint = 'https://api.anthropic.com'): LlmConfig => ({ provider: 'anthropic', endpoint, model, apiVersion: '' });
+    const MODELS = {
+      data: [
+        { id: 'claude-haiku-4-5', line: 'haiku', lifecycle: 'active', created_at: '2025-10-01T00:00:00Z' },
+        { id: 'claude-haiku-5-5', line: 'haiku', lifecycle: 'active', created_at: '2026-08-10T00:00:00Z' },
+        { id: 'claude-haiku-3', line: 'haiku', lifecycle: 'retired', created_at: '2026-09-01T00:00:00Z' },
+        { id: 'claude-haiku-no-line', line: null, lifecycle: 'active', created_at: '2026-09-02T00:00:00Z' },
+        { id: 'claude-sonnet-5-5', line: 'sonnet', lifecycle: 'active', created_at: '2026-08-01T00:00:00Z' },
+      ],
+      has_more: false,
+    };
+
+    /** Answers /v1/models with `models` (or a status), and /v1/chat/completions with a short SSE reply (or a status). */
+    function anthropicFetch(opts: { models?: unknown; modelsStatus?: number; chatStatus?: number } = {}) {
+      const seen: { url: string; headers: Headers; body: string }[] = [];
+      const f = (async (url: string | URL | Request, init?: RequestInit) => {
+        seen.push({ url: String(url), headers: new Headers(init?.headers), body: String(init?.body) });
+        if (String(url).includes('/v1/models'))
+          return opts.modelsStatus ? new Response('{}', { status: opts.modelsStatus }) : Response.json(opts.models ?? MODELS);
+        if (opts.chatStatus) return Response.json({ error: { message: 'nope' } }, { status: opts.chatStatus });
+        return new Response(`${sse('ok')}${DONE}`, { headers: { 'content-type': 'text/event-stream' } });
+      }) as typeof fetch;
+      const listed = () => seen.filter((s) => s.url.includes('/v1/models'));
+      return { f, seen, listed };
+    }
+
+    it('calls the fixed Anthropic host with the newest active model of the line, natively with tools', async () => {
+      const { f, seen } = anthropicFetch();
+      const tools = [{ type: 'function' as const, function: { name: 'list_tasks', parameters: { type: 'object', properties: {} } } }];
+      // A stored endpoint is ignored: the key must only ever go to api.anthropic.com.
+      const llm = createLlm(claude('haiku', 'https://evil.example'), 'sk-ant-t1', { fetch: f });
+      expect(llm.textOnly).toBe(false); // it reads images
+      expect(llm.reasoning).toBeFalsy();
+      const msg = await collect(llm.stream({ messages: [{ role: 'user', content: 'hi' }], tools }), () => {});
+      expect(msg.content).toBe('ok');
+      expect(seen[0].url).toBe('https://api.anthropic.com/v1/models?limit=1000');
+      expect(seen[0].headers.get('x-api-key')).toBe('sk-ant-t1');
+      expect(seen[0].headers.get('anthropic-version')).toBe('2023-06-01');
+      expect(seen[1].url).toBe('https://api.anthropic.com/v1/chat/completions');
+      expect(seen[1].headers.get('authorization')).toBe('Bearer sk-ant-t1');
+      const body = JSON.parse(seen[1].body);
+      expect(body.model).toBe('claude-haiku-5-5'); // not the retired or line-less ones, not the older one
+      expect(body.tools).toHaveLength(1);
+    });
+
+    it('looks the line up once per key and hour, and per line', async () => {
+      const { f, listed } = anthropicFetch();
+      const run = (model: string) => collect(createLlm(claude(model), 'sk-ant-t2', { fetch: f }).stream({ messages: [] }), () => {});
+      await run('haiku');
+      await run('haiku');
+      expect(listed()).toHaveLength(1);
+      await run('sonnet');
+      expect(listed()).toHaveLength(2);
+      const key = 'sk-ant-t2b';
+      expect(await resolveAnthropicModel('haiku', key, { fetch: f, now: 0 })).toBe('claude-haiku-5-5');
+      await resolveAnthropicModel('haiku', key, { fetch: f, now: 3_599_999 });
+      expect(listed()).toHaveLength(3);
+      await resolveAnthropicModel('haiku', key, { fetch: f, now: 3_600_001 });
+      expect(listed()).toHaveLength(4);
+    });
+
+    it('looks the line up again after the model is gone (404)', async () => {
+      const { f, listed } = anthropicFetch({ chatStatus: 404 });
+      const run = () => collect(createLlm(claude(), 'sk-ant-t3', { fetch: f }).stream({ messages: [] }), () => {});
+      await expect(run()).rejects.toThrow();
+      await expect(run()).rejects.toThrow();
+      expect(listed()).toHaveLength(2);
+    });
+
+    it('needs a key and a known line', () => {
+      expect(() => createLlm(claude(), '')).toThrow(/Cài đặt/);
+      expect(() => createLlm(claude('claude-haiku-5-5'), 'k')).toThrow(/Cài đặt/); // an id is not a line
+      expect(() => createLlm(claude('haiku', ''), 'k')).not.toThrow(); // the endpoint is not used
+    });
+
+    it('explains a bad key, a missing line and a lost connection', async () => {
+      const run = (f: typeof fetch, key: string, model = 'haiku') =>
+        collect(createLlm(claude(model), key, { fetch: f }).stream({ messages: [] }), () => {});
+      await expect(run(anthropicFetch({ modelsStatus: 401 }).f, 'sk-ant-t4')).rejects.toThrow(/sai hoặc hết hạn/);
+      await expect(run(anthropicFetch({ modelsStatus: 429 }).f, 'sk-ant-t5')).rejects.toThrow(/giới hạn tốc độ/);
+      await expect(run(anthropicFetch({ modelsStatus: 500 }).f, 'sk-ant-t6')).rejects.toThrow(/500/);
+      await expect(run(anthropicFetch().f, 'sk-ant-t7', 'opus')).rejects.toThrow(/dòng opus/);
+      await expect(run(anthropicFetch({ models: { data: [] } }).f, 'sk-ant-t8')).rejects.toThrow(/dòng haiku/);
+      const down = (async () => {
+        throw new TypeError('fetch failed');
+      }) as typeof fetch;
+      await expect(run(down, 'sk-ant-t9')).rejects.toThrow(/Không kết nối được/);
+    });
+
+    it('surfaces an abort while looking the line up', async () => {
+      const ac = new AbortController();
+      const f = (async (_url: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>((_, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))))) as typeof fetch;
+      const run = collect(createLlm(claude(), 'sk-ant-t10', { fetch: f }).stream({ messages: [], signal: ac.signal }), () => {});
+      ac.abort();
+      await expect(run).rejects.toThrow(/abort/i); // not "could not connect"
+    });
   });
 });

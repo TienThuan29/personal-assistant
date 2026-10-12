@@ -212,7 +212,7 @@ export function registerIpc(m: MainCtx): void {
     }
     return {
       llm: getLlm(m.db),
-      hasKey: { azure: !!secrets.azure, gateway: !!secrets.gateway, lmstudio: !!secrets.lmstudio },
+      hasKey: { azure: !!secrets.azure, gateway: !!secrets.gateway, lmstudio: !!secrets.lmstudio, anthropic: !!secrets.anthropic },
       connections: getConnections(m.db),
       openAtLogin: m.loginItem.get(),
       ui,

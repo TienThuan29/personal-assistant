@@ -115,7 +115,14 @@ export type AgentEvent = { conversationId: number } & (
   | { type: 'error'; message: string }
 );
 
-export type Provider = 'azure' | 'gateway' | 'lmstudio';
+export type Provider = 'azure' | 'gateway' | 'lmstudio' | 'anthropic';
+/**
+ * Anthropic has a fixed endpoint and no model field: `anthropic.model` holds a line, and the newest active model of that line
+ * is looked up when the LLM is called (docs/anthropic-design.md A2–A5).
+ */
+export const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com';
+export const ANTHROPIC_LINES = ['haiku', 'sonnet', 'opus'] as const;
+export type AnthropicLine = (typeof ANTHROPIC_LINES)[number];
 /** One provider's connection, resolved from LlmSettings for createLlm. A gateway's apiVersion is ''. */
 export type LlmConfig = { provider: Provider; endpoint: string; model: string; apiVersion: string };
 /** Stored under the settings key 'llm': one config per provider, so switching never overwrites the other (design G1). */
@@ -125,14 +132,22 @@ export type LlmSettings = {
   gateway: { endpoint: string; model: string };
   /** LM Studio's local server: needs no key, and the model may be left empty to use the one loaded. */
   lmstudio: { endpoint: string; model: string };
+  /** `model` is an AnthropicLine, not a model id. */
+  anthropic: { endpoint: string; model: string };
 };
 /** Product names, the same in every language. */
-export const PROVIDER_NAMES: Record<Provider, string> = { azure: 'Azure AI Foundry', gateway: 'LLM gateway', lmstudio: 'LM Studio' };
+export const PROVIDER_NAMES: Record<Provider, string> = {
+  azure: 'Azure AI Foundry',
+  gateway: 'LLM gateway',
+  lmstudio: 'LM Studio',
+  anthropic: 'Anthropic',
+};
 export const DEFAULT_LLM: LlmSettings = {
   active: 'gateway',
   azure: { endpoint: '', model: '', apiVersion: '2024-10-21' },
   gateway: { endpoint: '', model: '' },
   lmstudio: { endpoint: 'http://localhost:1234', model: '' },
+  anthropic: { endpoint: ANTHROPIC_ENDPOINT, model: 'haiku' },
 };
 
 /**

@@ -129,6 +129,22 @@ describe('server over HTTP', () => {
     expect((await call('connections:use', a.id)).ok).toBe(false);
   });
 
+  it('saves an Anthropic key with a model line, never shows the key, and remembers the connection', async () => {
+    const { dataDir, call } = await boot();
+    const llm = { ...DEFAULT_LLM, active: 'anthropic', anthropic: { endpoint: 'https://api.anthropic.com', model: 'sonnet' } };
+    expect((await call('settings:save', { llm, apiKey: 'sk-ant-api03-secret-value' })).ok).toBe(true);
+    const view = (await call('settings:get')).value;
+    expect(view.llm.active).toBe('anthropic');
+    expect(view.hasKey).toMatchObject({ anthropic: true, gateway: false });
+    expect(view.connections.map((c: { name: string }) => c.name)).toEqual(['sonnet · Anthropic']);
+    expect(JSON.stringify(view)).not.toContain('sk-ant-api03-secret-value');
+    expect(readFileSync(join(dataDir, 'secrets.bin')).includes('sk-ant-api03-secret-value')).toBe(false);
+    // A model name is not a line; nothing is saved.
+    const bad = await call('settings:save', { llm: { ...llm, anthropic: { ...llm.anthropic, model: 'claude-sonnet-5-5' } } });
+    expect(bad.ok).toBe(false);
+    expect((await call('settings:get')).value.llm.anthropic.model).toBe('sonnet');
+  });
+
   it('update:check cannot self-install in a container', async () => {
     const { call } = await boot();
     await call('settings:setUi', { checkUpdates: false }); // keep the test off the network

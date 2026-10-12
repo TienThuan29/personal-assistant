@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto';
 import OpenAI, { APIConnectionError, APIError, APIUserAbortError, AzureOpenAI } from 'openai';
 import type { ChatCompletionChunk, ChatCompletionFunctionTool, ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import type { AssistantMessage, LlmConfig, ToolCall } from '../shared/types';
+import { ANTHROPIC_ENDPOINT, ANTHROPIC_LINES, type AssistantMessage, type LlmConfig, type ToolCall } from '../shared/types';
 import { errMsg, te, UserError } from './errors';
 import { fromGateway, gatewayBaseURL, toGatewayMessages } from './gateway';
 import { createThinkSplitter } from './think';
@@ -14,15 +15,67 @@ export const LOCAL_KEY = 'lm-studio';
  */
 export type Llm = { stream: (p: StreamParams) => AsyncIterable<ChatCompletionChunk>; textOnly?: boolean; reasoning?: boolean };
 
+const ANTHROPIC_VERSION = '2023-06-01';
+const MODEL_TTL = 60 * 60_000;
+/** (line, key hash) → the model id its line resolved to; per process, so a new release is picked up within the hour. */
+const resolvedModels = new Map<string, { id: string; at: number }>();
+const modelCacheKey = (line: string, apiKey: string) => `${line}:${createHash('sha256').update(apiKey).digest('hex').slice(0, 16)}`;
+
+/**
+ * The newest active model of an Anthropic line, from GET /v1/models (docs/anthropic-design.md A4, A5). The line comes from the
+ * model's `line` field, never from its id. Cached for an hour so a chat turn costs no extra request.
+ */
+export async function resolveAnthropicModel(
+  line: string,
+  apiKey: string,
+  opts: { fetch?: typeof fetch; signal?: AbortSignal; now?: number } = {}
+): Promise<string> {
+  const cacheKey = modelCacheKey(line, apiKey);
+  const now = opts.now ?? Date.now();
+  const hit = resolvedModels.get(cacheKey);
+  if (hit && now - hit.at < MODEL_TTL) return hit.id;
+  let res: Response;
+  try {
+    res = await (opts.fetch ?? fetch)(`${ANTHROPIC_ENDPOINT}/v1/models?limit=1000`, {
+      headers: { 'x-api-key': apiKey, 'anthropic-version': ANTHROPIC_VERSION },
+      signal: opts.signal,
+    });
+  } catch (e) {
+    opts.signal?.throwIfAborted();
+    throw e instanceof UserError ? e : new UserError('llmConnection');
+  }
+  if (res.status === 401 || res.status === 403) throw new UserError('llmAuth');
+  if (res.status === 429) throw new UserError('llmRateLimit');
+  if (!res.ok) throw new UserError('llmError', { message: String(res.status) });
+  const body = (await res.json().catch(() => null)) as { data?: unknown } | null;
+  type Row = { id?: unknown; line?: unknown; lifecycle?: unknown; created_at?: unknown };
+  const rows = (Array.isArray(body?.data) ? body.data : []) as Row[];
+  const newest = rows
+    .filter((m) => m?.line === line && typeof m.id === 'string' && (m.lifecycle === undefined || m.lifecycle === 'active'))
+    .map((m) => ({ id: m.id as string, at: Date.parse(String(m.created_at)) || 0 }))
+    .sort((a, b) => b.at - a.at)[0]; // stable: on equal dates the API's own order (newest first) stands
+  if (!newest) throw new UserError('anthropicNoModel', { line });
+  resolvedModels.set(cacheKey, { id: newest.id, at: now });
+  return newest.id;
+}
+
 /**
  * One client for every provider; all speak OpenAI chat completions (design D2). The gateway ignores `tools`, so its
  * requests and replies go through the prompt-based adapter in gateway.ts (G4). LM Studio takes `tools` and images like Azure,
- * and shares the gateway's `<host>/v1` base URL. `opts.fetch` is Electron's net.fetch or a test stub.
+ * and shares the gateway's `<host>/v1` base URL. Anthropic goes through its OpenAI-compatible API at a fixed host, whatever
+ * `cfg.endpoint` holds, and `cfg.model` is a line that is resolved to a model id on each call. `opts.fetch` is Electron's
+ * net.fetch or a test stub.
  */
 export function createLlm(cfg: LlmConfig, apiKey: string, opts: { fetch?: typeof fetch } = {}): Llm {
   const local = cfg.provider === 'lmstudio';
+  const anthropic = cfg.provider === 'anthropic';
   const key = apiKey || (local ? LOCAL_KEY : '');
-  if (!cfg.endpoint || !key || (cfg.provider === 'azure' && (!cfg.model || !cfg.apiVersion)))
+  if (
+    (!anthropic && !cfg.endpoint) ||
+    !key ||
+    (cfg.provider === 'azure' && (!cfg.model || !cfg.apiVersion)) ||
+    (anthropic && !(ANTHROPIC_LINES as readonly string[]).includes(cfg.model))
+  )
     throw new UserError('llmNotConfigured');
   // A local model may need a minute to load before the first token, and a retry would just load it again.
   const common = { apiKey: key, maxRetries: local ? 0 : 2, timeout: local ? 300_000 : 60_000, fetch: opts.fetch };
@@ -33,17 +86,25 @@ export function createLlm(cfg: LlmConfig, apiKey: string, opts: { fetch?: typeof
     ? new OpenAI({ ...common, baseURL: v1, defaultHeaders: { 'api-key': apiKey } })
     : cfg.provider === 'azure'
       ? new AzureOpenAI({ ...common, endpoint: cfg.endpoint, apiVersion: cfg.apiVersion, deployment: cfg.model })
-      : new OpenAI({ ...common, baseURL: gatewayBaseURL(cfg.endpoint) });
+      : new OpenAI({ ...common, baseURL: gatewayBaseURL(anthropic ? ANTHROPIC_ENDPOINT : cfg.endpoint) });
   const gateway = cfg.provider === 'gateway';
   return {
     textOnly: gateway,
     reasoning: local,
     async *stream({ messages, tools, signal }) {
+      const model = anthropic ? await resolveAnthropicModel(cfg.model, key, { fetch: opts.fetch, signal }) : cfg.model;
       const params = gateway
-        ? { model: cfg.model, messages: toGatewayMessages(messages, tools), stream: true as const }
-        : { model: cfg.model, messages, tools: tools?.length ? tools : undefined, stream: true as const };
+        ? { model, messages: toGatewayMessages(messages, tools), stream: true as const }
+        : { model, messages, tools: tools?.length ? tools : undefined, stream: true as const };
       // A gateway without a configured model chooses one itself: omit the field instead of sending "".
-      const reply = await client.chat.completions.create((cfg.model ? params : { ...params, model: undefined }) as typeof params, { signal });
+      let reply;
+      try {
+        reply = await client.chat.completions.create((model ? params : { ...params, model: undefined }) as typeof params, { signal });
+      } catch (e) {
+        // The model may have been retired since it was resolved: look the line up again on the next call.
+        if (anthropic && e instanceof APIError && e.status === 404) resolvedModels.delete(modelCacheKey(cfg.model, key));
+        throw e;
+      }
       yield* gateway ? fromGateway(reply) : reply;
       signal?.throwIfAborted(); // the SDK's Stream ends silently on abort; surface it so the turn counts as stopped
     },

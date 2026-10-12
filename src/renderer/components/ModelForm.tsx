@@ -2,9 +2,22 @@ import { Message, Select } from '@arco-design/web-react';
 import { CircleCheck, Lock, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { DEFAULT_LLM, type LlmSettings, type Provider, PROVIDER_NAMES, type SavedConnection, type SettingsView } from '../../shared/types';
+import {
+  ANTHROPIC_LINES,
+  type AnthropicLine,
+  DEFAULT_LLM,
+  type LlmSettings,
+  type Provider,
+  PROVIDER_NAMES,
+  type SavedConnection,
+  type SettingsView,
+} from '../../shared/types';
 import { api, errorText } from '../api';
 import { Btn, ICON, IconBtn, Segmented, SettingRow } from './ui';
+
+const PROVIDERS = ['azure', 'gateway', 'lmstudio', 'anthropic'] as const;
+/** Product names (the same in every language), like PROVIDER_NAMES. */
+const LINES = ANTHROPIC_LINES.map((l) => ({ value: l, label: l[0].toUpperCase() + l.slice(1) }));
 
 const FIELD = 'h-9 w-full px-3 rounded-lg border border-solid border-line bg-panel text-[13px] outline-none focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]';
 
@@ -175,8 +188,9 @@ export function ModelForm({ m, compact }: { m: ModelFormState; compact?: boolean
   const active = llm.active;
   const azure = active === 'azure';
   const local = active === 'lmstudio';
+  const claude = active === 'anthropic'; // a fixed endpoint, and a model line instead of a model name
   const cfg = llm[active];
-  const keyLabel = azure ? 'API key' : t('accessToken');
+  const keyLabel = azure || claude ? 'API key' : t('accessToken');
   if (!view) return m.status ? <div className='text-danger text-[13px]'>{m.status.text}</div> : null;
   const Row = compact ? ({ children, label, desc }: { children: React.ReactNode; label: string; desc?: string }) => (
     <div className='flex flex-col gap-1.5'>
@@ -198,15 +212,19 @@ export function ModelForm({ m, compact }: { m: ModelFormState; compact?: boolean
           value={active}
           onChange={m.setProvider}
           className='self-start'
-          options={(['azure', 'gateway', 'lmstudio'] as const).map((p) => ({ value: p, label: PROVIDER_NAMES[p] }))}
+          options={PROVIDERS.map((p) => ({ value: p, label: PROVIDER_NAMES[p] }))}
         />
       ) : (
         <SettingRow label={t('provider')} desc={t('providerDesc')}>
-          <Segmented label={t('provider')} value={active} onChange={m.setProvider} options={(['azure', 'gateway', 'lmstudio'] as const).map((p) => ({ value: p, label: PROVIDER_NAMES[p] }))} />
+          <Segmented label={t('provider')} value={active} onChange={m.setProvider} options={PROVIDERS.map((p) => ({ value: p, label: PROVIDER_NAMES[p] }))} />
         </SettingRow>
       )}
-      {wrap('Endpoint', azure ? t('endpointAzure') : local ? t('endpointLmstudio') : t('endpointGateway'), <input aria-label='Endpoint' placeholder={local ? 'http://localhost:1234' : 'https://…'} value={cfg.endpoint} onChange={(e) => m.set({ endpoint: e.target.value })} className={`${FIELD} font-mono`} />)}
-      {wrap(
+      {!claude && wrap('Endpoint', azure ? t('endpointAzure') : local ? t('endpointLmstudio') : t('endpointGateway'), <input aria-label='Endpoint' placeholder={local ? 'http://localhost:1234' : 'https://…'} value={cfg.endpoint} onChange={(e) => m.set({ endpoint: e.target.value })} className={`${FIELD} font-mono`} />)}
+      {claude ? wrap(
+        t('anthropicLine'),
+        t('anthropicLineDesc'),
+        <Segmented label={t('anthropicLine')} value={cfg.model as AnthropicLine} onChange={(model) => m.set({ model })} options={LINES} className='self-start' />
+      ) : wrap(
         azure ? 'Deployment' : 'Model',
         azure ? t('modelDesc') : local ? t('modelDescLmstudio') : t('modelDescGateway'),
         azure ? (
